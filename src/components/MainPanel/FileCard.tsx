@@ -22,7 +22,7 @@ export const FileCard = ({ record, isSelected, index }: FileCardProps) => {
   return (
     <article
       aria-selected={isSelected}
-      className={`relative flex h-44 w-card shrink-0 flex-col overflow-hidden rounded-xl border bg-white/10 backdrop-blur-md ${wrapperClass}`}
+      className={`relative flex h-44 w-card shrink-0 flex-col overflow-hidden rounded-xl border bg-white/10 backdrop-blur-md transition-[border-color,box-shadow] duration-[120ms] ease-out motion-reduce:transition-none ${wrapperClass}`}
       data-testid="file-card"
     >
       <QuickSelectBadge index={index} />

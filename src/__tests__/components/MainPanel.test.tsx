@@ -151,7 +151,7 @@ describe("MainPanel", () => {
 
     await waitFor(() => {
       expect(invokeCalls.some((call) => call.command === "delete_record")).toBe(true);
-      expect(screen.queryByTestId("image-card")).not.toBeInTheDocument();
+      expect(useClipboardStore.getState().records.some((record) => record.id === 2)).toBe(false);
     });
   });
 

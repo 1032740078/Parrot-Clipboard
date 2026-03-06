@@ -9,7 +9,7 @@ import { useKeyboard } from "../../hooks/useKeyboard";
 import { useClipboardStore, useUIStore } from "../../stores";
 import { CardList } from "./CardList";
 import { EmptyState } from "./EmptyState";
-import { panelMotionVariants } from "./motion";
+import { getPanelMotionVariants, prefersReducedMotion } from "./motion";
 import { SkeletonCard } from "./SkeletonCard";
 
 export const MainPanel = () => {
@@ -43,6 +43,7 @@ export const MainPanel = () => {
   }, [hydrate, setHydrating]);
 
   const plainTextEnabled = selectedRecord ? isTextRecord(selectedRecord) : false;
+  const panelMotionVariants = getPanelMotionVariants(prefersReducedMotion());
 
   return (
     <AnimatePresence>
