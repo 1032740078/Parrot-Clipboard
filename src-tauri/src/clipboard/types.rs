@@ -17,10 +17,24 @@ impl RecordId {
 #[serde(rename_all = "lowercase")]
 pub enum ContentType {
     Text,
+    Image,
+    Files,
+}
+
+impl ContentType {
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "text" => Some(Self::Text),
+            "image" => Some(Self::Image),
+            "files" => Some(Self::Files),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum PasteMode {
     Original,
+    PlainText,
 }

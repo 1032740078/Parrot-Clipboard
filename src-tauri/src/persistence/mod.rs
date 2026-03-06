@@ -1,4 +1,5 @@
 pub mod migrations;
+pub mod row_mapper;
 pub mod sqlite;
 
 use std::path::PathBuf;
