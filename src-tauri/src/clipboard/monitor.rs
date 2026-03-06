@@ -34,6 +34,9 @@ pub trait DomainEventEmitter: Send + Sync {
 
     fn emit_record_deleted(&self, id: RecordId, reason: RecordDeleteReason)
         -> Result<(), AppError>;
+
+    fn emit_monitoring_changed(&self, monitoring: bool, changed_at: i64)
+        -> Result<(), AppError>;
 }
 
 pub trait ClipboardMonitorControl: Send + Sync {
@@ -757,6 +760,14 @@ mod tests {
                 .lock()
                 .expect("deleted_records lock poisoned")
                 .push((id.value(), reason));
+            Ok(())
+        }
+
+        fn emit_monitoring_changed(
+            &self,
+            _monitoring: bool,
+            _changed_at: i64,
+        ) -> Result<(), AppError> {
             Ok(())
         }
     }

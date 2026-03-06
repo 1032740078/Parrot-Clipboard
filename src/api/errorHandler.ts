@@ -7,6 +7,9 @@ const KNOWN_CODES: Set<ErrorCode> = new Set([
   "CLIPBOARD_WRITE_ERROR",
   "KEY_SIM_ERROR",
   "WINDOW_ERROR",
+  "MONITOR_CONTROL_ERROR",
+  "AUTOSTART_ERROR",
+  "TRAY_ERROR",
   "DB_ERROR",
   "FILE_ACCESS_ERROR",
   "IMAGE_PROCESS_ERROR",
@@ -48,6 +51,12 @@ export const getErrorMessage = (error: unknown): string => {
       return "已写入粘贴板，请手动粘贴";
     case "INVALID_PARAM":
       return "当前操作暂不可用";
+    case "MONITOR_CONTROL_ERROR":
+      return "监听状态切换失败，请重试";
+    case "AUTOSTART_ERROR":
+      return "开机自启动设置失败，请查看日志";
+    case "TRAY_ERROR":
+      return "系统托盘不可用，请查看日志";
     case "DB_ERROR":
       return "历史记录读取失败，请重启应用";
     case "FILE_ACCESS_ERROR":

@@ -111,6 +111,15 @@ export const getMonitoringStatus = async (): Promise<MonitoringStatus> => {
   }
 };
 
+export const setMonitoring = async (enabled: boolean): Promise<MonitoringStatus> => {
+  try {
+    return await invoke<MonitoringStatus>("set_monitoring", { enabled });
+  } catch (error) {
+    logger.error("切换监听状态失败", { enabled, error: normalizeError(error) });
+    throw error;
+  }
+};
+
 export const getLogDirectory = async (): Promise<string> => {
   try {
     return await invoke<string>("get_log_directory");

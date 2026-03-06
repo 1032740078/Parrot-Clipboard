@@ -9,6 +9,7 @@ use crate::{
     error::AppError,
     logging::{self, ClientLogLevel},
     state::AppState,
+    tray,
 };
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -111,6 +112,35 @@ pub fn get_monitoring_status(state: State<'_, AppState>) -> MonitoringStatus {
 }
 
 #[tauri::command]
+pub fn set_monitoring(
+    enabled: bool,
+    app_handle: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<MonitoringStatus, AppError> {
+    tracing::info!(enabled, "ipc set_monitoring requested");
+
+    if enabled {
+        state
+            .monitor
+            .sync_clipboard_state()
+            .map_err(|error| AppError::MonitorControl(error.to_string()))?;
+        state.monitor.resume();
+    } else {
+        state.monitor.pause();
+    }
+
+    let monitoring = state.monitor.is_monitoring();
+    let changed_at = now_ms();
+    state
+        .event_emitter
+        .emit_monitoring_changed(monitoring, changed_at)?;
+    tray::refresh(&app_handle)?;
+
+    tracing::info!(monitoring, changed_at, "ipc set_monitoring completed");
+    Ok(MonitoringStatus { monitoring })
+}
+
+#[tauri::command]
 pub fn write_client_log(
     level: ClientLogLevel,
     message: String,
@@ -123,4 +153,13 @@ pub fn write_client_log(
 #[tauri::command]
 pub fn get_log_directory(state: State<'_, AppState>) -> String {
     state.logging_state.log_directory.clone()
+}
+
+fn now_ms() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as i64)
+        .unwrap_or_default()
 }

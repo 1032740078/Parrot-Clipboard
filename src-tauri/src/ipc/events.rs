@@ -13,6 +13,7 @@ use crate::{
 pub const EVENT_NEW_RECORD: &str = "clipboard:new-record";
 pub const EVENT_RECORD_UPDATED: &str = "clipboard:record-updated";
 pub const EVENT_RECORD_DELETED: &str = "clipboard:record-deleted";
+pub const EVENT_MONITORING_CHANGED: &str = "system:monitoring-changed";
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct NewRecordPayload {
@@ -31,6 +32,20 @@ pub struct RecordUpdatedPayload {
 pub struct RecordDeletedPayload {
     pub id: u64,
     pub reason: RecordDeleteReason,
+}
+
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MonitoringStatePayload {
+    Running,
+    Paused,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct MonitoringChangedPayload {
+    pub monitoring: bool,
+    pub state: MonitoringStatePayload,
+    pub changed_at: i64,
 }
 
 pub struct TauriEventEmitter {
@@ -94,6 +109,26 @@ impl DomainEventEmitter for TauriEventEmitter {
             ?reason,
             "ipc record deleted event emitted"
         );
+        Ok(())
+    }
+
+    fn emit_monitoring_changed(&self, monitoring: bool, changed_at: i64) -> Result<(), AppError> {
+        let payload = MonitoringChangedPayload {
+            monitoring,
+            state: if monitoring {
+                MonitoringStatePayload::Running
+            } else {
+                MonitoringStatePayload::Paused
+            },
+            changed_at,
+        };
+
+        self.app_handle
+            .emit(EVENT_MONITORING_CHANGED, payload)
+            .map_err(|error| {
+                AppError::Window(format!("emit monitoring changed failed: {error}"))
+            })?;
+        tracing::debug!(monitoring, changed_at, "ipc monitoring changed event emitted");
         Ok(())
     }
 }

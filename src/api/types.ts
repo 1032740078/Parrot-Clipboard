@@ -80,6 +80,14 @@ export interface MonitoringStatus {
   monitoring: boolean;
 }
 
+export type MonitoringState = "running" | "paused";
+
+export interface MonitoringChangedPayload {
+  monitoring: boolean;
+  state: MonitoringState;
+  changed_at: number;
+}
+
 export interface NewRecordPayload {
   record: LegacyClipboardRecord;
   evicted_id?: number;

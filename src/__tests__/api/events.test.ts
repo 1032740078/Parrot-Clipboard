@@ -10,7 +10,13 @@ import {
   __setInvokeHandler,
   invokeCalls,
 } from "../../__mocks__/@tauri-apps/api/core";
-import { onNewRecord, onNewRecordSummary, onRecordDeleted, onRecordUpdated } from "../../api/events";
+import {
+  onMonitoringChanged,
+  onNewRecord,
+  onNewRecordSummary,
+  onRecordDeleted,
+  onRecordUpdated,
+} from "../../api/events";
 
 const summaryRecord = {
   id: 1,
@@ -47,21 +53,27 @@ describe("api/events", () => {
     const legacyHandler = vi.fn();
     const summaryHandler = vi.fn();
     const updatedHandler = vi.fn();
+    const monitoringHandler = vi.fn();
     const unlistenLegacy = await onNewRecord(legacyHandler);
     const unlistenSummary = await onNewRecordSummary(summaryHandler);
     const unlistenUpdated = await onRecordUpdated(updatedHandler);
+    const unlistenMonitoring = await onMonitoringChanged(monitoringHandler);
     const newPayload = { record: summaryRecord, evicted_ids: [9] };
     const updatedPayload = { reason: "promoted" as const, record: summaryRecord };
+    const monitoringPayload = { monitoring: false, state: "paused" as const, changed_at: 1234 };
 
     __emitMockEvent("clipboard:new-record", newPayload);
     __emitMockEvent("clipboard:record-updated", updatedPayload);
+    __emitMockEvent("system:monitoring-changed", monitoringPayload);
 
     expect(legacyHandler).toHaveBeenCalledWith({ record: legacyRecord, evicted_id: 9 });
     expect(summaryHandler).toHaveBeenCalledWith(newPayload);
     expect(updatedHandler).toHaveBeenCalledWith(updatedPayload);
+    expect(monitoringHandler).toHaveBeenCalledWith(monitoringPayload);
     unlistenLegacy();
     unlistenSummary();
     unlistenUpdated();
+    unlistenMonitoring();
   });
 
   it("old new-record payload 也会被兼容转换", async () => {
@@ -107,5 +119,6 @@ describe("api/events", () => {
 
     await expect(onNewRecord(() => undefined)).rejects.toThrow("subscribe failed");
     await expect(onRecordUpdated(() => undefined)).rejects.toThrow("subscribe failed");
+    await expect(onMonitoringChanged(() => undefined)).rejects.toThrow("subscribe failed");
   });
 });

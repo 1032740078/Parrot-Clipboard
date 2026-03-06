@@ -9,6 +9,7 @@ import {
 import type {
   NewRecordPayload,
   NewRecordPayloadV2,
+  MonitoringChangedPayload,
   RecordDeletedPayload,
   RecordUpdatedPayload,
 } from "./types";
@@ -77,6 +78,23 @@ export const onRecordDeleted = async (
     });
   } catch (error) {
     logger.error("订阅记录删除事件失败", { error: normalizeError(error) });
+    throw error;
+  }
+};
+
+export const onMonitoringChanged = async (
+  handler: (payload: MonitoringChangedPayload) => void
+): Promise<() => void> => {
+  try {
+    return await listen<MonitoringChangedPayload>("system:monitoring-changed", (event) => {
+      try {
+        handler(event.payload);
+      } catch (error) {
+        logger.error("处理监听状态变更事件失败", { error: normalizeError(error) });
+      }
+    });
+  } catch (error) {
+    logger.error("订阅监听状态变更事件失败", { error: normalizeError(error) });
     throw error;
   }
 };

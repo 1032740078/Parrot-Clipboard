@@ -127,6 +127,7 @@ pub fn run() {
             ipc::commands::paste_record,
             ipc::commands::hide_panel,
             ipc::commands::get_monitoring_status,
+            ipc::commands::set_monitoring,
             ipc::commands::write_client_log,
             ipc::commands::get_log_directory,
         ])

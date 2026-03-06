@@ -15,6 +15,7 @@ import {
   hidePanel,
   pasteRecord,
   pasteRecordResult,
+  setMonitoring,
 } from "../../api/commands";
 
 const summaryRecord = {
@@ -146,10 +147,14 @@ describe("api/commands", () => {
     });
   });
 
-  it("deleteRecord / hidePanel / getMonitoringStatus / getLogDirectory 调用对应命令", async () => {
+  it("deleteRecord / hidePanel / getMonitoringStatus / setMonitoring / getLogDirectory 调用对应命令", async () => {
     __setInvokeHandler(async (command) => {
       if (command === "get_monitoring_status") {
         return { monitoring: true };
+      }
+
+      if (command === "set_monitoring") {
+        return { monitoring: false };
       }
 
       if (command === "get_log_directory") {
@@ -162,12 +167,14 @@ describe("api/commands", () => {
     await deleteRecord(9);
     await hidePanel();
     await expect(getMonitoringStatus()).resolves.toEqual({ monitoring: true });
+    await expect(setMonitoring(false)).resolves.toEqual({ monitoring: false });
     await expect(getLogDirectory()).resolves.toBe("/tmp/logs");
 
     expect(invokeCalls).toEqual([
       { command: "delete_record", args: { id: 9 } },
       { command: "hide_panel", args: undefined },
       { command: "get_monitoring_status", args: undefined },
+      { command: "set_monitoring", args: { enabled: false } },
       { command: "get_log_directory", args: undefined },
     ]);
   });
@@ -180,6 +187,7 @@ describe("api/commands", () => {
     await expect(deleteRecord(1)).rejects.toThrow("boom");
     await expect(hidePanel()).rejects.toThrow("boom");
     await expect(getMonitoringStatus()).rejects.toThrow("boom");
+    await expect(setMonitoring(true)).rejects.toThrow("boom");
     await expect(getLogDirectory()).rejects.toThrow("boom");
     await expect(getRecords(1)).rejects.toThrow("boom");
     await expect(getRecordSummaries(1)).rejects.toThrow("boom");
