@@ -12,6 +12,7 @@ mod persistence;
 mod platform;
 mod shortcut;
 mod state;
+mod tray;
 mod window;
 
 use std::{error::Error, sync::Arc, time::Duration};
