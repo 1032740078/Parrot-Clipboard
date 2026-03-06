@@ -540,6 +540,83 @@ mod tests {
         assert_eq!(summaries[0].last_used_at, 2_000);
     }
 
+    #[test]
+    fn capture_files_preserves_order_and_directory_metadata() {
+        let context = TestContext::new("capture-files-create");
+        let repository = context.repository();
+        let items = sample_file_items(&context.root_dir, "ordered");
+
+        let result = repository
+            .capture_files(items.clone(), 1_000)
+            .expect("files should be captured");
+
+        assert_eq!(result.action, CaptureAction::Added);
+        assert!(result.evicted_ids.is_empty());
+        assert_eq!(result.record.content_type, ContentType::Files);
+        assert_eq!(result.record.preview_text, "note.txt 等 3 项");
+
+        let files_meta = result.record.files_meta.expect("files meta should exist");
+        assert_eq!(files_meta.count, 3);
+        assert_eq!(files_meta.primary_name, "note.txt");
+        assert!(files_meta.contains_directory);
+
+        let detail = repository
+            .get_detail(RecordId::new(result.record.id))
+            .expect("detail query should succeed")
+            .expect("detail should exist");
+        let file_items = detail
+            .files_detail
+            .expect("files detail should exist")
+            .items;
+        assert_eq!(file_items.len(), 3);
+        assert_eq!(
+            file_items
+                .iter()
+                .map(|item| item.path.clone())
+                .collect::<Vec<_>>(),
+            items
+                .iter()
+                .map(|item| item.path.to_string_lossy().to_string())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(file_items[0].display_name, "note.txt");
+        assert_eq!(file_items[0].extension.as_deref(), Some("txt"));
+        assert_eq!(
+            file_items[1].entry_type,
+            crate::clipboard::query::FileEntryType::Directory
+        );
+        assert_eq!(file_items[1].extension, None);
+        assert_eq!(file_items[2].display_name, "archive.zip");
+        assert_eq!(file_items[2].extension.as_deref(), Some("zip"));
+    }
+
+    #[test]
+    fn capture_files_duplicate_promotes_existing_record() {
+        let context = TestContext::new("capture-files-promote");
+        let repository = context.repository();
+        let items = sample_file_items(&context.root_dir, "duplicate");
+
+        let first = repository
+            .capture_files(items.clone(), 1_000)
+            .expect("first files capture should succeed");
+        let second = repository
+            .capture_files(items, 2_000)
+            .expect("duplicate files capture should succeed");
+
+        assert_eq!(first.action, CaptureAction::Added);
+        assert_eq!(second.action, CaptureAction::Promoted);
+        assert_eq!(first.record.id, second.record.id);
+        assert_eq!(second.record.last_used_at, 2_000);
+        assert!(second.evicted_ids.is_empty());
+
+        let summaries = repository
+            .list_summaries(10)
+            .expect("summary query should succeed");
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries[0].id, first.record.id);
+        assert_eq!(summaries[0].last_used_at, 2_000);
+    }
+
     struct TestContext {
         root_dir: PathBuf,
         database: Arc<SqliteConnectionManager>,
@@ -593,6 +670,29 @@ mod tests {
                 seed, 0, 0, 255, 0, seed, 0, 255, 0, 0, seed, 255, 255, 255, 255, 255,
             ],
         }
+    }
+
+    fn sample_file_items(
+        root_dir: &Path,
+        suffix: &str,
+    ) -> Vec<crate::clipboard::payload::ClipboardFileItem> {
+        let fixtures_dir = root_dir.join("fixtures").join(suffix);
+        fs::create_dir_all(&fixtures_dir).expect("fixtures dir should be created");
+
+        let text_file = fixtures_dir.join("note.txt");
+        fs::write(&text_file, "hello").expect("text file should be written");
+
+        let directory = fixtures_dir.join("folder");
+        fs::create_dir_all(&directory).expect("directory should be created");
+
+        let archive_file = fixtures_dir.join("archive.zip");
+        fs::write(&archive_file, "zip").expect("archive file should be written");
+
+        vec![
+            crate::clipboard::payload::ClipboardFileItem::from_path(text_file),
+            crate::clipboard::payload::ClipboardFileItem::from_path(directory),
+            crate::clipboard::payload::ClipboardFileItem::from_path(archive_file),
+        ]
     }
 
     fn unique_test_dir(suffix: &str) -> PathBuf {

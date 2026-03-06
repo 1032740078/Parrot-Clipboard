@@ -243,6 +243,7 @@ fn now_ms() -> i64 {
 #[cfg(test)]
 mod tests {
     use std::{
+        fs,
         path::PathBuf,
         sync::{Arc, Mutex},
         time::Duration,
@@ -315,11 +316,68 @@ mod tests {
             .is_empty());
     }
 
+    #[test]
+    fn poll_once_reads_file_list_before_image_and_text() {
+        let context = TestPathContext::new("monitor-files-priority");
+        let paths = context.sample_paths();
+        let repository = Arc::new(MockRepository::new(CaptureResult {
+            action: CaptureAction::Added,
+            record: files_summary(9, 1_000),
+            evicted_ids: Vec::new(),
+        }));
+        let clipboard = Arc::new(MockClipboard {
+            text: Some("ignored text".to_string()),
+            html: Some("<p>ignored text</p>".to_string()),
+            image: Some(sample_image(55)),
+            files: Some(paths.clone()),
+            change_count: 1,
+        });
+        let emitter = Arc::new(MockEmitter::default());
+        let service = ClipboardMonitorService::new(
+            repository.clone(),
+            clipboard,
+            emitter.clone(),
+            Duration::from_millis(10),
+        );
+
+        service.poll_once().expect("files poll should succeed");
+
+        assert_eq!(repository.capture_files_calls(), 1);
+        assert_eq!(repository.capture_image_calls(), 0);
+        assert_eq!(repository.capture_text_calls(), 0);
+
+        let captured = repository
+            .captured_file_items(0)
+            .expect("captured file items should exist");
+        assert_eq!(captured.len(), 3);
+        assert_eq!(
+            captured
+                .iter()
+                .map(|item| item.path.clone())
+                .collect::<Vec<_>>(),
+            paths
+        );
+        assert_eq!(captured[0].display_name, "note.txt");
+        assert_eq!(
+            captured[1].entry_type,
+            crate::clipboard::query::FileEntryType::Directory
+        );
+        assert_eq!(captured[2].extension.as_deref(), Some("zip"));
+
+        let new_records = emitter
+            .new_records
+            .lock()
+            .expect("new_records lock poisoned")
+            .clone();
+        assert_eq!(new_records.len(), 1);
+        assert_eq!(new_records[0].id, 9);
+    }
+
     struct MockRepository {
         result: CaptureResult,
         capture_texts: Mutex<Vec<String>>,
         capture_images: Mutex<Vec<ClipboardImageData>>,
-        capture_files: Mutex<Vec<usize>>,
+        capture_files: Mutex<Vec<Vec<crate::clipboard::payload::ClipboardFileItem>>>,
     }
 
     impl MockRepository {
@@ -351,6 +409,17 @@ mod tests {
                 .lock()
                 .expect("capture_files lock poisoned")
                 .len()
+        }
+
+        fn captured_file_items(
+            &self,
+            index: usize,
+        ) -> Option<Vec<crate::clipboard::payload::ClipboardFileItem>> {
+            self.capture_files
+                .lock()
+                .expect("capture_files lock poisoned")
+                .get(index)
+                .cloned()
         }
     }
 
@@ -388,7 +457,7 @@ mod tests {
             self.capture_files
                 .lock()
                 .expect("capture_files lock poisoned")
-                .push(items.len());
+                .push(items);
             Ok(self.result.clone())
         }
 
@@ -536,6 +605,24 @@ mod tests {
         }
     }
 
+    fn files_summary(id: u64, last_used_at: i64) -> ClipboardRecordSummary {
+        ClipboardRecordSummary {
+            id,
+            content_type: ContentType::Files,
+            preview_text: "note.txt 等 3 项".to_string(),
+            source_app: None,
+            created_at: 1_000,
+            last_used_at,
+            text_meta: None,
+            image_meta: None,
+            files_meta: Some(crate::clipboard::query::FilesMeta {
+                count: 3,
+                primary_name: "note.txt".to_string(),
+                contains_directory: true,
+            }),
+        }
+    }
+
     fn sample_image(seed: u8) -> ClipboardImageData {
         ClipboardImageData {
             width: 2,
@@ -543,6 +630,45 @@ mod tests {
             bytes: vec![
                 seed, 0, 0, 255, 0, seed, 0, 255, 0, 0, seed, 255, 255, 255, 255, 255,
             ],
+        }
+    }
+
+    struct TestPathContext {
+        root_dir: PathBuf,
+    }
+
+    impl TestPathContext {
+        fn new(suffix: &str) -> Self {
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time should be after unix epoch")
+                .as_nanos();
+            let root_dir = std::env::temp_dir()
+                .join(format!("clipboard-manager-monitor-test-{suffix}-{nanos}"));
+            fs::create_dir_all(&root_dir).expect("monitor test root dir should be created");
+            Self { root_dir }
+        }
+
+        fn sample_paths(&self) -> Vec<PathBuf> {
+            let fixtures_dir = self.root_dir.join("fixtures");
+            fs::create_dir_all(&fixtures_dir).expect("fixtures dir should be created");
+
+            let text_file = fixtures_dir.join("note.txt");
+            fs::write(&text_file, "hello").expect("text file should be written");
+
+            let directory = fixtures_dir.join("folder");
+            fs::create_dir_all(&directory).expect("directory should be created");
+
+            let archive_file = fixtures_dir.join("archive.zip");
+            fs::write(&archive_file, "zip").expect("archive file should be written");
+
+            vec![text_file, directory, archive_file]
+        }
+    }
+
+    impl Drop for TestPathContext {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root_dir);
         }
     }
 }
