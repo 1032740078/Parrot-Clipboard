@@ -3,7 +3,7 @@
 use std::{
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc,
+        Arc, RwLock,
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -40,6 +40,7 @@ pub struct ClipboardMonitorService {
     is_running: AtomicBool,
     is_paused: AtomicBool,
     last_change_count: AtomicU64,
+    last_text: RwLock<Option<String>>,
 }
 
 impl ClipboardMonitorService {
@@ -57,6 +58,7 @@ impl ClipboardMonitorService {
             is_running: AtomicBool::new(false),
             is_paused: AtomicBool::new(false),
             last_change_count: AtomicU64::new(0),
+            last_text: RwLock::new(None),
         }
     }
 
@@ -93,14 +95,27 @@ impl ClipboardMonitorService {
     pub fn poll_once(&self) -> Result<(), AppError> {
         let change_count = self.clipboard.change_count();
         let previous = self.last_change_count.load(Ordering::SeqCst);
-        if change_count == previous {
-            return Ok(());
-        }
-        self.last_change_count.store(change_count, Ordering::SeqCst);
 
         let Some(text) = self.clipboard.read_text()? else {
             return Ok(());
         };
+
+        let last_text = self
+            .last_text
+            .read()
+            .expect("last_text poisoned")
+            .clone()
+            .unwrap_or_default();
+
+        let text_changed = last_text != text;
+        let change_count_changed = change_count != previous;
+
+        if !text_changed && !change_count_changed {
+            return Ok(());
+        }
+
+        self.last_change_count.store(change_count, Ordering::SeqCst);
+        *self.last_text.write().expect("last_text poisoned") = Some(text.clone());
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
