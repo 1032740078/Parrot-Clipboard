@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 
 import { getRecordSummaries } from "../../api/commands";
 import { logger, normalizeError } from "../../api/logger";
-import { toClipboardRecord } from "../../types/clipboard";
+import { isTextRecord, toClipboardRecord } from "../../types/clipboard";
 import { useClipboardEvents } from "../../hooks/useClipboardEvents";
 import { useKeyboard } from "../../hooks/useKeyboard";
 import { useClipboardStore, useUIStore } from "../../stores";
@@ -14,6 +14,7 @@ import { SkeletonCard } from "./SkeletonCard";
 export const MainPanel = () => {
   const records = useClipboardStore((state) => state.records);
   const selectedIndex = useClipboardStore((state) => state.selectedIndex);
+  const selectedRecord = useClipboardStore((state) => state.getSelectedRecord());
   const isHydrating = useClipboardStore((state) => state.isHydrating);
   const hydrate = useClipboardStore((state) => state.hydrate);
   const setHydrating = useClipboardStore((state) => state.setHydrating);
@@ -40,6 +41,8 @@ export const MainPanel = () => {
     void bootstrap();
   }, [hydrate, setHydrating]);
 
+  const plainTextEnabled = selectedRecord ? isTextRecord(selectedRecord) : false;
+
   return (
     <AnimatePresence>
       {isPanelVisible ? (
@@ -51,17 +54,30 @@ export const MainPanel = () => {
           key="main-panel"
           transition={{ duration: 0.2, ease: "easeOut" }}
         >
-          {isHydrating ? (
-            <div className="flex gap-4 overflow-x-auto pb-2" data-testid="skeleton-list">
-              {Array.from({ length: 3 }, (_, index) => (
-                <SkeletonCard key={`skeleton-${index}`} index={index} />
-              ))}
+          <div className="flex h-full flex-col">
+            <div className="flex-1 overflow-hidden">
+              {isHydrating ? (
+                <div className="flex gap-4 overflow-x-auto pb-2" data-testid="skeleton-list">
+                  {Array.from({ length: 3 }, (_, index) => (
+                    <SkeletonCard key={`skeleton-${index}`} index={index} />
+                  ))}
+                </div>
+              ) : records.length === 0 ? (
+                <EmptyState />
+              ) : (
+                <CardList records={records} selectedIndex={selectedIndex} />
+              )}
             </div>
-          ) : records.length === 0 ? (
-            <EmptyState />
-          ) : (
-            <CardList records={records} selectedIndex={selectedIndex} />
-          )}
+
+            <footer className="mt-3 flex items-center justify-between text-[11px] text-slate-300" data-testid="shortcut-bar">
+              <span>Enter 粘贴</span>
+              <span className={plainTextEnabled ? "" : "opacity-40"} data-testid="plain-text-hint">
+                Shift+Enter 纯文本
+              </span>
+              <span>Delete 删除</span>
+              <span>Esc 关闭</span>
+            </footer>
+          </div>
         </motion.section>
       ) : null}
     </AnimatePresence>

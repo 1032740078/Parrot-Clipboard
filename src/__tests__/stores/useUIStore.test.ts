@@ -26,4 +26,12 @@ describe("useUIStore", () => {
     store.togglePanel();
     expect(useUIStore.getState().isPanelVisible).toBe(false);
   });
+
+  it("showToast / hideToast 可维护提示状态", () => {
+    const store = useUIStore.getState();
+    store.showToast({ level: "info", message: "已切换为纯文本粘贴", duration: 1200 });
+    expect(useUIStore.getState().toast?.message).toBe("已切换为纯文本粘贴");
+    store.hideToast();
+    expect(useUIStore.getState().toast).toBeUndefined();
+  });
 });

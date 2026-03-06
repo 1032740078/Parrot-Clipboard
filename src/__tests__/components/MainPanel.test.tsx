@@ -18,6 +18,14 @@ const setInvokeForRecords = (records = mixedFixtureRecords) => {
       return records.slice(0, limit);
     }
 
+    if (command === "paste_record") {
+      return {
+        record: records[0],
+        paste_mode: "original",
+        executed_at: Date.now(),
+      };
+    }
+
     return undefined;
   });
 };
@@ -47,7 +55,7 @@ describe("MainPanel", () => {
       async (command: string, args?: Record<string, unknown>) =>
         new Promise((resolve) => {
           if (command === "get_records") {
-            setTimeout(() => resolve((mixedFixtureRecords).slice(0, (args?.limit as number) ?? 20)), 50);
+            setTimeout(() => resolve(mixedFixtureRecords.slice(0, (args?.limit as number) ?? 20)), 50);
             return;
           }
 
@@ -85,7 +93,7 @@ describe("MainPanel", () => {
     expect(useClipboardStore.getState().selectedIndex).toBe(0);
   });
 
-  it("UT-PANEL-005 Enter 触发 paste_record", async () => {
+  it("UT-PANEL-005 Shift+Enter 对文本记录触发纯文本粘贴", async () => {
     setInvokeForRecords(fixtureRecords);
     render(<MainPanel />);
 
@@ -93,7 +101,7 @@ describe("MainPanel", () => {
       expect(screen.getAllByTestId("text-card")).toHaveLength(3);
     });
 
-    fireEvent.keyDown(window, { key: "Enter" });
+    fireEvent.keyDown(window, { key: "Enter", shiftKey: true });
 
     await waitFor(() => {
       expect(invokeCalls.some((call: { command: string }) => call.command === "paste_record")).toBe(
@@ -102,7 +110,22 @@ describe("MainPanel", () => {
     });
   });
 
-  it("UT-PANEL-006 Delete 触发 delete_record", async () => {
+  it("UT-PANEL-006 Shift+Enter 对非文本记录禁用提示弱化", async () => {
+    setInvokeForRecords(mixedFixtureRecords);
+    render(<MainPanel />);
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("text-card")).toHaveLength(1);
+    });
+
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("plain-text-hint").className.includes("opacity-40")).toBe(true);
+    });
+  });
+
+  it("Delete 触发 delete_record", async () => {
     setInvokeForRecords(fixtureRecords);
     render(<MainPanel />);
 
