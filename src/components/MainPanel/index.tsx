@@ -1,8 +1,9 @@
 import { useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
-import { getRecords } from "../../api/commands";
+import { getRecordSummaries } from "../../api/commands";
 import { logger, normalizeError } from "../../api/logger";
+import { toClipboardRecord } from "../../types/clipboard";
 import { useClipboardEvents } from "../../hooks/useClipboardEvents";
 import { useKeyboard } from "../../hooks/useKeyboard";
 import { useClipboardStore, useUIStore } from "../../stores";
@@ -12,9 +13,9 @@ import { EmptyState } from "./EmptyState";
 export const MainPanel = () => {
   const records = useClipboardStore((state) => state.records);
   const selectedIndex = useClipboardStore((state) => state.selectedIndex);
-  const isLoading = useClipboardStore((state) => state.isLoading);
-  const setRecords = useClipboardStore((state) => state.setRecords);
-  const setLoading = useClipboardStore((state) => state.setLoading);
+  const isHydrating = useClipboardStore((state) => state.isHydrating);
+  const hydrate = useClipboardStore((state) => state.hydrate);
+  const setHydrating = useClipboardStore((state) => state.setHydrating);
 
   const isPanelVisible = useUIStore((state) => state.isPanelVisible);
 
@@ -23,20 +24,20 @@ export const MainPanel = () => {
 
   useEffect(() => {
     const bootstrap = async (): Promise<void> => {
-      setLoading(true);
+      setHydrating(true);
       try {
-        const initialRecords = await getRecords(20);
-        setRecords(initialRecords);
+        const initialRecords = await getRecordSummaries(20);
+        hydrate(initialRecords.map((record) => toClipboardRecord(record)));
         logger.info("主面板初始化完成", { record_count: initialRecords.length });
       } catch (error) {
         logger.error("主面板初始化失败", { error: normalizeError(error) });
       } finally {
-        setLoading(false);
+        setHydrating(false);
       }
     };
 
     void bootstrap();
-  }, [setLoading, setRecords]);
+  }, [hydrate, setHydrating]);
 
   return (
     <AnimatePresence>
@@ -49,7 +50,7 @@ export const MainPanel = () => {
           key="main-panel"
           transition={{ duration: 0.2, ease: "easeOut" }}
         >
-          {isLoading ? (
+          {isHydrating ? (
             <div className="flex h-full items-center justify-center text-sm text-slate-300">加载中...</div>
           ) : records.length === 0 ? (
             <EmptyState />

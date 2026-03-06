@@ -1,6 +1,6 @@
-import type { ClipboardRecord } from "../types/clipboard";
 import type {
   ClipboardRecordSummary,
+  LegacyClipboardRecord,
   NewRecordPayload,
   NewRecordPayloadV2,
   PasteResult,
@@ -78,7 +78,7 @@ const toEventPayloadObject = (value: unknown): UnknownObject => {
 export const isPasteResult = (value: unknown): value is PasteResult =>
   isObject(value) && isObject(value.record);
 
-export const toLegacyClipboardRecord = (value: unknown): ClipboardRecord => {
+export const toLegacyClipboardRecord = (value: unknown): LegacyClipboardRecord => {
   const record = toRecordObject(value);
 
   return {
@@ -116,7 +116,7 @@ export const toClipboardRecordSummary = (value: unknown): ClipboardRecordSummary
   };
 };
 
-export const toLegacyClipboardRecordFromPasteResponse = (value: unknown): ClipboardRecord => {
+export const toLegacyClipboardRecordFromPasteResponse = (value: unknown): LegacyClipboardRecord => {
   if (isPasteResult(value)) {
     return toLegacyClipboardRecord(value.record);
   }

@@ -1,24 +1,46 @@
 import { invoke } from "@tauri-apps/api/core";
 
-import type { ClipboardRecord } from "../types/clipboard";
 import { logger, normalizeError } from "./logger";
 import {
   isPasteResult,
+  toClipboardRecordSummary,
   toLegacyClipboardRecord,
   toLegacyClipboardRecordFromPasteResponse,
 } from "./recordAdapters";
-import type { ClipboardRecordDetail, MonitoringStatus, PasteMode, PasteResult } from "./types";
+import type {
+  ClipboardRecordDetail,
+  ClipboardRecordSummary,
+  LegacyClipboardRecord,
+  MonitoringStatus,
+  PasteMode,
+  PasteResult,
+} from "./types";
 
-export const getRecords = async (limit = 20): Promise<ClipboardRecord[]> => {
+const readRecordList = async (limit: number): Promise<unknown[]> => {
+  const records = await invoke<unknown>("get_records", { limit });
+  if (!Array.isArray(records)) {
+    throw new Error("get_records 返回结果格式无效");
+  }
+
+  return records;
+};
+
+export const getRecords = async (limit = 20): Promise<LegacyClipboardRecord[]> => {
   try {
-    const records = await invoke<unknown>("get_records", { limit });
-    if (!Array.isArray(records)) {
-      throw new Error("get_records 返回结果格式无效");
-    }
-
+    const records = await readRecordList(limit);
     return records.map((record) => toLegacyClipboardRecord(record));
   } catch (error) {
     logger.error("读取剪贴板历史失败", { limit, error: normalizeError(error) });
+    throw error;
+  }
+};
+
+export const getRecordSummaries = async (limit = 20): Promise<ClipboardRecordSummary[]> => {
+  try {
+    const records = await readRecordList(limit);
+    return records.map((record) => toClipboardRecordSummary(record));
+  } catch (error) {
+    logger.error("读取剪贴板摘要失败", { limit, error: normalizeError(error) });
     throw error;
   }
 };
@@ -61,7 +83,7 @@ export const pasteRecordResult = async (
 export const pasteRecord = async (
   id: number,
   mode: PasteMode = "original"
-): Promise<ClipboardRecord> => {
+): Promise<LegacyClipboardRecord> => {
   try {
     const result = await invoke<unknown>("paste_record", { id, mode });
     return toLegacyClipboardRecordFromPasteResponse(result);

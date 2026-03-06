@@ -26,7 +26,7 @@ describe("useKeyboard", () => {
 
   it("ArrowRight / ArrowLeft 切换选中索引", () => {
     const store = useClipboardStore.getState();
-    store.setRecords([buildRecord(1, "A", 1000), buildRecord(2, "B", 900)]);
+    store.hydrate([buildRecord(1, "A", 1000), buildRecord(2, "B", 900)]);
     store.selectIndex(0);
 
     render(<HookContainer />);
@@ -42,13 +42,17 @@ describe("useKeyboard", () => {
     const store = useClipboardStore.getState();
     const recordA = buildRecord(1, "A", 1000);
     const recordB = buildRecord(2, "B", 900);
-    store.setRecords([recordA, recordB]);
+    store.hydrate([recordA, recordB]);
     store.selectIndex(1);
     useUIStore.getState().showPanel();
 
     __setInvokeHandler(async (command) => {
       if (command === "paste_record") {
-        return recordB;
+        return {
+          record: { ...recordB, last_used_at: 1200 },
+          paste_mode: "original",
+          executed_at: 1200,
+        };
       }
 
       return undefined;
@@ -74,7 +78,7 @@ describe("useKeyboard", () => {
 
   it("Delete/Backspace/Escape 分支触发对应命令", async () => {
     const store = useClipboardStore.getState();
-    store.setRecords([buildRecord(1, "A", 1000), buildRecord(2, "B", 900)]);
+    store.hydrate([buildRecord(1, "A", 1000), buildRecord(2, "B", 900)]);
     store.selectIndex(0);
     useUIStore.getState().showPanel();
 

@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 
-import { deleteRecord, hidePanel, pasteRecord } from "../api/commands";
+import { deleteRecord, hidePanel, pasteRecordResult } from "../api/commands";
 import { logger, normalizeError } from "../api/logger";
 import { useClipboardStore } from "../stores";
 
@@ -11,7 +11,7 @@ interface UseKeyboardOptions {
 export const useKeyboard = ({ enabled }: UseKeyboardOptions): void => {
   const records = useClipboardStore((state) => state.records);
   const selectedIndex = useClipboardStore((state) => state.selectedIndex);
-  const addRecord = useClipboardStore((state) => state.addRecord);
+  const upsertRecord = useClipboardStore((state) => state.upsertRecord);
   const selectPrev = useClipboardStore((state) => state.selectPrev);
   const selectNext = useClipboardStore((state) => state.selectNext);
   const removeRecord = useClipboardStore((state) => state.removeRecord);
@@ -41,8 +41,8 @@ export const useKeyboard = ({ enabled }: UseKeyboardOptions): void => {
         }
 
         event.preventDefault();
-        const promotedRecord = await pasteRecord(selected.id, "original");
-        addRecord(promotedRecord);
+        const result = await pasteRecordResult(selected.id, "original");
+        upsertRecord(result.record);
         await hidePanel();
         logger.info("用户通过快捷键执行粘贴", { record_id: selected.id, trigger_key: "Enter" });
         return;
@@ -83,5 +83,5 @@ export const useKeyboard = ({ enabled }: UseKeyboardOptions): void => {
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [addRecord, enabled, records, removeRecord, selectNext, selectPrev, selectedIndex]);
+  }, [enabled, records, removeRecord, selectNext, selectPrev, selectedIndex, upsertRecord]);
 };

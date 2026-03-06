@@ -11,6 +11,7 @@ import {
   getMonitoringStatus,
   getRecordDetail,
   getRecords,
+  getRecordSummaries,
   hidePanel,
   pasteRecord,
   pasteRecordResult,
@@ -58,18 +59,35 @@ describe("api/commands", () => {
     __setInvokeHandler(async () => [summaryRecord]);
 
     await expect(getRecords(20)).resolves.toEqual([legacyRecord]);
+    await expect(getRecordSummaries(20)).resolves.toEqual([summaryRecord]);
 
-    expect(invokeCalls).toHaveLength(1);
+    expect(invokeCalls).toHaveLength(2);
     expect(invokeCalls[0]).toEqual({
+      command: "get_records",
+      args: { limit: 20 },
+    });
+    expect(invokeCalls[1]).toEqual({
       command: "get_records",
       args: { limit: 20 },
     });
   });
 
-  it("getRecords 兼容 legacy 记录结构", async () => {
+  it("getRecordSummaries 兼容 legacy 记录结构", async () => {
     __setInvokeHandler(async () => [legacyRecord]);
 
-    await expect(getRecords(20)).resolves.toEqual([legacyRecord]);
+    await expect(getRecordSummaries(20)).resolves.toEqual([
+      {
+        id: 2,
+        content_type: "text",
+        preview_text: "B",
+        source_app: null,
+        created_at: 900,
+        last_used_at: 900,
+        text_meta: { char_count: 1, line_count: 1 },
+        image_meta: null,
+        files_meta: null,
+      },
+    ]);
   });
 
   it("getRecordDetail / pasteRecordResult 调用新契约命令并返回 DTO", async () => {
@@ -116,8 +134,13 @@ describe("api/commands", () => {
     __setInvokeHandler(async () => []);
 
     await getRecords();
+    await getRecordSummaries();
 
     expect(invokeCalls[0]).toEqual({
+      command: "get_records",
+      args: { limit: 20 },
+    });
+    expect(invokeCalls[1]).toEqual({
       command: "get_records",
       args: { limit: 20 },
     });
@@ -159,6 +182,7 @@ describe("api/commands", () => {
     await expect(getMonitoringStatus()).rejects.toThrow("boom");
     await expect(getLogDirectory()).rejects.toThrow("boom");
     await expect(getRecords(1)).rejects.toThrow("boom");
+    await expect(getRecordSummaries(1)).rejects.toThrow("boom");
     await expect(getRecordDetail(1)).rejects.toThrow("boom");
     await expect(pasteRecord(1)).rejects.toThrow("boom");
     await expect(pasteRecordResult(1)).rejects.toThrow("boom");

@@ -1,11 +1,17 @@
 export type { ErrorCode, IpcError } from "../types/error";
-export type { ClipboardRecord as LegacyClipboardRecord } from "../types/clipboard";
 
 export type ContentType = "text" | "image" | "files";
 export type PasteMode = "original" | "plain_text";
 export type ThumbnailState = "pending" | "ready" | "failed";
 export type RecordUpdatedReason = "promoted" | "thumbnail_ready" | "thumbnail_failed";
 export type RecordDeletedReason = "manual" | "retention";
+
+export interface LegacyClipboardRecord {
+  id: number;
+  content_type: "text";
+  text_content: string;
+  created_at: number;
+}
 
 export interface TextMeta {
   char_count: number;
@@ -75,7 +81,7 @@ export interface MonitoringStatus {
 }
 
 export interface NewRecordPayload {
-  record: import("../types/clipboard").ClipboardRecord;
+  record: LegacyClipboardRecord;
   evicted_id?: number;
 }
 

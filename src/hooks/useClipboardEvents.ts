@@ -1,11 +1,12 @@
 import { useEffect } from "react";
 
-import { onNewRecord, onRecordDeleted } from "../api/events";
+import { onNewRecordSummary, onRecordDeleted, onRecordUpdated } from "../api/events";
 import { logger, normalizeError } from "../api/logger";
 import { useClipboardStore } from "../stores";
 
 export const useClipboardEvents = (): void => {
-  const addRecord = useClipboardStore((state) => state.addRecord);
+  const upsertRecord = useClipboardStore((state) => state.upsertRecord);
+  const updateRecord = useClipboardStore((state) => state.updateRecord);
   const removeRecord = useClipboardStore((state) => state.removeRecord);
 
   useEffect(() => {
@@ -14,14 +15,23 @@ export const useClipboardEvents = (): void => {
 
     const subscribe = async (): Promise<void> => {
       try {
-        const unlistenNewRecord = await onNewRecord((payload) => {
+        const unlistenNewRecord = await onNewRecordSummary((payload) => {
           if (!isMounted) {
             return;
           }
 
-          addRecord(payload.record, payload.evicted_id);
+          upsertRecord(payload.record, payload.evicted_ids?.[0]);
         });
         cleanups.push(unlistenNewRecord);
+
+        const unlistenUpdated = await onRecordUpdated((payload) => {
+          if (!isMounted) {
+            return;
+          }
+
+          updateRecord(payload.record);
+        });
+        cleanups.push(unlistenUpdated);
 
         const unlistenDeleted = await onRecordDeleted((payload) => {
           if (!isMounted) {
@@ -48,5 +58,5 @@ export const useClipboardEvents = (): void => {
         }
       });
     };
-  }, [addRecord, removeRecord]);
+  }, [removeRecord, updateRecord, upsertRecord]);
 };
