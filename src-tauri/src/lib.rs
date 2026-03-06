@@ -32,6 +32,7 @@ use shortcut::register_toggle_shortcut;
 use state::AppState;
 use tauri::Manager;
 use tauri_plugin_global_shortcut::Builder as GlobalShortcutBuilder;
+use tray::{runtime_snapshot as tray_runtime_snapshot, TrayController};
 use window::{TauriWindowManager, WindowManager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -105,6 +106,16 @@ pub fn run() {
                 event_emitter,
                 logging_state,
             });
+
+            match TrayController::initialize(&app_handle, tray_runtime_snapshot(&app_handle)?) {
+                Ok(tray_controller) => {
+                    app.manage(tray_controller);
+                    tracing::info!("system tray initialized");
+                }
+                Err(error) => {
+                    tracing::error!(error = %error, "system tray initialization failed");
+                }
+            }
 
             tracing::info!("application setup completed");
             Ok(())
