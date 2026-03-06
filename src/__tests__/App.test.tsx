@@ -9,12 +9,14 @@ import {
   invokeCalls,
 } from "../__mocks__/@tauri-apps/api/core";
 import { useClipboardStore } from "../stores/useClipboardStore";
+import { useSystemStore } from "../stores/useSystemStore";
 import { useUIStore } from "../stores/useUIStore";
 import { mixedFixtureRecords } from "./fixtures/clipboardRecords";
 
 describe("App", () => {
   beforeEach(() => {
     useClipboardStore.getState().reset();
+    useSystemStore.getState().reset();
     useUIStore.getState().reset();
     __resetInvokeMock();
     __resetEventMock();
@@ -24,11 +26,27 @@ describe("App", () => {
         return mixedFixtureRecords.slice(0, limit);
       }
 
+      if (command === "get_runtime_status") {
+        return { monitoring: false, launch_at_login: true, panel_visible: true };
+      }
+
       if (command === "clear_history") {
         return { deleted_records: 3, deleted_image_assets: 1, executed_at: 1234 };
       }
 
       return undefined;
+    });
+  });
+
+  it("启动时会读取运行态状态并同步到 SystemStore", async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(invokeCalls.some((call) => call.command === "get_runtime_status")).toBe(true);
+      expect(useSystemStore.getState().monitoring).toBe(false);
+      expect(useSystemStore.getState().launchAtLogin).toBe(true);
+      expect(useSystemStore.getState().panelVisible).toBe(true);
+      expect(useSystemStore.getState().trayAvailable).toBe(true);
     });
   });
 
@@ -55,6 +73,7 @@ describe("App", () => {
       expect(screen.getByTestId("card-list")).toBeInTheDocument();
     });
     expect(useUIStore.getState().isPanelVisible).toBe(true);
+    expect(useSystemStore.getState().panelVisible).toBe(true);
   });
 
   it("收到清空历史请求后可取消且不触发命令", async () => {
@@ -123,6 +142,10 @@ describe("App", () => {
       if (command === "get_records") {
         const limit = (args?.limit as number) ?? 20;
         return mixedFixtureRecords.slice(0, limit);
+      }
+
+      if (command === "get_runtime_status") {
+        return { monitoring: false, launch_at_login: true, panel_visible: true };
       }
 
       if (command === "clear_history") {

@@ -4,7 +4,7 @@ import { deleteRecord, hidePanel, pasteRecordResult } from "../api/commands";
 import { getErrorMessage } from "../api/errorHandler";
 import { logger, normalizeError } from "../api/logger";
 import { isTextRecord } from "../types/clipboard";
-import { useClipboardStore, useUIStore } from "../stores";
+import { useClipboardStore, useSystemStore, useUIStore } from "../stores";
 
 interface UseKeyboardOptions {
   enabled: boolean;
@@ -48,6 +48,8 @@ export const useKeyboard = ({ enabled }: UseKeyboardOptions): void => {
   const clearHistoryDialog = useUIStore((state) => state.clearHistoryDialog);
   const hidePanelState = useUIStore((state) => state.hidePanel);
   const showToast = useUIStore((state) => state.showToast);
+
+  const setPanelVisible = useSystemStore((state) => state.setPanelVisible);
 
   useEffect(() => {
     if (!enabled) {
@@ -120,6 +122,7 @@ export const useKeyboard = ({ enabled }: UseKeyboardOptions): void => {
             });
           }
           hidePanelState();
+          setPanelVisible(false);
           await hidePanel();
           logger.info("用户通过快捷键执行粘贴", {
             record_id: selected.id,
@@ -164,6 +167,7 @@ export const useKeyboard = ({ enabled }: UseKeyboardOptions): void => {
       if (event.key === "Escape") {
         event.preventDefault();
         hidePanelState();
+        setPanelVisible(false);
         await hidePanel();
         logger.debug("用户通过快捷键隐藏面板", { trigger_key: "Escape" });
       }
@@ -192,6 +196,7 @@ export const useKeyboard = ({ enabled }: UseKeyboardOptions): void => {
     selectNext,
     selectPrev,
     selectedIndex,
+    setPanelVisible,
     showToast,
     upsertRecord,
   ]);

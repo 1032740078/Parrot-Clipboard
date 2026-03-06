@@ -13,6 +13,7 @@ import type {
   ClipboardRecordSummary,
   LegacyClipboardRecord,
   MonitoringStatus,
+  RuntimeStatus,
   PasteMode,
   PasteResult,
 } from "./types";
@@ -117,6 +118,15 @@ export const setMonitoring = async (enabled: boolean): Promise<MonitoringStatus>
     return await invoke<MonitoringStatus>("set_monitoring", { enabled });
   } catch (error) {
     logger.error("切换监听状态失败", { enabled, error: normalizeError(error) });
+    throw error;
+  }
+};
+
+export const getRuntimeStatus = async (): Promise<RuntimeStatus> => {
+  try {
+    return await invoke<RuntimeStatus>("get_runtime_status");
+  } catch (error) {
+    logger.error("读取运行态状态失败", { error: normalizeError(error) });
     throw error;
   }
 };

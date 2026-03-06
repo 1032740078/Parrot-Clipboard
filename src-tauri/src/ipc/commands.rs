@@ -18,6 +18,13 @@ pub struct MonitoringStatus {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+pub struct RuntimeStatus {
+    pub monitoring: bool,
+    pub launch_at_login: bool,
+    pub panel_visible: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct ClearHistoryResult {
     pub deleted_records: usize,
     pub deleted_image_assets: usize,
@@ -147,6 +154,18 @@ pub fn set_monitoring(
 
     tracing::info!(monitoring, changed_at, "ipc set_monitoring completed");
     Ok(MonitoringStatus { monitoring })
+}
+
+#[tauri::command]
+pub fn get_runtime_status(app_handle: tauri::AppHandle) -> Result<RuntimeStatus, AppError> {
+    tracing::debug!("ipc get_runtime_status requested");
+    let snapshot = tray::runtime_snapshot(&app_handle)?;
+
+    Ok(RuntimeStatus {
+        monitoring: snapshot.monitoring,
+        launch_at_login: snapshot.launch_at_login,
+        panel_visible: snapshot.panel_visible,
+    })
 }
 
 #[tauri::command]

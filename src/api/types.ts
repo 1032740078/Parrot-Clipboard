@@ -88,6 +88,12 @@ export interface MonitoringChangedPayload {
   changed_at: number;
 }
 
+export interface RuntimeStatus {
+  monitoring: boolean;
+  launch_at_login: boolean;
+  panel_visible: boolean;
+}
+
 export interface ClearHistoryResult {
   deleted_records: number;
   deleted_image_assets: number;

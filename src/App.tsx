@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 
-import { clearHistory } from "./api/commands";
+import { clearHistory, getRuntimeStatus } from "./api/commands";
 import { getErrorMessage } from "./api/errorHandler";
+import { logger, normalizeError } from "./api/logger";
 import { MainPanel } from "./components/MainPanel";
 import { ConfirmDialog } from "./components/common/ConfirmDialog";
 import { Toast } from "./components/common/Toast";
 import { useSystemEvents } from "./hooks/useSystemEvents";
-import { useUIStore } from "./stores";
+import { useSystemStore, useUIStore } from "./stores";
 
 function App() {
   const showPanel = useUIStore((state) => state.showPanel);
@@ -15,13 +16,40 @@ function App() {
   const clearHistoryDialog = useUIStore((state) => state.clearHistoryDialog);
   const closeClearHistoryDialog = useUIStore((state) => state.closeClearHistoryDialog);
   const showToast = useUIStore((state) => state.showToast);
+
+  const hydrateRuntimeStatus = useSystemStore((state) => state.hydrateRuntimeStatus);
+  const setPanelVisible = useSystemStore((state) => state.setPanelVisible);
+  const setTrayAvailable = useSystemStore((state) => state.setTrayAvailable);
+
   const [isClearingHistory, setIsClearingHistory] = useState(false);
 
   useSystemEvents();
 
   useEffect(() => {
+    let isMounted = true;
+
+    const syncRuntimeStatus = async (): Promise<void> => {
+      try {
+        const status = await getRuntimeStatus();
+        if (!isMounted) {
+          return;
+        }
+
+        hydrateRuntimeStatus(status);
+      } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+
+        setTrayAvailable(false);
+        logger.error("读取运行态状态失败", { error: normalizeError(error) });
+      }
+    };
+
     const restorePanelVisibility = (): void => {
       showPanel();
+      setPanelVisible(true);
+      void syncRuntimeStatus();
     };
 
     const handleVisibilityChange = (): void => {
@@ -36,11 +64,12 @@ function App() {
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
+      isMounted = false;
       window.removeEventListener("focus", restorePanelVisibility);
       window.removeEventListener("pageshow", restorePanelVisibility);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [showPanel]);
+  }, [hydrateRuntimeStatus, setPanelVisible, setTrayAvailable, showPanel]);
 
   const handleConfirmClearHistory = async (): Promise<void> => {
     if (!clearHistoryDialog) {

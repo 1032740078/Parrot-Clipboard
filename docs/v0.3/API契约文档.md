@@ -323,6 +323,9 @@ interface ClearHistoryResult {
 export const setMonitoring = (enabled: boolean) =>
   invoke<MonitoringStatus>("set_monitoring", { enabled });
 
+export const getRuntimeStatus = () =>
+  invoke<RuntimeStatus>("get_runtime_status");
+
 export const clearHistory = (confirmToken: string) =>
   invoke<ClearHistoryResult>("clear_history", { confirm_token: confirmToken });
 

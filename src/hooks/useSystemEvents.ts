@@ -2,10 +2,15 @@ import { useEffect } from "react";
 
 import { onClearHistoryRequested, onHistoryCleared, onMonitoringChanged } from "../api/events";
 import { logger, normalizeError } from "../api/logger";
-import { useClipboardStore, useUIStore } from "../stores";
+import { useClipboardStore, useSystemStore, useUIStore } from "../stores";
 
 export const useSystemEvents = (): void => {
   const resetClipboard = useClipboardStore((state) => state.reset);
+
+  const setMonitoring = useSystemStore((state) => state.setMonitoring);
+  const setPanelVisible = useSystemStore((state) => state.setPanelVisible);
+
+  const showPanel = useUIStore((state) => state.showPanel);
   const openClearHistoryDialog = useUIStore((state) => state.openClearHistoryDialog);
   const closeClearHistoryDialog = useUIStore((state) => state.closeClearHistoryDialog);
   const showToast = useUIStore((state) => state.showToast);
@@ -21,6 +26,9 @@ export const useSystemEvents = (): void => {
             if (!isMounted) {
               return;
             }
+
+            showPanel();
+            setPanelVisible(true);
             openClearHistoryDialog(payload.confirm_token);
           })
         );
@@ -47,6 +55,7 @@ export const useSystemEvents = (): void => {
               return;
             }
 
+            setMonitoring(payload.monitoring);
             logger.info("监听状态已同步到前端", { ...payload });
           })
         );
@@ -67,5 +76,13 @@ export const useSystemEvents = (): void => {
         }
       });
     };
-  }, [closeClearHistoryDialog, openClearHistoryDialog, resetClipboard, showToast]);
+  }, [
+    closeClearHistoryDialog,
+    openClearHistoryDialog,
+    resetClipboard,
+    setMonitoring,
+    setPanelVisible,
+    showPanel,
+    showToast,
+  ]);
 };

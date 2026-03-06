@@ -10,6 +10,7 @@ import {
   deleteRecord,
   getLogDirectory,
   getMonitoringStatus,
+  getRuntimeStatus,
   getRecordDetail,
   getRecords,
   getRecordSummaries,
@@ -148,7 +149,7 @@ describe("api/commands", () => {
     });
   });
 
-  it("deleteRecord / hidePanel / getMonitoringStatus / setMonitoring / clearHistory / getLogDirectory 调用对应命令", async () => {
+  it("deleteRecord / hidePanel / getMonitoringStatus / getRuntimeStatus / setMonitoring / clearHistory / getLogDirectory 调用对应命令", async () => {
     __setInvokeHandler(async (command) => {
       if (command === "get_monitoring_status") {
         return { monitoring: true };
@@ -162,6 +163,10 @@ describe("api/commands", () => {
         return { deleted_records: 3, deleted_image_assets: 1, executed_at: 1234 };
       }
 
+      if (command === "get_runtime_status") {
+        return { monitoring: false, launch_at_login: true, panel_visible: true };
+      }
+
       if (command === "get_log_directory") {
         return "/tmp/logs";
       }
@@ -172,6 +177,11 @@ describe("api/commands", () => {
     await deleteRecord(9);
     await hidePanel();
     await expect(getMonitoringStatus()).resolves.toEqual({ monitoring: true });
+    await expect(getRuntimeStatus()).resolves.toEqual({
+      monitoring: false,
+      launch_at_login: true,
+      panel_visible: true,
+    });
     await expect(setMonitoring(false)).resolves.toEqual({ monitoring: false });
     await expect(clearHistory("token-1")).resolves.toEqual({
       deleted_records: 3,
@@ -184,6 +194,7 @@ describe("api/commands", () => {
       { command: "delete_record", args: { id: 9 } },
       { command: "hide_panel", args: undefined },
       { command: "get_monitoring_status", args: undefined },
+      { command: "get_runtime_status", args: undefined },
       { command: "set_monitoring", args: { enabled: false } },
       { command: "clear_history", args: { confirm_token: "token-1" } },
       { command: "get_log_directory", args: undefined },
@@ -198,6 +209,7 @@ describe("api/commands", () => {
     await expect(deleteRecord(1)).rejects.toThrow("boom");
     await expect(hidePanel()).rejects.toThrow("boom");
     await expect(getMonitoringStatus()).rejects.toThrow("boom");
+    await expect(getRuntimeStatus()).rejects.toThrow("boom");
     await expect(setMonitoring(true)).rejects.toThrow("boom");
     await expect(clearHistory("token-2")).rejects.toThrow("boom");
     await expect(getLogDirectory()).rejects.toThrow("boom");
