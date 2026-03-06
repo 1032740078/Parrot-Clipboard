@@ -16,7 +16,7 @@
     "test:coverage": "vitest run --coverage",
     "format": "prettier --check .",
     "format:write": "prettier --write .",
-    "test:e2e": "playwright test --config=e2e/playwright.config.ts"
+    "test:e2e": "sh -c 'node e2e/start-vite-server.mjs >/tmp/clipboard-record-manager-e2e.log 2>&1 & SERVER_PID=$!; trap \"kill $SERVER_PID\" EXIT; until curl -sf http://127.0.0.1:4173 >/dev/null; do sleep 0.2; done; playwright test --config=e2e/playwright.config.ts'"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

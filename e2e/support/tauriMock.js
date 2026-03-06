@@ -2,11 +2,20 @@
   const callbacks = new Map();
   const eventListeners = new Map();
   const invokeCalls = [];
+  const defaultRuntimeStatus = {
+    monitoring: true,
+    launch_at_login: true,
+    panel_visible: true,
+  };
+
   let nextCallbackId = 1;
   let nextEventId = 1;
   let records = Array.isArray(globalThis.window.__E2E_INITIAL_RECORDS__)
     ? JSON.parse(JSON.stringify(globalThis.window.__E2E_INITIAL_RECORDS__))
     : [];
+  let runtimeStatus = globalThis.window.__E2E_RUNTIME_STATUS__
+    ? JSON.parse(JSON.stringify(globalThis.window.__E2E_RUNTIME_STATUS__))
+    : JSON.parse(JSON.stringify(defaultRuntimeStatus));
 
   const clone = (value) => JSON.parse(JSON.stringify(value));
   const sortRecords = (items) =>
@@ -18,6 +27,13 @@
       return right.id - left.id;
     });
 
+  const syncRuntimeStatus = (patch) => {
+    runtimeStatus = {
+      ...runtimeStatus,
+      ...clone(patch),
+    };
+  };
+
   const upsertRecord = (record) => {
     records = sortRecords([record, ...records.filter((item) => item.id !== record.id)]);
   };
@@ -26,13 +42,30 @@
     records = records.filter((record) => record.id !== id);
   };
 
+  const applyEventSideEffects = (event, payload) => {
+    if (event === "system:monitoring-changed" && payload && typeof payload.monitoring === "boolean") {
+      syncRuntimeStatus({ monitoring: payload.monitoring });
+    }
+
+    if (event === "clipboard:history-cleared") {
+      records = [];
+    }
+
+    if (event === "system:clear-history-requested") {
+      syncRuntimeStatus({ panel_visible: true });
+    }
+  };
+
   const resetState = () => {
     records = [];
+    runtimeStatus = clone(defaultRuntimeStatus);
     invokeCalls.splice(0, invokeCalls.length);
     eventListeners.clear();
   };
 
   const emitEvent = (event, payload) => {
+    applyEventSideEffects(event, payload);
+
     const listeners = eventListeners.get(event) ?? [];
     listeners.forEach((listener) => {
       const callback = callbacks.get(listener.handler);
@@ -51,6 +84,12 @@
     },
     getRecords() {
       return clone(records);
+    },
+    setRuntimeStatus(nextStatus) {
+      syncRuntimeStatus(nextStatus);
+    },
+    getRuntimeStatus() {
+      return clone(runtimeStatus);
     },
     getInvokeCalls() {
       return clone(invokeCalls);
@@ -129,11 +168,32 @@
       }
 
       if (command === "hide_panel") {
+        syncRuntimeStatus({ panel_visible: false });
         return null;
       }
 
       if (command === "get_monitoring_status") {
-        return { monitoring: true };
+        return { monitoring: runtimeStatus.monitoring };
+      }
+
+      if (command === "get_runtime_status") {
+        return clone(runtimeStatus);
+      }
+
+      if (command === "clear_history") {
+        if (args?.confirm_token !== "confirm-clear-history-v0.3") {
+          throw { code: "INVALID_PARAM", message: "invalid confirm token" };
+        }
+
+        const result = {
+          deleted_records: records.length,
+          deleted_image_assets: records.filter((record) => record.content_type === "image").length,
+          executed_at: Date.now(),
+        };
+
+        records = [];
+        emitEvent("clipboard:history-cleared", result);
+        return result;
       }
 
       if (command === "get_log_directory") {
