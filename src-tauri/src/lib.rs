@@ -4,6 +4,7 @@ mod clipboard;
 mod config;
 mod error;
 mod ipc;
+mod logging;
 mod paste;
 mod platform;
 mod shortcut;
@@ -35,6 +36,9 @@ pub fn run() {
         .plugin(GlobalShortcutBuilder::new().build())
         .setup(|app| -> Result<(), Box<dyn Error>> {
             let app_handle = app.handle().clone();
+            let logging_state =
+                logging::init_logging(&app_handle).map_err(std::io::Error::other)?;
+            tracing::info!("application setup started");
             let config = AppConfig::default();
 
             let repository: Arc<dyn ClipboardRecordRepository> =
@@ -74,8 +78,10 @@ pub fn run() {
                 paste_service,
                 window_manager,
                 event_emitter,
+                logging_state,
             });
 
+            tracing::info!("application setup completed");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -84,6 +90,8 @@ pub fn run() {
             ipc::commands::paste_record,
             ipc::commands::hide_panel,
             ipc::commands::get_monitoring_status,
+            ipc::commands::write_client_log,
+            ipc::commands::get_log_directory,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

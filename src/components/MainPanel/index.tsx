@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
 import { getRecords } from "../../api/commands";
+import { logger, normalizeError } from "../../api/logger";
 import { useClipboardEvents } from "../../hooks/useClipboardEvents";
 import { useKeyboard } from "../../hooks/useKeyboard";
 import { useClipboardStore, useUIStore } from "../../stores";
@@ -26,6 +27,9 @@ export const MainPanel = () => {
       try {
         const initialRecords = await getRecords(20);
         setRecords(initialRecords);
+        logger.info("主面板初始化完成", { record_count: initialRecords.length });
+      } catch (error) {
+        logger.error("主面板初始化失败", { error: normalizeError(error) });
       } finally {
         setLoading(false);
       }

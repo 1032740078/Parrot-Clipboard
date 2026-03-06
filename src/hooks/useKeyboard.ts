@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 
 import { deleteRecord, hidePanel, pasteRecord } from "../api/commands";
+import { logger, normalizeError } from "../api/logger";
 import { useClipboardStore, useUIStore } from "../stores";
 
 interface UseKeyboardOptions {
@@ -20,7 +21,7 @@ export const useKeyboard = ({ enabled }: UseKeyboardOptions): void => {
       return;
     }
 
-    const onKeyDown = async (event: KeyboardEvent): Promise<void> => {
+    const handleKeyDown = async (event: KeyboardEvent): Promise<void> => {
       if (event.key === "ArrowLeft") {
         selectPrev();
         return;
@@ -43,6 +44,7 @@ export const useKeyboard = ({ enabled }: UseKeyboardOptions): void => {
         await pasteRecord(selected.id, "original");
         await hidePanel();
         hidePanelState();
+        logger.info("用户通过快捷键执行粘贴", { record_id: selected.id, trigger_key: "Enter" });
         return;
       }
 
@@ -54,6 +56,10 @@ export const useKeyboard = ({ enabled }: UseKeyboardOptions): void => {
         event.preventDefault();
         await deleteRecord(selected.id);
         removeRecord(selected.id);
+        logger.info("用户通过快捷键删除记录", {
+          record_id: selected.id,
+          trigger_key: event.key,
+        });
         return;
       }
 
@@ -61,7 +67,17 @@ export const useKeyboard = ({ enabled }: UseKeyboardOptions): void => {
         event.preventDefault();
         await hidePanel();
         hidePanelState();
+        logger.debug("用户通过快捷键隐藏面板", { trigger_key: "Escape" });
       }
+    };
+
+    const onKeyDown = (event: KeyboardEvent): void => {
+      void handleKeyDown(event).catch((error) => {
+        logger.error("处理键盘事件失败", {
+          trigger_key: event.key,
+          error: normalizeError(error),
+        });
+      });
     };
 
     window.addEventListener("keydown", onKeyDown);

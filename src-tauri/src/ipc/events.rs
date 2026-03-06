@@ -36,6 +36,7 @@ impl DomainEventEmitter for TauriEventEmitter {
         record: ClipboardRecord,
         evicted_id: Option<RecordId>,
     ) -> Result<(), AppError> {
+        let record_id = record.id;
         let payload = NewRecordPayload {
             record,
             evicted_id: evicted_id.map(|id| id.value()),
@@ -43,7 +44,9 @@ impl DomainEventEmitter for TauriEventEmitter {
 
         self.app_handle
             .emit(EVENT_NEW_RECORD, payload)
-            .map_err(|error| AppError::Window(format!("emit new record event failed: {error}")))
+            .map_err(|error| AppError::Window(format!("emit new record event failed: {error}")))?;
+        tracing::debug!(record_id, "ipc new record event emitted");
+        Ok(())
     }
 
     fn emit_record_deleted(&self, id: RecordId) -> Result<(), AppError> {
@@ -51,6 +54,8 @@ impl DomainEventEmitter for TauriEventEmitter {
 
         self.app_handle
             .emit(EVENT_RECORD_DELETED, payload)
-            .map_err(|error| AppError::Window(format!("emit record deleted failed: {error}")))
+            .map_err(|error| AppError::Window(format!("emit record deleted failed: {error}")))?;
+        tracing::debug!(record_id = id.value(), "ipc record deleted event emitted");
+        Ok(())
     }
 }

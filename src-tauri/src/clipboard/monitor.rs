@@ -68,18 +68,25 @@ impl ClipboardMonitorService {
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
             .is_err()
         {
+            tracing::debug!("clipboard monitor start ignored because it is already running");
             return;
         }
+
+        tracing::info!(
+            poll_interval_ms = self.poll_interval.as_millis(),
+            "clipboard monitor started"
+        );
 
         tauri::async_runtime::spawn(async move {
             loop {
                 if !self.is_running.load(Ordering::SeqCst) {
+                    tracing::info!("clipboard monitor loop stopped");
                     break;
                 }
 
                 if !self.is_paused.load(Ordering::SeqCst) {
                     if let Err(error) = self.poll_once() {
-                        eprintln!("clipboard monitor error: {error:?}");
+                        tracing::error!(error = %error, "clipboard monitor poll failed");
                     }
                 }
 
@@ -90,6 +97,7 @@ impl ClipboardMonitorService {
 
     pub fn stop(&self) {
         self.is_running.store(false, Ordering::SeqCst);
+        tracing::info!("clipboard monitor stop requested");
     }
 
     pub fn poll_once(&self) -> Result<(), AppError> {
@@ -135,6 +143,13 @@ impl ClipboardMonitorService {
         }
 
         if let Some(record) = added {
+            let text_len = record.text_content.chars().count();
+            tracing::info!(
+                record_id = record.id,
+                text_len,
+                evicted_id = evicted.as_ref().map(|id| id.value()),
+                "clipboard record captured"
+            );
             self.emitter.emit_new_record(record, evicted)?;
         }
 
@@ -145,10 +160,12 @@ impl ClipboardMonitorService {
 impl ClipboardMonitorControl for ClipboardMonitorService {
     fn pause(&self) {
         self.is_paused.store(true, Ordering::SeqCst);
+        tracing::debug!("clipboard monitor paused");
     }
 
     fn resume(&self) {
         self.is_paused.store(false, Ordering::SeqCst);
+        tracing::debug!("clipboard monitor resumed");
     }
 
     fn is_paused(&self) -> bool {

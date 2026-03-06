@@ -60,6 +60,7 @@ impl TauriWindowManager {
 
 impl WindowManager for TauriWindowManager {
     fn show(&self) -> Result<(), AppError> {
+        tracing::debug!("window show requested");
         let window = self.window()?;
         self.resize_and_position(&window)?;
         window
@@ -68,23 +69,29 @@ impl WindowManager for TauriWindowManager {
         window
             .set_focus()
             .map_err(|error| AppError::Window(format!("set focus failed: {error}")))?;
+        tracing::info!("window shown");
         Ok(())
     }
 
     fn hide(&self) -> Result<(), AppError> {
+        tracing::debug!("window hide requested");
         let window = self.window()?;
         window
             .hide()
-            .map_err(|error| AppError::Window(format!("hide failed: {error}")))
+            .map_err(|error| AppError::Window(format!("hide failed: {error}")))?;
+        tracing::info!("window hidden");
+        Ok(())
     }
 
     fn toggle(&self) -> Result<bool, AppError> {
         if self.is_visible()? {
             self.hide()?;
+            tracing::debug!("window toggled to hidden");
             return Ok(false);
         }
 
         self.show()?;
+        tracing::debug!("window toggled to visible");
         Ok(true)
     }
 

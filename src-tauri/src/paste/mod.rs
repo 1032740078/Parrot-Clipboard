@@ -39,7 +39,10 @@ impl PasteService {
     }
 
     pub async fn paste_record(&self, id: RecordId, mode: PasteMode) -> Result<(), AppError> {
+        tracing::debug!(record_id = id.value(), ?mode, "paste flow started");
+
         if mode != PasteMode::Original {
+            tracing::warn!(record_id = id.value(), ?mode, "paste mode is unsupported");
             return Err(AppError::InvalidParam(format!(
                 "Unsupported paste mode: {:?}",
                 mode
@@ -53,6 +56,12 @@ impl PasteService {
                 .repository
                 .get_by_id(id)
                 .ok_or_else(|| AppError::RecordNotFound(id.value()))?;
+            let text_length = record.text_content.chars().count();
+            tracing::debug!(
+                record_id = record.id,
+                text_length,
+                "paste flow loaded record metadata"
+            );
 
             self.platform_clipboard.write_text(&record.text_content)?;
             self.window_manager.hide()?;
@@ -64,6 +73,14 @@ impl PasteService {
         .await;
 
         self.monitor.resume();
+        match &result {
+            Ok(()) => tracing::info!(record_id = id.value(), "paste flow completed"),
+            Err(error) => tracing::error!(
+                record_id = id.value(),
+                error = %error,
+                "paste flow failed"
+            ),
+        }
         result
     }
 }
