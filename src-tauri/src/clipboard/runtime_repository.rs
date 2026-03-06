@@ -813,6 +813,33 @@ mod tests {
     }
 
     #[test]
+    fn clear_history_allows_new_capture_after_cleanup() {
+        let context = TestContext::new("clear-history-recapture");
+        let repository = context.repository();
+
+        repository
+            .capture_text("旧文本".to_string(), None, 1_000)
+            .expect("initial text capture should succeed");
+
+        repository
+            .clear_history()
+            .expect("clear history should succeed");
+
+        let recaptured = repository
+            .capture_text("清空后的新文本".to_string(), None, 2_000)
+            .expect("recapture after clear history should succeed");
+
+        let summaries = repository
+            .list_summaries(10)
+            .expect("summary query should succeed");
+
+        assert_eq!(recaptured.action, CaptureAction::Added);
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries[0].id, recaptured.record.id);
+        assert_eq!(summaries[0].preview_text, "清空后的新文本");
+    }
+
+    #[test]
     fn capture_files_duplicate_promotes_existing_record() {
         let context = TestContext::new("capture-files-promote");
         let repository = context.repository();

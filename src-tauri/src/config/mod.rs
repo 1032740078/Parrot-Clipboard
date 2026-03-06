@@ -11,6 +11,7 @@ use tauri::{AppHandle, Manager};
 pub use schema::AppConfig;
 
 pub struct ConfigStore {
+    #[cfg_attr(not(test), allow(dead_code))]
     path: PathBuf,
     config: RwLock<AppConfig>,
 }
@@ -46,10 +47,7 @@ impl ConfigStore {
             .clone()
     }
 
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-
+    #[cfg(test)]
     pub fn set_launch_at_login(&self, launch_at_login: bool) -> Result<AppConfig, String> {
         let mut next = self.current();
         next.launch_at_login = launch_at_login;
@@ -57,10 +55,6 @@ impl ConfigStore {
         *self.config.write().expect("config write lock poisoned") = next.clone();
         Ok(next)
     }
-}
-
-pub fn load_or_create(app_handle: &AppHandle) -> Result<AppConfig, String> {
-    ConfigStore::initialize(app_handle).map(|store| store.current())
 }
 
 fn resolve_config_path(app_handle: &AppHandle) -> Result<PathBuf, String> {

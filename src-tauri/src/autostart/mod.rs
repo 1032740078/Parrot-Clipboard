@@ -8,7 +8,6 @@ pub trait AutostartControl: Send + Sync {
     fn is_enabled(&self) -> Result<bool, AppError>;
     fn set_enabled(&self, enabled: bool) -> Result<bool, AppError>;
     fn reconcile(&self, enabled: bool) -> Result<bool, AppError>;
-    fn plist_path(&self) -> PathBuf;
 }
 
 pub struct LaunchAgentService {
@@ -33,6 +32,7 @@ impl LaunchAgentService {
         }))
     }
 
+    #[cfg(test)]
     pub fn initialize_with_paths(
         agent_dir: PathBuf,
         label: impl Into<String>,
@@ -119,6 +119,13 @@ impl LaunchAgentService {
     }
 }
 
+#[cfg(test)]
+impl LaunchAgentService {
+    fn plist_path(&self) -> PathBuf {
+        self.plist_path.clone()
+    }
+}
+
 impl AutostartControl for LaunchAgentService {
     fn is_enabled(&self) -> Result<bool, AppError> {
         Ok(self.plist_path.exists())
@@ -139,10 +146,6 @@ impl AutostartControl for LaunchAgentService {
         }
 
         self.set_enabled(enabled)
-    }
-
-    fn plist_path(&self) -> PathBuf {
-        self.plist_path.clone()
     }
 }
 
@@ -238,6 +241,24 @@ mod tests {
             .reconcile(false)
             .expect("reconcile disable should succeed"));
         assert!(!service.plist_path().exists());
+    }
+
+    #[test]
+    fn enable_escapes_xml_special_characters() {
+        let context = TestContext::new("escape");
+        let service = LaunchAgentService::initialize_with_paths(
+            context.root_dir.join("LaunchAgents"),
+            "com.robin.clipboard<&>'\"manager",
+            PathBuf::from("/mock/Clipboard<&>'\" Manager.app/Contents/MacOS/clipboard-manager"),
+        );
+
+        service.set_enabled(true).expect("enable should succeed");
+        let saved = fs::read_to_string(service.plist_path()).expect("plist should exist");
+
+        assert!(saved.contains("com.robin.clipboard&lt;&amp;&gt;&apos;&quot;manager"));
+        assert!(saved.contains(
+            "/mock/Clipboard&lt;&amp;&gt;&apos;&quot; Manager.app/Contents/MacOS/clipboard-manager"
+        ));
     }
 
     struct TestContext {
