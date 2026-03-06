@@ -50,7 +50,7 @@ describe("App", () => {
     });
   });
 
-  it("运行态为暂停监听时展示弱提示且不影响历史列表", async () => {
+  it("UT-FE-STATE-003 监听暂停态下展示弱提示且不影响历史列表", async () => {
     render(<App />);
 
     await waitFor(() => {
@@ -61,6 +61,77 @@ describe("App", () => {
     expect(screen.getByTestId("pause-hint")).toHaveTextContent(
       "监听已暂停，新复制的内容不会被记录，可从托盘恢复"
     );
+  });
+
+  it("UT-FE-STATE-001 收到 monitoring 变更事件后同步暂停提示 UI", async () => {
+    __setInvokeHandler(async (command: string, args?: Record<string, unknown>) => {
+      if (command === "get_records") {
+        const limit = (args?.limit as number) ?? 20;
+        return mixedFixtureRecords.slice(0, limit);
+      }
+
+      if (command === "get_runtime_status") {
+        return { monitoring: true, launch_at_login: true, panel_visible: true };
+      }
+
+      if (command === "clear_history") {
+        return { deleted_records: 3, deleted_image_assets: 1, executed_at: 1234 };
+      }
+
+      return undefined;
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("card-list")).toBeInTheDocument();
+      expect(screen.queryByTestId("pause-hint")).not.toBeInTheDocument();
+    });
+
+    await act(async () => {
+      __emitMockEvent("system:monitoring-changed", {
+        monitoring: false,
+        state: "paused",
+        changed_at: 1234,
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("pause-hint")).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      __emitMockEvent("system:monitoring-changed", {
+        monitoring: true,
+        state: "running",
+        changed_at: 1235,
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("pause-hint")).not.toBeInTheDocument();
+    });
+  });
+
+  it("UT-FE-STATE-002 收到 history-cleared 事件后列表清空并显示空状态", async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("card-list")).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      __emitMockEvent("clipboard:history-cleared", {
+        deleted_records: 3,
+        deleted_image_assets: 1,
+        executed_at: 1234,
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("empty-state")).toBeInTheDocument();
+      expect(screen.getByTestId("toast")).toHaveTextContent("已清空 3 条历史记录");
+    });
   });
 
   it("窗口重新聚焦后会恢复主面板显示", async () => {

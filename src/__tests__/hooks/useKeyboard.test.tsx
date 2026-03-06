@@ -63,6 +63,32 @@ describe("useKeyboard", () => {
     expect(useClipboardStore.getState().selectedIndex).toBe(1);
   });
 
+  it("UT-FE-KB-004 Delete 删除后焦点自动移动到下一条合理记录", async () => {
+    const store = useClipboardStore.getState();
+    store.hydrate([
+      buildRecord(1, "A", 1000),
+      buildRecord(2, "B", 999),
+      buildRecord(3, "C", 998),
+    ]);
+    store.selectIndex(1);
+    useUIStore.getState().showPanel();
+
+    render(<HookContainer />);
+
+    fireEvent.keyDown(window, { key: "Delete" });
+
+    await waitFor(() => {
+      expect(invokeCalls.find((call) => call.command === "delete_record")).toEqual({
+        command: "delete_record",
+        args: { id: 2 },
+      });
+      expect(useClipboardStore.getState().records.map((record) => record.id)).toEqual([1, 3]);
+    });
+
+    expect(useClipboardStore.getState().selectedIndex).toBe(1);
+    expect(useClipboardStore.getState().getSelectedRecord()?.id).toBe(3);
+  });
+
   it("数字键快选后 Enter 会粘贴当前选中记录", async () => {
     const store = useClipboardStore.getState();
     const recordA = buildRecord(1, "A", 1000);

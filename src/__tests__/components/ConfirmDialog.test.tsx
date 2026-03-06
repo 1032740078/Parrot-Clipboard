@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { ConfirmDialog } from "../../components/common/ConfirmDialog";
@@ -41,6 +41,24 @@ describe("ConfirmDialog", () => {
 
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+
+  it("默认焦点落在取消按钮，降低误清空风险", async () => {
+    render(
+      <ConfirmDialog
+        cancelLabel="取消"
+        confirmLabel="确认"
+        description="描述"
+        onCancel={() => undefined}
+        onConfirm={() => undefined}
+        title="标题"
+        visible
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("confirm-dialog-cancel")).toHaveFocus();
+    });
   });
 
   it("loading=true 时按钮禁用并显示处理中", () => {
