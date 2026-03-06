@@ -298,6 +298,7 @@ mod tests {
     #[derive(Default)]
     struct MockClipboard {
         trace: Arc<Mutex<Vec<&'static str>>>,
+        written_texts: Arc<Mutex<Vec<String>>>,
         written_images: Arc<Mutex<Vec<crate::clipboard::payload::ClipboardImageData>>>,
         written_file_lists: Arc<Mutex<Vec<Vec<PathBuf>>>>,
     }
@@ -322,6 +323,10 @@ mod tests {
                 .lock()
                 .expect("trace lock poisoned")
                 .push("write_text");
+            self.written_texts
+                .lock()
+                .expect("written_texts lock poisoned")
+                .push(_text.to_string());
             Ok(())
         }
         fn write_html(&self, _html: &str, _alt_text: &str) -> Result<(), AppError> {
@@ -406,6 +411,7 @@ mod tests {
         let monitor = Arc::new(MockMonitor::default());
         let clipboard = Arc::new(MockClipboard {
             trace: shared_trace.clone(),
+            written_texts: Arc::new(Mutex::new(Vec::new())),
             written_images: Arc::new(Mutex::new(Vec::new())),
             written_file_lists: Arc::new(Mutex::new(Vec::new())),
         });
@@ -450,6 +456,75 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn ut_paste_002_text_plain_mode_writes_plain_text_only() {
+        let shared_trace = Arc::new(Mutex::new(Vec::<&'static str>::new()));
+        let promoted_ids = Arc::new(Mutex::new(Vec::<u64>::new()));
+        let detail = text_detail(2, Some("<p>Hello</p><p>World</p>".to_string()));
+
+        let repository = Arc::new(MockRepository {
+            detail: Some(detail),
+            promoted_ids: promoted_ids.clone(),
+        });
+        let monitor = Arc::new(MockMonitor::default());
+        let clipboard = Arc::new(MockClipboard {
+            trace: shared_trace.clone(),
+            written_texts: Arc::new(Mutex::new(Vec::new())),
+            written_images: Arc::new(Mutex::new(Vec::new())),
+            written_file_lists: Arc::new(Mutex::new(Vec::new())),
+        });
+        let key_sim = Arc::new(MockKeySimulator {
+            trace: shared_trace.clone(),
+        });
+        let window_manager = Arc::new(MockWindowManager {
+            trace: shared_trace.clone(),
+        });
+        let image_storage = Arc::new(
+            ImageStorageService::initialize_at(
+                temp_dir("paste-002/original"),
+                temp_dir("paste-002/thumbs"),
+            )
+            .expect("image storage should init"),
+        );
+
+        let service = PasteService::new(
+            repository,
+            monitor.clone(),
+            clipboard.clone(),
+            key_sim,
+            window_manager,
+            image_storage,
+        );
+        let result = service
+            .paste_record(RecordId::new(2), PasteMode::PlainText)
+            .await;
+
+        assert!(matches!(result, Ok(PasteResult { .. })));
+        assert_eq!(
+            monitor.trace.lock().expect("trace lock poisoned").clone(),
+            vec!["pause", "sync", "resume"]
+        );
+        assert_eq!(
+            shared_trace.lock().expect("trace lock poisoned").clone(),
+            vec!["write_text", "hide", "simulate_paste"]
+        );
+        assert_eq!(
+            clipboard
+                .written_texts
+                .lock()
+                .expect("written_texts lock poisoned")
+                .as_slice(),
+            &["Hello".to_string()]
+        );
+        assert_eq!(
+            promoted_ids
+                .lock()
+                .expect("promoted lock poisoned")
+                .as_slice(),
+            &[2]
+        );
+    }
+
+    #[tokio::test]
     async fn ut_paste_003_image_original_restores_image_bytes() {
         let shared_trace = Arc::new(Mutex::new(Vec::<&'static str>::new()));
         let promoted_ids = Arc::new(Mutex::new(Vec::<u64>::new()));
@@ -473,6 +548,7 @@ mod tests {
         let monitor = Arc::new(MockMonitor::default());
         let clipboard = Arc::new(MockClipboard {
             trace: shared_trace.clone(),
+            written_texts: Arc::new(Mutex::new(Vec::new())),
             written_images: Arc::new(Mutex::new(Vec::new())),
             written_file_lists: Arc::new(Mutex::new(Vec::new())),
         });
@@ -533,6 +609,7 @@ mod tests {
         let monitor = Arc::new(MockMonitor::default());
         let clipboard = Arc::new(MockClipboard {
             trace: shared_trace.clone(),
+            written_texts: Arc::new(Mutex::new(Vec::new())),
             written_images: Arc::new(Mutex::new(Vec::new())),
             written_file_lists: Arc::new(Mutex::new(Vec::new())),
         });
@@ -590,7 +667,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ut_paste_002_non_text_plain_mode_rejected() {
+    async fn ut_paste_005_non_text_plain_mode_rejected() {
         let repository = Arc::new(MockRepository {
             detail: Some(image_detail(2)),
             promoted_ids: Arc::new(Mutex::new(Vec::new())),
@@ -601,6 +678,7 @@ mod tests {
             Arc::new(MockMonitor::default()),
             Arc::new(MockClipboard {
                 trace: trace.clone(),
+                written_texts: Arc::new(Mutex::new(Vec::new())),
                 written_images: Arc::new(Mutex::new(Vec::new())),
                 written_file_lists: Arc::new(Mutex::new(Vec::new())),
             }),
