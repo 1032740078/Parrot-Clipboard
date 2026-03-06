@@ -3,26 +3,64 @@ pub mod schema;
 use std::{
     fs,
     path::{Path, PathBuf},
+    sync::{Arc, RwLock},
 };
 
 use tauri::{AppHandle, Manager};
 
 pub use schema::AppConfig;
 
+pub struct ConfigStore {
+    path: PathBuf,
+    config: RwLock<AppConfig>,
+}
+
+impl ConfigStore {
+    pub fn initialize(app_handle: &AppHandle) -> Result<Arc<Self>, String> {
+        let path = resolve_config_path(app_handle)?;
+        Self::initialize_at_path(path)
+    }
+
+    pub fn initialize_at_path(path: PathBuf) -> Result<Arc<Self>, String> {
+        let config = load_or_create_at_path(&path)?;
+        tracing::info!(
+            path = %path.display(),
+            max_text_records = config.max_text_records,
+            max_image_records = config.max_image_records,
+            max_file_records = config.max_file_records,
+            toggle_shortcut = %config.toggle_shortcut,
+            launch_at_login = config.launch_at_login,
+            "application config loaded"
+        );
+
+        Ok(Arc::new(Self {
+            path,
+            config: RwLock::new(config),
+        }))
+    }
+
+    pub fn current(&self) -> AppConfig {
+        self.config
+            .read()
+            .expect("config read lock poisoned")
+            .clone()
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn set_launch_at_login(&self, launch_at_login: bool) -> Result<AppConfig, String> {
+        let mut next = self.current();
+        next.launch_at_login = launch_at_login;
+        persist_config(&self.path, &next)?;
+        *self.config.write().expect("config write lock poisoned") = next.clone();
+        Ok(next)
+    }
+}
+
 pub fn load_or_create(app_handle: &AppHandle) -> Result<AppConfig, String> {
-    let config_path = resolve_config_path(app_handle)?;
-    let config = load_or_create_at_path(&config_path)?;
-
-    tracing::info!(
-        path = %config_path.display(),
-        max_text_records = config.max_text_records,
-        max_image_records = config.max_image_records,
-        max_file_records = config.max_file_records,
-        toggle_shortcut = %config.toggle_shortcut,
-        "application config loaded"
-    );
-
-    Ok(config)
+    ConfigStore::initialize(app_handle).map(|store| store.current())
 }
 
 fn resolve_config_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
@@ -96,6 +134,7 @@ mod tests {
         assert!(saved.contains("\"max_text_records\": 200"));
         assert!(saved.contains("\"max_image_records\": 50"));
         assert!(saved.contains("\"max_file_records\": 100"));
+        assert!(saved.contains("\"launch_at_login\": true"));
 
         cleanup_test_dir(&config_path);
     }
@@ -121,8 +160,28 @@ mod tests {
         assert_eq!(config.max_text_records, 88);
         assert_eq!(config.max_image_records, 50);
         assert_eq!(config.max_file_records, 100);
+        assert!(config.launch_at_login);
         assert!(saved.contains("\"max_image_records\": 50"));
         assert!(saved.contains("\"max_file_records\": 100"));
+        assert!(saved.contains("\"launch_at_login\": true"));
+
+        cleanup_test_dir(&config_path);
+    }
+
+    #[test]
+    fn set_launch_at_login_persists_updated_value() {
+        let config_path = unique_test_dir().join("config.json");
+        let store = super::ConfigStore::initialize_at_path(config_path.clone())
+            .expect("config store should initialize");
+
+        let updated = store
+            .set_launch_at_login(false)
+            .expect("launch_at_login should persist");
+        let saved = fs::read_to_string(&config_path).expect("config file should exist");
+
+        assert!(!updated.launch_at_login);
+        assert!(!store.current().launch_at_login);
+        assert!(saved.contains("\"launch_at_login\": false"));
 
         cleanup_test_dir(&config_path);
     }

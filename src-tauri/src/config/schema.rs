@@ -7,6 +7,7 @@ pub struct AppConfig {
     pub max_image_records: usize,
     pub max_file_records: usize,
     pub toggle_shortcut: String,
+    pub launch_at_login: bool,
 }
 
 impl Default for AppConfig {
@@ -16,6 +17,7 @@ impl Default for AppConfig {
             max_image_records: 50,
             max_file_records: 100,
             toggle_shortcut: "Shift+Command+V".to_string(),
+            launch_at_login: true,
         }
     }
 }
@@ -31,6 +33,7 @@ mod tests {
         assert_eq!(config.max_image_records, 50);
         assert_eq!(config.max_file_records, 100);
         assert_eq!(config.toggle_shortcut, "Shift+Command+V");
+        assert!(config.launch_at_login);
     }
 
     #[test]
@@ -47,5 +50,6 @@ mod tests {
         assert_eq!(config.max_image_records, 50);
         assert_eq!(config.max_file_records, 100);
         assert_eq!(config.toggle_shortcut, "Shift+Command+V");
+        assert!(config.launch_at_login);
     }
 }
