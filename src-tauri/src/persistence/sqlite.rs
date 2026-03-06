@@ -133,6 +133,12 @@ pub struct RetentionPruneResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ClearHistoryDbResult {
+    pub deleted_records: usize,
+    pub deleted_image_assets: Vec<ImageAssetCleanupPaths>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct OrphanedImageFiles {
     pub original_files: Vec<PathBuf>,
     pub thumbnail_files: Vec<PathBuf>,
@@ -320,6 +326,74 @@ impl SqliteConnectionManager {
                             })
                     })
                     .collect(),
+            })
+        })
+    }
+
+    pub fn clear_history(&self) -> Result<ClearHistoryDbResult, AppError> {
+        self.with_connection(|connection| {
+            let transaction = connection.unchecked_transaction().map_err(|error| {
+                AppError::Db(format!(
+                    "start sqlite clear_history transaction failed: {error}"
+                ))
+            })?;
+
+            let deleted_records = transaction
+                .query_row("SELECT COUNT(*) FROM clipboard_items", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .map_err(|error| {
+                    AppError::Db(format!("count sqlite clipboard_items failed: {error}"))
+                })? as usize;
+
+            let mut statement = transaction
+                .prepare("SELECT original_path, thumbnail_path FROM image_assets")
+                .map_err(|error| {
+                    AppError::Db(format!(
+                        "prepare sqlite clear_history asset query failed: {error}"
+                    ))
+                })?;
+            let mut rows = statement.query([]).map_err(|error| {
+                AppError::Db(format!(
+                    "execute sqlite clear_history asset query failed: {error}"
+                ))
+            })?;
+            let mut deleted_image_assets = Vec::new();
+            while let Some(row) = rows.next().map_err(|error| {
+                AppError::Db(format!(
+                    "iterate sqlite clear_history asset rows failed: {error}"
+                ))
+            })? {
+                deleted_image_assets.push(ImageAssetCleanupPaths {
+                    original_path: row.get(0).map_err(|error| {
+                        AppError::Db(format!(
+                            "read sqlite clear_history original_path failed: {error}"
+                        ))
+                    })?,
+                    thumbnail_path: row.get(1).map_err(|error| {
+                        AppError::Db(format!(
+                            "read sqlite clear_history thumbnail_path failed: {error}"
+                        ))
+                    })?,
+                });
+            }
+            drop(rows);
+            drop(statement);
+
+            transaction
+                .execute("DELETE FROM clipboard_items", [])
+                .map_err(|error| {
+                    AppError::Db(format!("delete sqlite clipboard_items failed: {error}"))
+                })?;
+            transaction.commit().map_err(|error| {
+                AppError::Db(format!(
+                    "commit sqlite clear_history transaction failed: {error}"
+                ))
+            })?;
+
+            Ok(ClearHistoryDbResult {
+                deleted_records,
+                deleted_image_assets,
             })
         })
     }
@@ -830,6 +904,47 @@ mod tests {
         assert!(ids.contains(&13));
         assert!(ids.contains(&22));
         assert!(ids.contains(&31));
+
+        cleanup_test_dir(&database_path);
+    }
+
+    #[test]
+    fn clear_history_removes_all_records_and_returns_image_assets() {
+        let database_path = unique_test_dir().join("clipboard.db");
+        let manager = SqliteConnectionManager::initialize_at(&database_path)
+            .expect("sqlite database should initialize");
+        seed_mixed_records(&manager);
+
+        let result = manager
+            .clear_history()
+            .expect("clear history should succeed");
+
+        assert_eq!(result.deleted_records, 3);
+        assert_eq!(result.deleted_image_assets.len(), 1);
+        assert_eq!(
+            result.deleted_image_assets[0].original_path,
+            "/tmp/original/shot.png"
+        );
+        assert_eq!(
+            result.deleted_image_assets[0].thumbnail_path.as_deref(),
+            Some("/tmp/thumbs/shot.png")
+        );
+        assert!(manager
+            .list_record_summaries(10)
+            .expect("summaries should load after clear")
+            .is_empty());
+        assert!(manager
+            .find_record_detail(RecordId::new(1))
+            .expect("text detail query should succeed")
+            .is_none());
+        assert!(manager
+            .find_record_detail(RecordId::new(2))
+            .expect("image detail query should succeed")
+            .is_none());
+        assert!(manager
+            .find_record_detail(RecordId::new(3))
+            .expect("files detail query should succeed")
+            .is_none());
 
         cleanup_test_dir(&database_path);
     }

@@ -4,10 +4,10 @@ use tauri::{
     image::Image,
     menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem},
     tray::{TrayIcon, TrayIconBuilder},
-    AppHandle, Manager, Wry,
+    AppHandle, Emitter, Manager, Wry,
 };
 
-use crate::{error::AppError, state::AppState};
+use crate::{error::AppError, ipc::commands::CLEAR_HISTORY_CONFIRM_TOKEN, state::AppState};
 
 pub const TRAY_ID: &str = "main-tray";
 pub const MENU_TOGGLE_PANEL: &str = "tray.toggle_panel";
@@ -16,6 +16,12 @@ pub const MENU_TOGGLE_LAUNCH_AT_LOGIN: &str = "tray.toggle_launch_at_login";
 pub const MENU_CLEAR_HISTORY: &str = "tray.clear_history";
 pub const MENU_OPEN_LOG_DIRECTORY: &str = "tray.open_log_directory";
 pub const MENU_QUIT: &str = "tray.quit";
+pub const EVENT_CLEAR_HISTORY_REQUESTED: &str = "system:clear-history-requested";
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ClearHistoryRequestPayload {
+    pub confirm_token: String,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrayStatus {
@@ -68,16 +74,22 @@ impl TrayIconAssets {
 
     pub fn icon(status: TrayStatus) -> Result<Image<'static>, AppError> {
         Image::from_bytes(Self::icon_bytes(status)).map_err(|error| {
-            AppError::Tray(format!("load tray icon image for `{status:?}` failed: {error}"))
+            AppError::Tray(format!(
+                "load tray icon image for `{status:?}` failed: {error}"
+            ))
         })
     }
 
     pub fn validate() -> Result<(), AppError> {
         if Self::icon_bytes(TrayStatus::Active).is_empty() {
-            return Err(AppError::Tray("active tray icon bytes are empty".to_string()));
+            return Err(AppError::Tray(
+                "active tray icon bytes are empty".to_string(),
+            ));
         }
         if Self::icon_bytes(TrayStatus::Paused).is_empty() {
-            return Err(AppError::Tray("paused tray icon bytes are empty".to_string()));
+            return Err(AppError::Tray(
+                "paused tray icon bytes are empty".to_string(),
+            ));
         }
 
         Ok(())
@@ -105,7 +117,9 @@ impl TrayController {
             true,
             None::<&str>,
         )
-        .map_err(|error| AppError::Tray(format!("create tray toggle_panel item failed: {error}")))?;
+        .map_err(|error| {
+            AppError::Tray(format!("create tray toggle_panel item failed: {error}"))
+        })?;
         let toggle_monitoring = MenuItem::with_id(
             app_handle,
             MENU_TOGGLE_MONITORING,
@@ -114,7 +128,9 @@ impl TrayController {
             None::<&str>,
         )
         .map_err(|error| {
-            AppError::Tray(format!("create tray toggle_monitoring item failed: {error}"))
+            AppError::Tray(format!(
+                "create tray toggle_monitoring item failed: {error}"
+            ))
         })?;
         let toggle_launch_at_login = CheckMenuItem::with_id(
             app_handle,
@@ -125,7 +141,9 @@ impl TrayController {
             None::<&str>,
         )
         .map_err(|error| {
-            AppError::Tray(format!("create tray toggle_launch_at_login item failed: {error}"))
+            AppError::Tray(format!(
+                "create tray toggle_launch_at_login item failed: {error}"
+            ))
         })?;
         let clear_history = MenuItem::with_id(
             app_handle,
@@ -134,7 +152,9 @@ impl TrayController {
             true,
             None::<&str>,
         )
-        .map_err(|error| AppError::Tray(format!("create tray clear_history item failed: {error}")))?;
+        .map_err(|error| {
+            AppError::Tray(format!("create tray clear_history item failed: {error}"))
+        })?;
         let open_log_directory = MenuItem::with_id(
             app_handle,
             MENU_OPEN_LOG_DIRECTORY,
@@ -143,7 +163,9 @@ impl TrayController {
             None::<&str>,
         )
         .map_err(|error| {
-            AppError::Tray(format!("create tray open_log_directory item failed: {error}"))
+            AppError::Tray(format!(
+                "create tray open_log_directory item failed: {error}"
+            ))
         })?;
         let quit = MenuItem::with_id(app_handle, MENU_QUIT, "退出应用", true, None::<&str>)
             .map_err(|error| AppError::Tray(format!("create tray quit item failed: {error}")))?;
@@ -243,7 +265,23 @@ fn handle_menu_event(app_handle: &AppHandle, event: &MenuEvent) -> Result<(), Ap
             app_handle.exit(0);
             Ok(())
         }
-        MENU_TOGGLE_MONITORING | MENU_TOGGLE_LAUNCH_AT_LOGIN | MENU_CLEAR_HISTORY => {
+        MENU_CLEAR_HISTORY => {
+            let state = app_handle.state::<AppState>();
+            state.window_manager.show()?;
+            app_handle
+                .emit(
+                    EVENT_CLEAR_HISTORY_REQUESTED,
+                    ClearHistoryRequestPayload {
+                        confirm_token: CLEAR_HISTORY_CONFIRM_TOKEN.to_string(),
+                    },
+                )
+                .map_err(|error| {
+                    AppError::Tray(format!("emit clear history request failed: {error}"))
+                })?;
+            refresh(app_handle)?;
+            Ok(())
+        }
+        MENU_TOGGLE_MONITORING | MENU_TOGGLE_LAUNCH_AT_LOGIN => {
             tracing::debug!(event_id = %event.id().as_ref(), "tray menu action reserved for later task");
             Ok(())
         }

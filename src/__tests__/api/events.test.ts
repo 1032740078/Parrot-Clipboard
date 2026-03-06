@@ -11,6 +11,8 @@ import {
   invokeCalls,
 } from "../../__mocks__/@tauri-apps/api/core";
 import {
+  onClearHistoryRequested,
+  onHistoryCleared,
   onMonitoringChanged,
   onNewRecord,
   onNewRecordSummary,
@@ -49,7 +51,7 @@ describe("api/events", () => {
     delete (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
   });
 
-  it("new-record 兼容事件和新摘要事件都可回调 payload", async () => {
+  it("new-record 兼容事件和运行态系统事件都可回调 payload", async () => {
     const legacyHandler = vi.fn();
     const summaryHandler = vi.fn();
     const updatedHandler = vi.fn();
@@ -93,6 +95,31 @@ describe("api/events", () => {
     unlistenSummary();
   });
 
+  it("清空历史相关事件可以回调确认请求和清理结果", async () => {
+    const historyClearedHandler = vi.fn();
+    const clearHistoryRequestedHandler = vi.fn();
+    const unlistenHistoryCleared = await onHistoryCleared(historyClearedHandler);
+    const unlistenClearHistoryRequested = await onClearHistoryRequested(
+      clearHistoryRequestedHandler
+    );
+    const historyClearedPayload = {
+      deleted_records: 3,
+      deleted_image_assets: 1,
+      executed_at: 1700000000000,
+    };
+    const clearHistoryRequestedPayload = {
+      confirm_token: "confirm-clear-history-v0.3",
+    };
+
+    __emitMockEvent("clipboard:history-cleared", historyClearedPayload);
+    __emitMockEvent("system:clear-history-requested", clearHistoryRequestedPayload);
+
+    expect(historyClearedHandler).toHaveBeenCalledWith(historyClearedPayload);
+    expect(clearHistoryRequestedHandler).toHaveBeenCalledWith(clearHistoryRequestedPayload);
+    unlistenHistoryCleared();
+    unlistenClearHistoryRequested();
+  });
+
   it("事件处理器抛错时会记录错误日志", async () => {
     __setInvokeHandler(async () => undefined);
     (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
@@ -120,5 +147,7 @@ describe("api/events", () => {
     await expect(onNewRecord(() => undefined)).rejects.toThrow("subscribe failed");
     await expect(onRecordUpdated(() => undefined)).rejects.toThrow("subscribe failed");
     await expect(onMonitoringChanged(() => undefined)).rejects.toThrow("subscribe failed");
+    await expect(onHistoryCleared(() => undefined)).rejects.toThrow("subscribe failed");
+    await expect(onClearHistoryRequested(() => undefined)).rejects.toThrow("subscribe failed");
   });
 });

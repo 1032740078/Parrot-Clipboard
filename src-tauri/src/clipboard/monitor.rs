@@ -35,8 +35,14 @@ pub trait DomainEventEmitter: Send + Sync {
     fn emit_record_deleted(&self, id: RecordId, reason: RecordDeleteReason)
         -> Result<(), AppError>;
 
-    fn emit_monitoring_changed(&self, monitoring: bool, changed_at: i64)
-        -> Result<(), AppError>;
+    fn emit_monitoring_changed(&self, monitoring: bool, changed_at: i64) -> Result<(), AppError>;
+
+    fn emit_history_cleared(
+        &self,
+        deleted_records: usize,
+        deleted_image_assets: usize,
+        executed_at: i64,
+    ) -> Result<(), AppError>;
 }
 
 pub trait ClipboardMonitorControl: Send + Sync {
@@ -645,6 +651,12 @@ mod tests {
             unreachable!()
         }
 
+        fn clear_history(
+            &self,
+        ) -> Result<crate::clipboard::runtime_repository::ClearHistoryStats, AppError> {
+            unreachable!()
+        }
+
         fn finalize_pending_image(
             &self,
             id: RecordId,
@@ -767,6 +779,15 @@ mod tests {
             &self,
             _monitoring: bool,
             _changed_at: i64,
+        ) -> Result<(), AppError> {
+            Ok(())
+        }
+
+        fn emit_history_cleared(
+            &self,
+            _deleted_records: usize,
+            _deleted_image_assets: usize,
+            _executed_at: i64,
         ) -> Result<(), AppError> {
             Ok(())
         }

@@ -17,6 +17,15 @@ pub struct MonitoringStatus {
     pub monitoring: bool,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ClearHistoryResult {
+    pub deleted_records: usize,
+    pub deleted_image_assets: usize,
+    pub executed_at: i64,
+}
+
+pub const CLEAR_HISTORY_CONFIRM_TOKEN: &str = "confirm-clear-history-v0.3";
+
 #[tauri::command]
 pub fn get_records(
     limit: usize,
@@ -138,6 +147,44 @@ pub fn set_monitoring(
 
     tracing::info!(monitoring, changed_at, "ipc set_monitoring completed");
     Ok(MonitoringStatus { monitoring })
+}
+
+#[tauri::command]
+pub fn clear_history(
+    confirm_token: String,
+    app_handle: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<ClearHistoryResult, AppError> {
+    tracing::info!("ipc clear_history requested");
+
+    if confirm_token != CLEAR_HISTORY_CONFIRM_TOKEN {
+        tracing::warn!("ipc clear_history rejected due to invalid confirm_token");
+        return Err(AppError::InvalidParam(
+            "confirm_token is invalid".to_string(),
+        ));
+    }
+
+    let stats = state.repository.clear_history()?;
+    let executed_at = now_ms();
+    state.event_emitter.emit_history_cleared(
+        stats.deleted_records,
+        stats.deleted_image_assets,
+        executed_at,
+    )?;
+    tray::refresh(&app_handle)?;
+
+    tracing::info!(
+        deleted_records = stats.deleted_records,
+        deleted_image_assets = stats.deleted_image_assets,
+        executed_at,
+        "ipc clear_history completed"
+    );
+
+    Ok(ClearHistoryResult {
+        deleted_records: stats.deleted_records,
+        deleted_image_assets: stats.deleted_image_assets,
+        executed_at,
+    })
 }
 
 #[tauri::command]

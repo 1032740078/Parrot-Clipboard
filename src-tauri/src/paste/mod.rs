@@ -241,6 +241,11 @@ mod tests {
         fn delete(&self, _id: RecordId) -> Result<RecordId, AppError> {
             Err(AppError::RecordNotFound(1))
         }
+        fn clear_history(
+            &self,
+        ) -> Result<crate::clipboard::runtime_repository::ClearHistoryStats, AppError> {
+            Ok(crate::clipboard::runtime_repository::ClearHistoryStats::default())
+        }
         fn finalize_pending_image(
             &self,
             _id: RecordId,

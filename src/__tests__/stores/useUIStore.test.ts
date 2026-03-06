@@ -34,4 +34,12 @@ describe("useUIStore", () => {
     store.hideToast();
     expect(useUIStore.getState().toast).toBeUndefined();
   });
+
+  it("openClearHistoryDialog / closeClearHistoryDialog 可维护确认弹窗状态", () => {
+    const store = useUIStore.getState();
+    store.openClearHistoryDialog("token-1");
+    expect(useUIStore.getState().clearHistoryDialog).toEqual({ confirmToken: "token-1" });
+    store.closeClearHistoryDialog();
+    expect(useUIStore.getState().clearHistoryDialog).toBeUndefined();
+  });
 });

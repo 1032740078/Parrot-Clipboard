@@ -13,6 +13,7 @@ use crate::{
 pub const EVENT_NEW_RECORD: &str = "clipboard:new-record";
 pub const EVENT_RECORD_UPDATED: &str = "clipboard:record-updated";
 pub const EVENT_RECORD_DELETED: &str = "clipboard:record-deleted";
+pub const EVENT_HISTORY_CLEARED: &str = "clipboard:history-cleared";
 pub const EVENT_MONITORING_CHANGED: &str = "system:monitoring-changed";
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -46,6 +47,13 @@ pub struct MonitoringChangedPayload {
     pub monitoring: bool,
     pub state: MonitoringStatePayload,
     pub changed_at: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct HistoryClearedPayload {
+    pub deleted_records: usize,
+    pub deleted_image_assets: usize,
+    pub executed_at: i64,
 }
 
 pub struct TauriEventEmitter {
@@ -128,7 +136,35 @@ impl DomainEventEmitter for TauriEventEmitter {
             .map_err(|error| {
                 AppError::Window(format!("emit monitoring changed failed: {error}"))
             })?;
-        tracing::debug!(monitoring, changed_at, "ipc monitoring changed event emitted");
+        tracing::debug!(
+            monitoring,
+            changed_at,
+            "ipc monitoring changed event emitted"
+        );
+        Ok(())
+    }
+
+    fn emit_history_cleared(
+        &self,
+        deleted_records: usize,
+        deleted_image_assets: usize,
+        executed_at: i64,
+    ) -> Result<(), AppError> {
+        let payload = HistoryClearedPayload {
+            deleted_records,
+            deleted_image_assets,
+            executed_at,
+        };
+
+        self.app_handle
+            .emit(EVENT_HISTORY_CLEARED, payload)
+            .map_err(|error| AppError::Window(format!("emit history cleared failed: {error}")))?;
+        tracing::debug!(
+            deleted_records,
+            deleted_image_assets,
+            executed_at,
+            "ipc history cleared event emitted"
+        );
         Ok(())
     }
 }

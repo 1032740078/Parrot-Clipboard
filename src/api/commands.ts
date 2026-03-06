@@ -8,6 +8,7 @@ import {
   toLegacyClipboardRecordFromPasteResponse,
 } from "./recordAdapters";
 import type {
+  ClearHistoryResult,
   ClipboardRecordDetail,
   ClipboardRecordSummary,
   LegacyClipboardRecord,
@@ -116,6 +117,15 @@ export const setMonitoring = async (enabled: boolean): Promise<MonitoringStatus>
     return await invoke<MonitoringStatus>("set_monitoring", { enabled });
   } catch (error) {
     logger.error("切换监听状态失败", { enabled, error: normalizeError(error) });
+    throw error;
+  }
+};
+
+export const clearHistory = async (confirmToken: string): Promise<ClearHistoryResult> => {
+  try {
+    return await invoke<ClearHistoryResult>("clear_history", { confirm_token: confirmToken });
+  } catch (error) {
+    logger.error("清空历史失败", { error: normalizeError(error) });
     throw error;
   }
 };

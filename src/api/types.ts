@@ -88,6 +88,18 @@ export interface MonitoringChangedPayload {
   changed_at: number;
 }
 
+export interface ClearHistoryResult {
+  deleted_records: number;
+  deleted_image_assets: number;
+  executed_at: number;
+}
+
+export type HistoryClearedPayload = ClearHistoryResult;
+
+export interface ClearHistoryRequestPayload {
+  confirm_token: string;
+}
+
 export interface NewRecordPayload {
   record: LegacyClipboardRecord;
   evicted_id?: number;

@@ -299,7 +299,13 @@ interface ClearHistoryResult {
 { monitoring: boolean; state: MonitoringState; changed_at: number }
 ```
 
-### EVT-006：`system:launch-at-login-changed`
+### EVT-006：`system:clear-history-requested`
+
+```typescript
+{ confirm_token: string }
+```
+
+### EVT-007：`system:launch-at-login-changed`
 
 ```typescript
 { enabled: boolean; changed_at: number }
@@ -329,6 +335,7 @@ export const setLaunchAtLogin = (enabled: boolean) =>
 建议新增监听器：
 - `listenMonitoringChanged`
 - `listenHistoryCleared`
+- `listenClearHistoryRequested`
 - `listenLaunchAtLoginChanged`
 
 ---

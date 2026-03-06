@@ -1,12 +1,10 @@
 import { listen } from "@tauri-apps/api/event";
 
 import { logger, normalizeError } from "./logger";
-import {
-  toNewRecordPayload,
-  toNewRecordPayloadV2,
-  toRecordUpdatedPayload,
-} from "./recordAdapters";
+import { toNewRecordPayload, toNewRecordPayloadV2, toRecordUpdatedPayload } from "./recordAdapters";
 import type {
+  ClearHistoryRequestPayload,
+  HistoryClearedPayload,
   NewRecordPayload,
   NewRecordPayloadV2,
   MonitoringChangedPayload,
@@ -95,6 +93,40 @@ export const onMonitoringChanged = async (
     });
   } catch (error) {
     logger.error("订阅监听状态变更事件失败", { error: normalizeError(error) });
+    throw error;
+  }
+};
+
+export const onHistoryCleared = async (
+  handler: (payload: HistoryClearedPayload) => void
+): Promise<() => void> => {
+  try {
+    return await listen<HistoryClearedPayload>("clipboard:history-cleared", (event) => {
+      try {
+        handler(event.payload);
+      } catch (error) {
+        logger.error("处理历史清空事件失败", { error: normalizeError(error) });
+      }
+    });
+  } catch (error) {
+    logger.error("订阅历史清空事件失败", { error: normalizeError(error) });
+    throw error;
+  }
+};
+
+export const onClearHistoryRequested = async (
+  handler: (payload: ClearHistoryRequestPayload) => void
+): Promise<() => void> => {
+  try {
+    return await listen<ClearHistoryRequestPayload>("system:clear-history-requested", (event) => {
+      try {
+        handler(event.payload);
+      } catch (error) {
+        logger.error("处理清空历史确认请求事件失败", { error: normalizeError(error) });
+      }
+    });
+  } catch (error) {
+    logger.error("订阅清空历史确认请求事件失败", { error: normalizeError(error) });
     throw error;
   }
 };

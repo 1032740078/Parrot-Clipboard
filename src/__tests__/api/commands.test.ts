@@ -6,6 +6,7 @@ import {
   invokeCalls,
 } from "../../__mocks__/@tauri-apps/api/core";
 import {
+  clearHistory,
   deleteRecord,
   getLogDirectory,
   getMonitoringStatus,
@@ -147,7 +148,7 @@ describe("api/commands", () => {
     });
   });
 
-  it("deleteRecord / hidePanel / getMonitoringStatus / setMonitoring / getLogDirectory 调用对应命令", async () => {
+  it("deleteRecord / hidePanel / getMonitoringStatus / setMonitoring / clearHistory / getLogDirectory 调用对应命令", async () => {
     __setInvokeHandler(async (command) => {
       if (command === "get_monitoring_status") {
         return { monitoring: true };
@@ -155,6 +156,10 @@ describe("api/commands", () => {
 
       if (command === "set_monitoring") {
         return { monitoring: false };
+      }
+
+      if (command === "clear_history") {
+        return { deleted_records: 3, deleted_image_assets: 1, executed_at: 1234 };
       }
 
       if (command === "get_log_directory") {
@@ -168,6 +173,11 @@ describe("api/commands", () => {
     await hidePanel();
     await expect(getMonitoringStatus()).resolves.toEqual({ monitoring: true });
     await expect(setMonitoring(false)).resolves.toEqual({ monitoring: false });
+    await expect(clearHistory("token-1")).resolves.toEqual({
+      deleted_records: 3,
+      deleted_image_assets: 1,
+      executed_at: 1234,
+    });
     await expect(getLogDirectory()).resolves.toBe("/tmp/logs");
 
     expect(invokeCalls).toEqual([
@@ -175,6 +185,7 @@ describe("api/commands", () => {
       { command: "hide_panel", args: undefined },
       { command: "get_monitoring_status", args: undefined },
       { command: "set_monitoring", args: { enabled: false } },
+      { command: "clear_history", args: { confirm_token: "token-1" } },
       { command: "get_log_directory", args: undefined },
     ]);
   });
@@ -188,6 +199,7 @@ describe("api/commands", () => {
     await expect(hidePanel()).rejects.toThrow("boom");
     await expect(getMonitoringStatus()).rejects.toThrow("boom");
     await expect(setMonitoring(true)).rejects.toThrow("boom");
+    await expect(clearHistory("token-2")).rejects.toThrow("boom");
     await expect(getLogDirectory()).rejects.toThrow("boom");
     await expect(getRecords(1)).rejects.toThrow("boom");
     await expect(getRecordSummaries(1)).rejects.toThrow("boom");

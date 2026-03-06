@@ -48,6 +48,12 @@ pub struct CaptureResult {
     pub evicted_ids: Vec<u64>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ClearHistoryStats {
+    pub deleted_records: usize,
+    pub deleted_image_assets: usize,
+}
+
 pub trait ClipboardRuntimeRepository: Send + Sync {
     fn capture_text(
         &self,
@@ -72,6 +78,7 @@ pub trait ClipboardRuntimeRepository: Send + Sync {
     fn get_detail(&self, id: RecordId) -> Result<Option<ClipboardRecordDetail>, AppError>;
     fn promote(&self, id: RecordId, promoted_at: i64) -> Result<ClipboardRecordSummary, AppError>;
     fn delete(&self, id: RecordId) -> Result<RecordId, AppError>;
+    fn clear_history(&self) -> Result<ClearHistoryStats, AppError>;
     fn finalize_pending_image(
         &self,
         id: RecordId,
@@ -214,6 +221,18 @@ impl ClipboardRuntimeRepository for SqliteClipboardRuntimeRepository {
         let deleted_assets = delete_record_with_assets(&self.database, id)?;
         self.image_storage.remove_assets(&deleted_assets);
         Ok(id)
+    }
+
+    fn clear_history(&self) -> Result<ClearHistoryStats, AppError> {
+        let result = self.database.clear_history()?;
+        let deleted_image_assets = result.deleted_image_assets.len();
+        self.image_storage
+            .remove_assets(&result.deleted_image_assets);
+
+        Ok(ClearHistoryStats {
+            deleted_records: result.deleted_records,
+            deleted_image_assets,
+        })
     }
 
     fn finalize_pending_image(
@@ -745,6 +764,52 @@ mod tests {
                 text_first.record.id
             ]
         );
+    }
+
+    #[test]
+    fn clear_history_removes_records_and_image_assets() {
+        let context = TestContext::new("clear-history");
+        let repository = context.repository();
+
+        repository
+            .capture_text("第一条文本".to_string(), None, 1_000)
+            .expect("text capture should succeed");
+        let image = repository
+            .capture_image(sample_image(48), 2_000)
+            .expect("image capture should succeed");
+        let (_, finalized_record) = repository
+            .finalize_pending_image(RecordId::new(image.record.id))
+            .expect("thumbnail finalize should succeed");
+        repository
+            .capture_files(sample_file_items(&context.root_dir, "clear-history"), 3_000)
+            .expect("files capture should succeed");
+
+        let detail = repository
+            .get_detail(RecordId::new(image.record.id))
+            .expect("detail query should succeed")
+            .expect("image detail should exist");
+        let image_detail = detail.image_detail.expect("image detail should exist");
+        let thumbnail_path = finalized_record
+            .image_meta
+            .as_ref()
+            .and_then(|image_meta| image_meta.thumbnail_path.clone())
+            .expect("thumbnail path should exist after finalize");
+
+        assert!(Path::new(&image_detail.original_path).exists());
+        assert!(Path::new(&thumbnail_path).exists());
+
+        let stats = repository
+            .clear_history()
+            .expect("clear history should succeed");
+
+        assert_eq!(stats.deleted_records, 3);
+        assert_eq!(stats.deleted_image_assets, 1);
+        assert!(repository
+            .list_summaries(10)
+            .expect("summary query should succeed")
+            .is_empty());
+        assert!(!Path::new(&image_detail.original_path).exists());
+        assert!(!Path::new(&thumbnail_path).exists());
     }
 
     #[test]

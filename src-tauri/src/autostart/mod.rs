@@ -1,8 +1,4 @@
-use std::{
-    fs,
-    path::PathBuf,
-    sync::Arc,
-};
+use std::{fs, path::PathBuf, sync::Arc};
 
 use tauri::{process::current_binary, AppHandle, Manager};
 
@@ -151,9 +147,10 @@ impl AutostartControl for LaunchAgentService {
 }
 
 fn resolve_launch_agent_dir(app_handle: &AppHandle) -> Result<PathBuf, AppError> {
-    let home_dir = app_handle.path().home_dir().map_err(|error| {
-        AppError::Autostart(format!("resolve home directory failed: {error}"))
-    })?;
+    let home_dir = app_handle
+        .path()
+        .home_dir()
+        .map_err(|error| AppError::Autostart(format!("resolve home directory failed: {error}")))?;
 
     Ok(home_dir.join("Library/LaunchAgents"))
 }
@@ -211,9 +208,15 @@ mod tests {
         let context = TestContext::new("idempotent");
         let service = context.service();
 
-        service.set_enabled(true).expect("first enable should succeed");
-        service.set_enabled(true).expect("second enable should succeed");
-        service.set_enabled(false).expect("first disable should succeed");
+        service
+            .set_enabled(true)
+            .expect("first enable should succeed");
+        service
+            .set_enabled(true)
+            .expect("second enable should succeed");
+        service
+            .set_enabled(false)
+            .expect("first disable should succeed");
         service
             .set_enabled(false)
             .expect("second disable should succeed");
@@ -226,10 +229,14 @@ mod tests {
         let context = TestContext::new("reconcile");
         let service = context.service();
 
-        assert!(service.reconcile(true).expect("reconcile enable should succeed"));
+        assert!(service
+            .reconcile(true)
+            .expect("reconcile enable should succeed"));
         assert!(service.plist_path().exists());
 
-        assert!(!service.reconcile(false).expect("reconcile disable should succeed"));
+        assert!(!service
+            .reconcile(false)
+            .expect("reconcile disable should succeed"));
         assert!(!service.plist_path().exists());
     }
 
