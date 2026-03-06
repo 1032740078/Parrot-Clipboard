@@ -10,11 +10,13 @@ use crate::{
     config::AppConfig,
     logging::LoggingState,
     paste::PasteService,
+    persistence::SqliteConnectionManager,
     window::WindowManager,
 };
 
 pub struct AppState {
     pub config: AppConfig,
+    pub database: Arc<SqliteConnectionManager>,
     pub repository: Arc<dyn ClipboardRecordRepository>,
     pub monitor: Arc<dyn ClipboardMonitorControl>,
     pub paste_service: Arc<PasteService>,

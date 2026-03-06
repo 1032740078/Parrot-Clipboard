@@ -14,6 +14,7 @@ pub enum AppError {
     ClipboardRead(String),
     ClipboardWrite(String),
     KeySimulation(String),
+    Db(String),
     Window(String),
 }
 
@@ -46,6 +47,10 @@ impl AppError {
             },
             Self::KeySimulation(message) => ErrorPayload {
                 code: "KEY_SIM_ERROR",
+                message: message.clone(),
+            },
+            Self::Db(message) => ErrorPayload {
+                code: "DB_ERROR",
                 message: message.clone(),
             },
             Self::Window(message) => ErrorPayload {

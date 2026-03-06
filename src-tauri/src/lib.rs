@@ -6,6 +6,7 @@ mod error;
 mod ipc;
 mod logging;
 mod paste;
+mod persistence;
 mod platform;
 mod shortcut;
 mod state;
@@ -39,6 +40,8 @@ pub fn run() {
                 logging::init_logging(&app_handle).map_err(std::io::Error::other)?;
             tracing::info!("application setup started");
             let config = config::load_or_create(&app_handle).map_err(std::io::Error::other)?;
+            let database =
+                Arc::new(persistence::initialize(&app_handle).map_err(std::io::Error::other)?);
 
             let repository: Arc<dyn ClipboardRecordRepository> =
                 Arc::new(InMemoryClipboardRepository::new(config.max_text_records));
@@ -72,6 +75,7 @@ pub fn run() {
 
             app.manage(AppState {
                 config,
+                database,
                 repository,
                 monitor,
                 paste_service,
