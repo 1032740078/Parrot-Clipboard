@@ -533,7 +533,7 @@ mod tests {
     use std::{
         env, fs,
         path::{Path, PathBuf},
-        time::{SystemTime, UNIX_EPOCH},
+        time::{Duration, Instant, SystemTime, UNIX_EPOCH},
     };
 
     use rusqlite::Connection;
@@ -674,6 +674,30 @@ mod tests {
                 .expect("text meta")
                 .line_count,
             2
+        );
+
+        cleanup_test_dir(&database_path);
+    }
+
+    #[test]
+    fn list_recent_100_summaries_stays_under_80ms() {
+        let database_path = unique_test_dir().join("clipboard.db");
+        let manager = SqliteConnectionManager::initialize_at(&database_path)
+            .expect("sqlite database should initialize");
+        seed_bulk_mixed_records(&manager, 100);
+
+        let started_at = Instant::now();
+        let summaries = manager
+            .list_record_summaries(100)
+            .expect("summaries should load");
+        let elapsed = started_at.elapsed();
+
+        assert_eq!(summaries.len(), 100);
+        assert_eq!(summaries.first().map(|record| record.id), Some(100));
+        assert!(
+            elapsed < Duration::from_millis(80),
+            "loading 100 summaries took {:?}, expected < 80ms",
+            elapsed
         );
 
         cleanup_test_dir(&database_path);
@@ -907,6 +931,164 @@ mod tests {
                 Ok(())
             })
             .expect("seed data should be inserted");
+    }
+
+    fn seed_bulk_mixed_records(manager: &SqliteConnectionManager, total: usize) {
+        manager
+            .with_connection(|connection| {
+                let transaction = connection.unchecked_transaction().map_err(|error| {
+                    AppError::Db(format!(
+                        "start sqlite bulk performance seed transaction failed: {error}"
+                    ))
+                })?;
+
+                {
+                    let mut insert_item = transaction
+                        .prepare(
+                            "INSERT INTO clipboard_items (id, content_type, content_hash, text_content, rich_content, preview_text, search_text, source_app, file_count, payload_bytes, created_at, last_used_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                        )
+                        .map_err(|error| {
+                            AppError::Db(format!(
+                                "prepare sqlite bulk performance item seed failed: {error}"
+                            ))
+                        })?;
+                    let mut insert_image = transaction
+                        .prepare(
+                            "INSERT INTO image_assets (item_id, original_path, thumbnail_path, mime_type, pixel_width, pixel_height, byte_size, thumbnail_state, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                        )
+                        .map_err(|error| {
+                            AppError::Db(format!(
+                                "prepare sqlite bulk performance image seed failed: {error}"
+                            ))
+                        })?;
+                    let mut insert_file = transaction
+                        .prepare(
+                            "INSERT INTO file_items (item_id, sort_order, path, display_name, entry_type, extension, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                        )
+                        .map_err(|error| {
+                            AppError::Db(format!(
+                                "prepare sqlite bulk performance file seed failed: {error}"
+                            ))
+                        })?;
+
+                    for index in 0..total {
+                        let record_id = (index + 1) as i64;
+                        let created_at = 10_000_i64 + record_id;
+                        let content_hash = format!("perf-hash-{record_id}");
+
+                        match index % 3 {
+                            0 => {
+                                let text_content = format!("性能回归文本记录 {record_id}");
+                                insert_item
+                                    .execute(rusqlite::params![
+                                        record_id,
+                                        "text",
+                                        content_hash,
+                                        text_content,
+                                        Option::<String>::None,
+                                        format!("文本摘要 {record_id}"),
+                                        format!("文本摘要 {record_id}"),
+                                        "PerfTest",
+                                        0_i64,
+                                        128_i64,
+                                        created_at,
+                                        created_at,
+                                    ])
+                                    .map_err(|error| {
+                                        AppError::Db(format!(
+                                            "seed sqlite bulk performance text record failed: {error}"
+                                        ))
+                                    })?;
+                            }
+                            1 => {
+                                insert_item
+                                    .execute(rusqlite::params![
+                                        record_id,
+                                        "image",
+                                        content_hash,
+                                        Option::<String>::None,
+                                        Option::<String>::None,
+                                        format!("截图 {record_id}"),
+                                        format!("截图 {record_id}"),
+                                        "Preview",
+                                        0_i64,
+                                        4096_i64,
+                                        created_at,
+                                        created_at,
+                                    ])
+                                    .map_err(|error| {
+                                        AppError::Db(format!(
+                                            "seed sqlite bulk performance image record failed: {error}"
+                                        ))
+                                    })?;
+                                insert_image
+                                    .execute(rusqlite::params![
+                                        record_id,
+                                        format!("/tmp/perf-original-{record_id}.png"),
+                                        format!("/tmp/perf-thumb-{record_id}.png"),
+                                        "image/png",
+                                        1440_i64,
+                                        900_i64,
+                                        4096_i64,
+                                        "ready",
+                                        created_at,
+                                    ])
+                                    .map_err(|error| {
+                                        AppError::Db(format!(
+                                            "seed sqlite bulk performance image asset failed: {error}"
+                                        ))
+                                    })?;
+                            }
+                            _ => {
+                                insert_item
+                                    .execute(rusqlite::params![
+                                        record_id,
+                                        "files",
+                                        content_hash,
+                                        Option::<String>::None,
+                                        Option::<String>::None,
+                                        format!("文件 {record_id}"),
+                                        format!("文件 {record_id}"),
+                                        "Finder",
+                                        1_i64,
+                                        0_i64,
+                                        created_at,
+                                        created_at,
+                                    ])
+                                    .map_err(|error| {
+                                        AppError::Db(format!(
+                                            "seed sqlite bulk performance file record failed: {error}"
+                                        ))
+                                    })?;
+                                insert_file
+                                    .execute(rusqlite::params![
+                                        record_id,
+                                        0_i64,
+                                        format!("/tmp/perf-file-{record_id}.txt"),
+                                        format!("perf-file-{record_id}.txt"),
+                                        "file",
+                                        "txt",
+                                        created_at,
+                                    ])
+                                    .map_err(|error| {
+                                        AppError::Db(format!(
+                                            "seed sqlite bulk performance file item failed: {error}"
+                                        ))
+                                    })?;
+                            }
+                        }
+                    }
+                }
+
+                transaction.commit().map_err(|error| {
+                    AppError::Db(format!(
+                        "commit sqlite bulk performance seed transaction failed: {error}"
+                    ))
+                })?;
+
+                Ok(())
+            })
+            .expect("bulk performance seed data should be inserted");
     }
 
     fn seed_retention_records(manager: &SqliteConnectionManager) {

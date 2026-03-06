@@ -5,7 +5,8 @@ use std::{
 };
 
 use image::{
-    codecs::png::PngEncoder, imageops::FilterType, ColorType, ImageEncoder, ImageReader, RgbaImage,
+    codecs::png::{CompressionType, FilterType as PngFilterType, PngEncoder},
+    ColorType, ImageEncoder, ImageReader, RgbaImage,
 };
 use tauri::{AppHandle, Manager};
 
@@ -100,7 +101,7 @@ impl ImageStorageService {
                     "decode original image `{original_path}` failed: {error}"
                 ))
             })?;
-        let thumbnail = image.resize(200, 200, FilterType::Triangle).into_rgba8();
+        let thumbnail = image.thumbnail(200, 200).into_rgba8();
         write_png_rgba(&thumbnail_path, &thumbnail)?;
         Ok(thumbnail_path.display().to_string())
     }
@@ -155,7 +156,8 @@ fn write_png_rgba(path: &Path, image: &RgbaImage) -> Result<(), AppError> {
             path.display()
         ))
     })?;
-    let encoder = PngEncoder::new(file);
+    let encoder =
+        PngEncoder::new_with_quality(file, CompressionType::Fast, PngFilterType::NoFilter);
     encoder
         .write_image(
             image.as_raw(),
@@ -186,7 +188,7 @@ mod tests {
     use std::{
         env, fs,
         path::PathBuf,
-        time::{SystemTime, UNIX_EPOCH},
+        time::{Duration, Instant, SystemTime, UNIX_EPOCH},
     };
 
     use image::GenericImageView;
@@ -214,6 +216,28 @@ mod tests {
             .expect("thumbnail should decode");
 
         assert_eq!(thumbnail.dimensions(), (200, 50));
+    }
+
+    #[test]
+    fn generate_thumbnail_for_common_screenshot_stays_under_50ms() {
+        let context = TestContext::new("generate-thumbnail-performance");
+        let service = context.service();
+        let saved = service
+            .save_original("performance-image", &sample_screenshot_image(800, 450))
+            .expect("original image should be saved");
+
+        let started_at = Instant::now();
+        let thumbnail_path = service
+            .generate_thumbnail("performance-image", &saved.original_path)
+            .expect("thumbnail should be generated");
+        let elapsed = started_at.elapsed();
+
+        assert!(PathBuf::from(&thumbnail_path).exists());
+        assert!(
+            elapsed < Duration::from_millis(50),
+            "thumbnail generation took {:?}, expected < 50ms",
+            elapsed
+        );
     }
 
     #[test]
@@ -272,6 +296,50 @@ mod tests {
         let mut bytes = Vec::with_capacity(width * height * 4);
         for _ in 0..(width * height) {
             bytes.extend_from_slice(&[12, 34, 56, 255]);
+        }
+        ClipboardImageData {
+            width,
+            height,
+            bytes,
+        }
+    }
+
+    fn sample_screenshot_image(width: usize, height: usize) -> ClipboardImageData {
+        let mut bytes = Vec::with_capacity(width * height * 4);
+        let toolbar_height = (height / 12).max(48);
+        let sidebar_width = width / 4;
+
+        for y in 0..height {
+            for x in 0..width {
+                let (mut red, mut green, mut blue) = if y < toolbar_height {
+                    (28_u8, 30_u8, 36_u8)
+                } else if x < sidebar_width {
+                    if (y / 40) % 2 == 0 {
+                        (44_u8, 48_u8, 56_u8)
+                    } else {
+                        (39_u8, 43_u8, 50_u8)
+                    }
+                } else {
+                    let card_x = ((x - sidebar_width) / 180) % 4;
+                    let card_y = ((y - toolbar_height) / 140) % 3;
+                    match (card_x + card_y) % 4 {
+                        0 => (245_u8, 247_u8, 250_u8),
+                        1 => (236_u8, 241_u8, 248_u8),
+                        2 => (242_u8, 238_u8, 250_u8),
+                        _ => (239_u8, 245_u8, 239_u8),
+                    }
+                };
+
+                if y == toolbar_height
+                    || (x > sidebar_width && (x - sidebar_width).is_multiple_of(180))
+                {
+                    red = red.saturating_sub(18);
+                    green = green.saturating_sub(18);
+                    blue = blue.saturating_sub(18);
+                }
+
+                bytes.extend_from_slice(&[red, green, blue, 255]);
+            }
         }
         ClipboardImageData {
             width,
