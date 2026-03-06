@@ -19,9 +19,11 @@ const setInvokeForRecords = (records = mixedFixtureRecords) => {
     }
 
     if (command === "paste_record") {
+      const id = args?.id as number;
+      const record = records.find((item) => item.id === id) ?? records[0];
       return {
-        record: records[0],
-        paste_mode: "original",
+        record,
+        paste_mode: (args?.mode as string) ?? "original",
         executed_at: Date.now(),
       };
     }
@@ -38,16 +40,19 @@ describe("MainPanel", () => {
     __resetInvokeMock();
   });
 
-  it("UT-PANEL-001 有记录时渲染混合卡片列表", async () => {
-    setInvokeForRecords();
+  it("UT-PANEL-001 左右方向键在混合卡片中切换", async () => {
+    setInvokeForRecords(mixedFixtureRecords);
     render(<MainPanel />);
 
     await waitFor(() => {
       expect(screen.getByTestId("card-list")).toBeInTheDocument();
-      expect(screen.getAllByTestId("text-card")).toHaveLength(1);
-      expect(screen.getAllByTestId("image-card")).toHaveLength(1);
-      expect(screen.getAllByTestId("file-card")).toHaveLength(1);
     });
+
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(useClipboardStore.getState().selectedIndex).toBe(1);
+
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    expect(useClipboardStore.getState().selectedIndex).toBe(0);
   });
 
   it("加载中时渲染骨架卡片", async () => {
@@ -69,7 +74,7 @@ describe("MainPanel", () => {
     });
   });
 
-  it("UT-PANEL-002 无记录时渲染空状态", async () => {
+  it("空记录时渲染空状态", async () => {
     setInvokeForRecords([]);
     render(<MainPanel />);
 
@@ -78,22 +83,28 @@ describe("MainPanel", () => {
     });
   });
 
-  it("UT-PANEL-003 / 004 方向键切换选中卡片", async () => {
-    setInvokeForRecords(fixtureRecords);
+  it("UT-PANEL-002 Enter 对图片记录触发原格式粘贴", async () => {
+    setInvokeForRecords(mixedFixtureRecords);
     render(<MainPanel />);
 
     await waitFor(() => {
-      expect(screen.getAllByTestId("text-card")).toHaveLength(3);
+      expect(screen.getAllByTestId("image-card")).toHaveLength(1);
     });
 
     fireEvent.keyDown(window, { key: "ArrowRight" });
-    expect(useClipboardStore.getState().selectedIndex).toBe(1);
+    fireEvent.keyDown(window, { key: "Enter" });
 
-    fireEvent.keyDown(window, { key: "ArrowLeft" });
-    expect(useClipboardStore.getState().selectedIndex).toBe(0);
+    await waitFor(() => {
+      expect(invokeCalls.find((call: { command: string }) => call.command === "paste_record")).toEqual(
+        {
+          command: "paste_record",
+          args: { id: 2, mode: "original" },
+        }
+      );
+    });
   });
 
-  it("UT-PANEL-005 Shift+Enter 对文本记录触发纯文本粘贴", async () => {
+  it("UT-PANEL-003 Shift+Enter 对文本记录触发纯文本粘贴", async () => {
     setInvokeForRecords(fixtureRecords);
     render(<MainPanel />);
 
@@ -110,7 +121,7 @@ describe("MainPanel", () => {
     });
   });
 
-  it("UT-PANEL-006 Shift+Enter 对非文本记录禁用提示弱化", async () => {
+  it("UT-PANEL-004 Shift+Enter 对非文本记录禁用", async () => {
     setInvokeForRecords(mixedFixtureRecords);
     render(<MainPanel />);
 
@@ -119,26 +130,31 @@ describe("MainPanel", () => {
     });
 
     fireEvent.keyDown(window, { key: "ArrowRight" });
+    fireEvent.keyDown(window, { key: "Enter", shiftKey: true });
 
     await waitFor(() => {
-      expect(screen.getByTestId("plain-text-hint").className.includes("opacity-40")).toBe(true);
+      expect(useUIStore.getState().toast?.message).toBe("仅文本记录支持纯文本粘贴");
     });
+
+    expect(screen.getByTestId("plain-text-hint").className.includes("opacity-40")).toBe(true);
   });
 
-  it("Delete 触发 delete_record", async () => {
-    setInvokeForRecords(fixtureRecords);
+  it("UT-PANEL-005 Delete 删除图片记录并移除卡片", async () => {
+    setInvokeForRecords(mixedFixtureRecords);
     render(<MainPanel />);
 
     await waitFor(() => {
-      expect(screen.getAllByTestId("text-card")).toHaveLength(3);
+      expect(screen.getAllByTestId("image-card")).toHaveLength(1);
     });
 
+    fireEvent.keyDown(window, { key: "ArrowRight" });
     fireEvent.keyDown(window, { key: "Delete" });
 
     await waitFor(() => {
       expect(
         invokeCalls.some((call: { command: string }) => call.command === "delete_record")
       ).toBe(true);
+      expect(screen.queryByTestId("image-card")).not.toBeInTheDocument();
     });
   });
 });
