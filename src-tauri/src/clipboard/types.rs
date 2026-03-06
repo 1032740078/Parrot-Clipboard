@@ -22,6 +22,14 @@ pub enum ContentType {
 }
 
 impl ContentType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Image => "image",
+            Self::Files => "files",
+        }
+    }
+
     pub fn from_db(value: &str) -> Option<Self> {
         match value {
             "text" => Some(Self::Text),

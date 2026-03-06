@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use std::{
+    collections::HashSet,
     fs,
     path::{Path, PathBuf},
     time::Duration,
@@ -99,6 +100,43 @@ const FILE_ITEMS_SELECT_SQL: &str = r#"
     WHERE item_id = ?1
     ORDER BY sort_order ASC, id ASC
 "#;
+
+const RETENTION_CANDIDATES_SELECT_SQL: &str = r#"
+    SELECT
+      ci.id,
+      ia.original_path,
+      ia.thumbnail_path
+    FROM clipboard_items ci
+    LEFT JOIN image_assets ia ON ia.item_id = ci.id
+    WHERE ci.content_type = ?1
+    ORDER BY ci.last_used_at ASC, ci.id ASC
+    LIMIT ?2
+"#;
+
+const ORPHANED_IMAGE_PATHS_SQL: &str = r#"
+    SELECT
+      original_path,
+      thumbnail_path
+    FROM image_assets
+"#;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImageAssetCleanupPaths {
+    pub original_path: String,
+    pub thumbnail_path: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct RetentionPruneResult {
+    pub deleted_record_ids: Vec<u64>,
+    pub deleted_image_assets: Vec<ImageAssetCleanupPaths>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct OrphanedImageFiles {
+    pub original_files: Vec<PathBuf>,
+    pub thumbnail_files: Vec<PathBuf>,
+}
 
 #[derive(Debug, Clone)]
 pub struct SqliteConnectionManager {
@@ -207,6 +245,108 @@ impl SqliteConnectionManager {
             map_detail_row(row, files_detail).map(Some)
         })
     }
+
+    pub fn prune_excess_records(
+        &self,
+        content_type: ContentType,
+        max_records: usize,
+    ) -> Result<RetentionPruneResult, AppError> {
+        let content_type_value = content_type.as_str();
+
+        self.with_connection(|connection| {
+            let total_count: i64 = connection
+                .query_row(
+                    "SELECT COUNT(1) FROM clipboard_items WHERE content_type = ?1",
+                    params![content_type_value],
+                    |row| row.get(0),
+                )
+                .map_err(|error| {
+                    AppError::Db(format!(
+                        "count sqlite records for retention failed: {error}"
+                    ))
+                })?;
+
+            let total_count = usize::try_from(total_count).map_err(|_| {
+                AppError::Db(format!("invalid sqlite record count `{total_count}`"))
+            })?;
+
+            if total_count <= max_records {
+                return Ok(RetentionPruneResult::default());
+            }
+
+            let excess_count = total_count - max_records;
+            let candidates =
+                load_retention_candidates(connection, content_type_value, excess_count)?;
+            if candidates.is_empty() {
+                return Ok(RetentionPruneResult::default());
+            }
+
+            let transaction = connection.unchecked_transaction().map_err(|error| {
+                AppError::Db(format!(
+                    "start sqlite retention transaction failed: {error}"
+                ))
+            })?;
+
+            for candidate in &candidates {
+                let sql_id = i64::try_from(candidate.id).map_err(|_| {
+                    AppError::Db(format!("invalid sqlite delete id `{}`", candidate.id))
+                })?;
+                transaction
+                    .execute("DELETE FROM clipboard_items WHERE id = ?1", params![sql_id])
+                    .map_err(|error| {
+                        AppError::Db(format!(
+                            "delete sqlite retention candidate `{}` failed: {error}",
+                            candidate.id
+                        ))
+                    })?;
+            }
+
+            transaction.commit().map_err(|error| {
+                AppError::Db(format!(
+                    "commit sqlite retention transaction failed: {error}"
+                ))
+            })?;
+
+            Ok(RetentionPruneResult {
+                deleted_record_ids: candidates.iter().map(|candidate| candidate.id).collect(),
+                deleted_image_assets: candidates
+                    .into_iter()
+                    .filter_map(|candidate| {
+                        candidate
+                            .original_path
+                            .map(|original_path| ImageAssetCleanupPaths {
+                                original_path,
+                                thumbnail_path: candidate.thumbnail_path,
+                            })
+                    })
+                    .collect(),
+            })
+        })
+    }
+
+    pub fn scan_orphaned_image_files(
+        &self,
+        original_dir: &Path,
+        thumbnail_dir: &Path,
+    ) -> Result<OrphanedImageFiles, AppError> {
+        let referenced_paths = self.with_connection(load_referenced_image_paths)?;
+        let mut original_files = list_files_if_exists(original_dir)?
+            .into_iter()
+            .filter(|path| !referenced_paths.contains(path))
+            .collect::<Vec<_>>();
+        let mut thumbnail_files = list_files_if_exists(thumbnail_dir)?
+            .into_iter()
+            .filter(|path| !referenced_paths.contains(path))
+            .collect::<Vec<_>>();
+
+        original_files.sort();
+        thumbnail_files.sort();
+
+        Ok(OrphanedImageFiles {
+            original_files,
+            thumbnail_files,
+        })
+    }
 }
 
 fn load_file_items(connection: &Connection, item_id: i64) -> Result<Vec<FileItemDetail>, AppError> {
@@ -226,6 +366,119 @@ fn load_file_items(connection: &Connection, item_id: i64) -> Result<Vec<FileItem
     }
 
     Ok(items)
+}
+
+#[derive(Debug, Clone)]
+struct RetentionCandidate {
+    id: u64,
+    original_path: Option<String>,
+    thumbnail_path: Option<String>,
+}
+
+fn load_retention_candidates(
+    connection: &Connection,
+    content_type: &str,
+    excess_count: usize,
+) -> Result<Vec<RetentionCandidate>, AppError> {
+    let sql_limit = i64::try_from(excess_count)
+        .map_err(|_| AppError::Db(format!("invalid sqlite excess_count `{excess_count}`")))?;
+    let mut statement = connection
+        .prepare(RETENTION_CANDIDATES_SELECT_SQL)
+        .map_err(|error| AppError::Db(format!("prepare sqlite retention query failed: {error}")))?;
+    let mut rows = statement
+        .query(params![content_type, sql_limit])
+        .map_err(|error| AppError::Db(format!("execute sqlite retention query failed: {error}")))?;
+
+    let mut candidates = Vec::new();
+    while let Some(row) = rows
+        .next()
+        .map_err(|error| AppError::Db(format!("iterate sqlite retention rows failed: {error}")))?
+    {
+        let id = row.get::<_, i64>(0).map_err(|error| {
+            AppError::Db(format!(
+                "read sqlite retention candidate id failed: {error}"
+            ))
+        })?;
+        let id = u64::try_from(id)
+            .map_err(|_| AppError::Db(format!("invalid sqlite retention id `{id}`")))?;
+
+        candidates.push(RetentionCandidate {
+            id,
+            original_path: row.get(1).map_err(|error| {
+                AppError::Db(format!(
+                    "read sqlite retention original_path failed: {error}"
+                ))
+            })?,
+            thumbnail_path: row.get(2).map_err(|error| {
+                AppError::Db(format!(
+                    "read sqlite retention thumbnail_path failed: {error}"
+                ))
+            })?,
+        });
+    }
+
+    Ok(candidates)
+}
+
+fn load_referenced_image_paths(connection: &Connection) -> Result<HashSet<PathBuf>, AppError> {
+    let mut statement = connection
+        .prepare(ORPHANED_IMAGE_PATHS_SQL)
+        .map_err(|error| {
+            AppError::Db(format!("prepare sqlite orphan scan query failed: {error}"))
+        })?;
+    let mut rows = statement.query([]).map_err(|error| {
+        AppError::Db(format!("execute sqlite orphan scan query failed: {error}"))
+    })?;
+
+    let mut referenced_paths = HashSet::new();
+    while let Some(row) = rows
+        .next()
+        .map_err(|error| AppError::Db(format!("iterate sqlite orphan scan rows failed: {error}")))?
+    {
+        let original_path: String = row.get(0).map_err(|error| {
+            AppError::Db(format!("read sqlite orphan original_path failed: {error}"))
+        })?;
+        referenced_paths.insert(PathBuf::from(original_path));
+
+        let thumbnail_path: Option<String> = row.get(1).map_err(|error| {
+            AppError::Db(format!("read sqlite orphan thumbnail_path failed: {error}"))
+        })?;
+        if let Some(thumbnail_path) = thumbnail_path {
+            referenced_paths.insert(PathBuf::from(thumbnail_path));
+        }
+    }
+
+    Ok(referenced_paths)
+}
+
+fn list_files_if_exists(directory: &Path) -> Result<Vec<PathBuf>, AppError> {
+    if !directory.exists() {
+        return Ok(Vec::new());
+    }
+
+    let entries = fs::read_dir(directory).map_err(|error| {
+        AppError::Db(format!(
+            "read image cleanup directory `{}` failed: {error}",
+            directory.display()
+        ))
+    })?;
+
+    let mut files = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|error| {
+            AppError::Db(format!(
+                "read image cleanup entry in `{}` failed: {error}",
+                directory.display()
+            ))
+        })?;
+
+        let path = entry.path();
+        if path.is_file() {
+            files.push(path);
+        }
+    }
+
+    Ok(files)
 }
 
 fn open_connection(database_path: &Path) -> Result<Connection, AppError> {
@@ -513,6 +766,83 @@ mod tests {
         cleanup_test_dir(&database_path);
     }
 
+    #[test]
+    fn prune_excess_records_removes_oldest_of_same_type_only_and_returns_image_assets() {
+        let database_path = unique_test_dir().join("clipboard.db");
+        let manager = SqliteConnectionManager::initialize_at(&database_path)
+            .expect("sqlite database should initialize");
+        seed_retention_records(&manager);
+
+        let text_result = manager
+            .prune_excess_records(ContentType::Text, 2)
+            .expect("text retention should succeed");
+        let image_result = manager
+            .prune_excess_records(ContentType::Image, 1)
+            .expect("image retention should succeed");
+
+        assert_eq!(text_result.deleted_record_ids, vec![11]);
+        assert!(text_result.deleted_image_assets.is_empty());
+        assert_eq!(image_result.deleted_record_ids, vec![21]);
+        assert_eq!(image_result.deleted_image_assets.len(), 1);
+        assert_eq!(
+            image_result.deleted_image_assets[0].original_path,
+            "/tmp/original/old.png"
+        );
+        assert_eq!(
+            image_result.deleted_image_assets[0]
+                .thumbnail_path
+                .as_deref(),
+            Some("/tmp/thumbs/old.png")
+        );
+
+        let summaries = manager
+            .list_record_summaries(20)
+            .expect("summaries should still load");
+        let ids = summaries.iter().map(|record| record.id).collect::<Vec<_>>();
+
+        assert!(!ids.contains(&11));
+        assert!(!ids.contains(&21));
+        assert!(ids.contains(&12));
+        assert!(ids.contains(&13));
+        assert!(ids.contains(&22));
+        assert!(ids.contains(&31));
+
+        cleanup_test_dir(&database_path);
+    }
+
+    #[test]
+    fn scan_orphaned_image_files_returns_unreferenced_files() {
+        let test_root = unique_test_dir();
+        let database_path = test_root.join("clipboard.db");
+        let original_dir = test_root.join("images/original");
+        let thumbnail_dir = test_root.join("images/thumbs");
+        fs::create_dir_all(&original_dir).expect("original dir should be created");
+        fs::create_dir_all(&thumbnail_dir).expect("thumb dir should be created");
+
+        let manager = SqliteConnectionManager::initialize_at(&database_path)
+            .expect("sqlite database should initialize");
+        let referenced_original = original_dir.join("kept.png");
+        let referenced_thumb = thumbnail_dir.join("kept-thumb.png");
+        let orphan_original = original_dir.join("orphan.png");
+        let orphan_thumb = thumbnail_dir.join("orphan-thumb.png");
+
+        fs::write(&referenced_original, b"kept").expect("referenced original should exist");
+        fs::write(&referenced_thumb, b"kept-thumb").expect("referenced thumb should exist");
+        fs::write(&orphan_original, b"orphan").expect("orphan original should exist");
+        fs::write(&orphan_thumb, b"orphan-thumb").expect("orphan thumb should exist");
+
+        seed_orphan_scan_record(&manager, &referenced_original, &referenced_thumb);
+
+        let orphaned = manager
+            .scan_orphaned_image_files(&original_dir, &thumbnail_dir)
+            .expect("orphan scan should succeed");
+
+        assert_eq!(orphaned.original_files, vec![orphan_original]);
+        assert_eq!(orphaned.thumbnail_files, vec![orphan_thumb]);
+
+        cleanup_test_dir(&database_path);
+    }
+
     fn seed_mixed_records(manager: &SqliteConnectionManager) {
         manager
             .with_connection(|connection| {
@@ -577,6 +907,124 @@ mod tests {
                 Ok(())
             })
             .expect("seed data should be inserted");
+    }
+
+    fn seed_retention_records(manager: &SqliteConnectionManager) {
+        manager
+            .with_connection(|connection| {
+                connection.execute_batch(
+                    r#"
+                    INSERT INTO clipboard_items (
+                      id,
+                      content_type,
+                      content_hash,
+                      text_content,
+                      rich_content,
+                      preview_text,
+                      search_text,
+                      source_app,
+                      file_count,
+                      payload_bytes,
+                      created_at,
+                      last_used_at
+                    ) VALUES
+                      (11, 'text', 'retention-text-1', 'old text', NULL, 'old text', 'old text', 'Notes', 0, 8, 1000, 1000),
+                      (12, 'text', 'retention-text-2', 'mid text', NULL, 'mid text', 'mid text', 'Notes', 0, 8, 2000, 2000),
+                      (13, 'text', 'retention-text-3', 'new text', NULL, 'new text', 'new text', 'Notes', 0, 8, 3000, 3000),
+                      (21, 'image', 'retention-image-1', NULL, NULL, 'old image', 'old image', 'Preview', 0, 4096, 1100, 1100),
+                      (22, 'image', 'retention-image-2', NULL, NULL, 'new image', 'new image', 'Preview', 0, 4096, 2200, 2200),
+                      (31, 'files', 'retention-files-1', NULL, NULL, 'keep files', 'keep files', 'Finder', 1, 0, 3300, 3300);
+
+                    INSERT INTO image_assets (
+                      item_id,
+                      original_path,
+                      thumbnail_path,
+                      mime_type,
+                      pixel_width,
+                      pixel_height,
+                      byte_size,
+                      thumbnail_state,
+                      created_at
+                    ) VALUES
+                      (21, '/tmp/original/old.png', '/tmp/thumbs/old.png', 'image/png', 1280, 720, 4096, 'ready', 1100),
+                      (22, '/tmp/original/new.png', '/tmp/thumbs/new.png', 'image/png', 1280, 720, 4096, 'ready', 2200);
+
+                    INSERT INTO file_items (
+                      item_id,
+                      sort_order,
+                      path,
+                      display_name,
+                      entry_type,
+                      extension,
+                      created_at
+                    ) VALUES
+                      (31, 0, '/Users/robin/Documents/report.pdf', 'report.pdf', 'file', 'pdf', 3300);
+                    "#,
+                )
+                .map_err(|error| {
+                    AppError::Db(format!("seed sqlite retention records failed: {error}"))
+                })?;
+
+                Ok(())
+            })
+            .expect("retention seed data should be inserted");
+    }
+
+    fn seed_orphan_scan_record(
+        manager: &SqliteConnectionManager,
+        referenced_original: &Path,
+        referenced_thumb: &Path,
+    ) {
+        manager
+            .with_connection(|connection| {
+                connection.execute_batch(&format!(
+                    "
+                    INSERT INTO clipboard_items (
+                      id,
+                      content_type,
+                      content_hash,
+                      text_content,
+                      rich_content,
+                      preview_text,
+                      search_text,
+                      source_app,
+                      file_count,
+                      payload_bytes,
+                      created_at,
+                      last_used_at
+                    ) VALUES
+                      (41, 'image', 'orphan-scan-image', NULL, NULL, 'referenced image', 'referenced image', 'Preview', 0, 2048, 4100, 4100);
+
+                    INSERT INTO image_assets (
+                      item_id,
+                      original_path,
+                      thumbnail_path,
+                      mime_type,
+                      pixel_width,
+                      pixel_height,
+                      byte_size,
+                      thumbnail_state,
+                      created_at
+                    ) VALUES (
+                      41,
+                      '{}',
+                      '{}',
+                      'image/png',
+                      640,
+                      480,
+                      2048,
+                      'ready',
+                      4100
+                    );
+                    ",
+                    referenced_original.display(),
+                    referenced_thumb.display()
+                ))
+                .map_err(|error| AppError::Db(format!("seed sqlite orphan scan record failed: {error}")))?;
+
+                Ok(())
+            })
+            .expect("orphan scan seed data should be inserted");
     }
 
     fn has_sqlite_object(connection: &Connection, object_type: &str, name: &str) -> bool {
