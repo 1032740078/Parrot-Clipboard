@@ -1,10 +1,10 @@
 use std::sync::{Arc, Mutex};
 
-use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager};
+use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize};
 
 use crate::error::AppError;
 
-use self::position::calculate_bottom_position;
+use self::position::calculate_panel_frame;
 
 #[cfg(target_os = "macos")]
 use objc::{class, msg_send, runtime::Object, sel, sel_impl};
@@ -28,6 +28,12 @@ pub struct TauriWindowManager {
 impl TauriWindowManager {
     #[cfg(target_os = "macos")]
     const NS_APPLICATION_ACTIVATE_IGNORING_OTHER_APPS: usize = 1 << 1;
+    #[cfg(target_os = "macos")]
+    const NS_STATUS_WINDOW_LEVEL: isize = 25;
+    #[cfg(target_os = "macos")]
+    const NS_WINDOW_COLLECTION_BEHAVIOR_CAN_JOIN_ALL_SPACES: usize = 1 << 0;
+    #[cfg(target_os = "macos")]
+    const NS_WINDOW_COLLECTION_BEHAVIOR_FULL_SCREEN_AUXILIARY: usize = 1 << 8;
 
     pub fn new(app_handle: AppHandle, label: impl Into<String>, panel_height: f64) -> Arc<Self> {
         Arc::new(Self {
@@ -51,17 +57,85 @@ impl TauriWindowManager {
             .map_err(|error| AppError::Window(format!("read monitor failed: {error}")))?
             .ok_or_else(|| AppError::Window("primary monitor not available".to_string()))?;
 
-        let screen_width = monitor.size().width as f64;
-        let screen_height = monitor.size().height as f64;
-        let y = calculate_bottom_position(screen_height, self.panel_height);
+        let work_area = monitor.work_area();
+        let panel_frame = calculate_panel_frame(
+            work_area.position.x,
+            work_area.position.y,
+            work_area.size.width,
+            work_area.size.height,
+            self.panel_height,
+        );
 
         window
-            .set_size(LogicalSize::new(screen_width, self.panel_height))
+            .set_size(PhysicalSize::new(panel_frame.width, panel_frame.height))
             .map_err(|error| AppError::Window(format!("set size failed: {error}")))?;
         window
-            .set_position(LogicalPosition::new(0.0, y))
+            .set_position(PhysicalPosition::new(panel_frame.x, panel_frame.y))
             .map_err(|error| AppError::Window(format!("set position failed: {error}")))?;
 
+        Ok(())
+    }
+
+    fn configure_panel_window(&self, window: &tauri::WebviewWindow) -> Result<(), AppError> {
+        window
+            .set_always_on_top(true)
+            .map_err(|error| AppError::Window(format!("set always on top failed: {error}")))?;
+
+        #[cfg(target_os = "macos")]
+        self.configure_macos_panel_window(window)?;
+
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn configure_macos_panel_window(&self, window: &tauri::WebviewWindow) -> Result<(), AppError> {
+        window
+            .set_visible_on_all_workspaces(true)
+            .map_err(|error| {
+                AppError::Window(format!("set visible on all workspaces failed: {error}"))
+            })?;
+
+        let native_window = window
+            .ns_window()
+            .map_err(|error| AppError::Window(format!("get native window failed: {error}")))?
+            as *mut Object;
+
+        if native_window.is_null() {
+            return Err(AppError::Window("native window is null".to_string()));
+        }
+
+        unsafe {
+            let _: () = msg_send![native_window, setLevel: Self::NS_STATUS_WINDOW_LEVEL];
+
+            let mut collection_behavior: usize = msg_send![native_window, collectionBehavior];
+            collection_behavior |= Self::NS_WINDOW_COLLECTION_BEHAVIOR_CAN_JOIN_ALL_SPACES;
+            collection_behavior |= Self::NS_WINDOW_COLLECTION_BEHAVIOR_FULL_SCREEN_AUXILIARY;
+            let _: () = msg_send![native_window, setCollectionBehavior: collection_behavior];
+        }
+
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn bring_panel_to_front(&self, window: &tauri::WebviewWindow) -> Result<(), AppError> {
+        let native_window = window
+            .ns_window()
+            .map_err(|error| AppError::Window(format!("get native window failed: {error}")))?
+            as *mut Object;
+
+        if native_window.is_null() {
+            return Err(AppError::Window("native window is null".to_string()));
+        }
+
+        unsafe {
+            let _: () = msg_send![native_window, orderFrontRegardless];
+        }
+
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn bring_panel_to_front(&self, _window: &tauri::WebviewWindow) -> Result<(), AppError> {
         Ok(())
     }
 
@@ -142,9 +216,11 @@ impl WindowManager for TauriWindowManager {
 
         let window = self.window()?;
         self.resize_and_position(&window)?;
+        self.configure_panel_window(&window)?;
         window
             .show()
             .map_err(|error| AppError::Window(format!("show failed: {error}")))?;
+        self.bring_panel_to_front(&window)?;
         window
             .set_focus()
             .map_err(|error| AppError::Window(format!("set focus failed: {error}")))?;
