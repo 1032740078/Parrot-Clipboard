@@ -1,6 +1,6 @@
 #![allow(unexpected_cfgs)]
 
-use std::sync::Mutex;
+use std::{sync::Mutex, thread, time::Duration};
 
 use arboard::Clipboard;
 use core_graphics::{
@@ -75,6 +75,8 @@ impl PlatformKeySimulator for MacosKeySimulator {
             .map_err(|_| AppError::KeySimulation("failed to create key down event".to_string()))?;
         key_down.set_flags(CGEventFlags::CGEventFlagCommand);
         key_down.post(CGEventTapLocation::HID);
+
+        thread::sleep(Duration::from_millis(20));
 
         let key_up = CGEvent::new_keyboard_event(source, KEY_V, false)
             .map_err(|_| AppError::KeySimulation("failed to create key up event".to_string()))?;

@@ -3,11 +3,16 @@ export type UnlistenFn = () => void;
 type Listener<T> = (event: { payload: T }) => void;
 
 const listeners = new Map<string, Set<Listener<unknown>>>();
+let listenError: Error | null = null;
 
 export const listen = async <T>(
   eventName: string,
   callback: Listener<T>
 ): Promise<UnlistenFn> => {
+  if (listenError) {
+    throw listenError;
+  }
+
   const set = listeners.get(eventName) ?? new Set<Listener<unknown>>();
   set.add(callback as Listener<unknown>);
   listeners.set(eventName, set);
@@ -28,6 +33,11 @@ export const __emitMockEvent = <T>(eventName: string, payload: T): void => {
   });
 };
 
+export const __setListenError = (error: Error | null): void => {
+  listenError = error;
+};
+
 export const __resetEventMock = (): void => {
   listeners.clear();
+  listenError = null;
 };

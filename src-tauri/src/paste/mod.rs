@@ -14,6 +14,8 @@ use crate::{
 
 pub mod text_strip;
 
+const PRE_PASTE_SETTLE_DELAY_MS: u64 = 140;
+
 pub struct PasteService {
     repository: Arc<dyn ClipboardRecordRepository>,
     monitor: Arc<dyn ClipboardMonitorControl>,
@@ -71,7 +73,7 @@ impl PasteService {
             self.platform_clipboard.write_text(&record.text_content)?;
             self.monitor.sync_clipboard_state()?;
             self.window_manager.hide()?;
-            tokio::time::sleep(Duration::from_millis(80)).await;
+            tokio::time::sleep(Duration::from_millis(PRE_PASTE_SETTLE_DELAY_MS)).await;
             self.platform_key_sim.simulate_paste()?;
             let promoted = self.repository.promote(id)?;
 
