@@ -10,7 +10,26 @@ function App() {
   const hideToast = useUIStore((state) => state.hideToast);
 
   useEffect(() => {
-    showPanel();
+    const restorePanelVisibility = (): void => {
+      showPanel();
+    };
+
+    const handleVisibilityChange = (): void => {
+      if (document.visibilityState === "visible") {
+        restorePanelVisibility();
+      }
+    };
+
+    restorePanelVisibility();
+    window.addEventListener("focus", restorePanelVisibility);
+    window.addEventListener("pageshow", restorePanelVisibility);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("focus", restorePanelVisibility);
+      window.removeEventListener("pageshow", restorePanelVisibility);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [showPanel]);
 
   return (
