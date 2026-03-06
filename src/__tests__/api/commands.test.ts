@@ -1,19 +1,53 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
-  deleteRecord,
-  getLogDirectory,
-  getMonitoringStatus,
-  getRecords,
-  hidePanel,
-  pasteRecord,
-} from "../../api/commands";
-import { buildRecord } from "../fixtures/clipboardRecords";
-import {
   __resetInvokeMock,
   __setInvokeHandler,
   invokeCalls,
 } from "../../__mocks__/@tauri-apps/api/core";
+import {
+  deleteRecord,
+  getLogDirectory,
+  getMonitoringStatus,
+  getRecordDetail,
+  getRecords,
+  hidePanel,
+  pasteRecord,
+  pasteRecordResult,
+} from "../../api/commands";
+
+const summaryRecord = {
+  id: 2,
+  content_type: "text" as const,
+  preview_text: "B",
+  source_app: "Notes",
+  created_at: 900,
+  last_used_at: 901,
+  text_meta: { char_count: 1, line_count: 1 },
+  image_meta: null,
+  files_meta: null,
+};
+
+const legacyRecord = {
+  id: 2,
+  content_type: "text" as const,
+  text_content: "B",
+  created_at: 900,
+};
+
+const detailRecord = {
+  ...summaryRecord,
+  text_content: "B",
+  rich_content: null,
+  image_detail: null,
+  files_detail: null,
+};
+
+const pasteResult = {
+  record: summaryRecord,
+  paste_mode: "original" as const,
+  executed_at: 901,
+};
 
 describe("api/commands", () => {
   beforeEach(() => {
@@ -21,9 +55,9 @@ describe("api/commands", () => {
   });
 
   it("AC-2 Mock 环境下 getRecords 触发 invoke(get_records)", async () => {
-    __setInvokeHandler(async () => []);
+    __setInvokeHandler(async () => [summaryRecord]);
 
-    await getRecords(20);
+    await expect(getRecords(20)).resolves.toEqual([legacyRecord]);
 
     expect(invokeCalls).toHaveLength(1);
     expect(invokeCalls[0]).toEqual({
@@ -32,17 +66,50 @@ describe("api/commands", () => {
     });
   });
 
-  it("pasteRecord 返回后端置顶后的记录", async () => {
-    const promotedRecord = buildRecord(2, "B", 900);
-    __setInvokeHandler(async () => promotedRecord);
+  it("getRecords 兼容 legacy 记录结构", async () => {
+    __setInvokeHandler(async () => [legacyRecord]);
+
+    await expect(getRecords(20)).resolves.toEqual([legacyRecord]);
+  });
+
+  it("getRecordDetail / pasteRecordResult 调用新契约命令并返回 DTO", async () => {
+    __setInvokeHandler(async (command) => {
+      if (command === "get_record_detail") {
+        return detailRecord;
+      }
+
+      if (command === "paste_record") {
+        return pasteResult;
+      }
+
+      return undefined;
+    });
+
+    await expect(getRecordDetail(2)).resolves.toEqual(detailRecord);
+    await expect(pasteRecordResult(2, "original")).resolves.toEqual(pasteResult);
+
+    expect(invokeCalls).toEqual([
+      { command: "get_record_detail", args: { id: 2 } },
+      { command: "paste_record", args: { id: 2, mode: "original" } },
+    ]);
+  });
+
+  it("pasteRecord 兼容层返回 legacy record", async () => {
+    __setInvokeHandler(async () => pasteResult);
 
     const result = await pasteRecord(2, "original");
 
-    expect(result).toEqual(promotedRecord);
+    expect(result).toEqual(legacyRecord);
     expect(invokeCalls[0]).toEqual({
       command: "paste_record",
       args: { id: 2, mode: "original" },
     });
+  });
+
+  it("pasteRecord 兼容 legacy 返回值", async () => {
+    __setInvokeHandler(async () => legacyRecord);
+
+    await expect(pasteRecord(2, "original")).resolves.toEqual(legacyRecord);
   });
 
   it("省略 limit 时 getRecords 使用默认值 20", async () => {
@@ -59,7 +126,7 @@ describe("api/commands", () => {
   it("deleteRecord / hidePanel / getMonitoringStatus / getLogDirectory 调用对应命令", async () => {
     __setInvokeHandler(async (command) => {
       if (command === "get_monitoring_status") {
-        return true;
+        return { monitoring: true };
       }
 
       if (command === "get_log_directory") {
@@ -71,7 +138,7 @@ describe("api/commands", () => {
 
     await deleteRecord(9);
     await hidePanel();
-    await expect(getMonitoringStatus()).resolves.toBe(true);
+    await expect(getMonitoringStatus()).resolves.toEqual({ monitoring: true });
     await expect(getLogDirectory()).resolves.toBe("/tmp/logs");
 
     expect(invokeCalls).toEqual([
@@ -92,6 +159,8 @@ describe("api/commands", () => {
     await expect(getMonitoringStatus()).rejects.toThrow("boom");
     await expect(getLogDirectory()).rejects.toThrow("boom");
     await expect(getRecords(1)).rejects.toThrow("boom");
+    await expect(getRecordDetail(1)).rejects.toThrow("boom");
     await expect(pasteRecord(1)).rejects.toThrow("boom");
+    await expect(pasteRecordResult(1)).rejects.toThrow("boom");
   });
 });

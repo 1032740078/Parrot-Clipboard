@@ -1,21 +1,65 @@
 import { listen } from "@tauri-apps/api/event";
 
-import type { NewRecordPayload, RecordDeletedPayload } from "./types";
 import { logger, normalizeError } from "./logger";
+import {
+  toNewRecordPayload,
+  toNewRecordPayloadV2,
+  toRecordUpdatedPayload,
+} from "./recordAdapters";
+import type {
+  NewRecordPayload,
+  NewRecordPayloadV2,
+  RecordDeletedPayload,
+  RecordUpdatedPayload,
+} from "./types";
 
 export const onNewRecord = async (
   handler: (payload: NewRecordPayload) => void
 ): Promise<() => void> => {
   try {
-    return await listen<NewRecordPayload>("clipboard:new-record", (event) => {
+    return await listen<unknown>("clipboard:new-record", (event) => {
       try {
-        handler(event.payload);
+        handler(toNewRecordPayload(event.payload));
       } catch (error) {
         logger.error("处理新记录事件失败", { error: normalizeError(error) });
       }
     });
   } catch (error) {
     logger.error("订阅新记录事件失败", { error: normalizeError(error) });
+    throw error;
+  }
+};
+
+export const onNewRecordSummary = async (
+  handler: (payload: NewRecordPayloadV2) => void
+): Promise<() => void> => {
+  try {
+    return await listen<unknown>("clipboard:new-record", (event) => {
+      try {
+        handler(toNewRecordPayloadV2(event.payload));
+      } catch (error) {
+        logger.error("处理新记录摘要事件失败", { error: normalizeError(error) });
+      }
+    });
+  } catch (error) {
+    logger.error("订阅新记录摘要事件失败", { error: normalizeError(error) });
+    throw error;
+  }
+};
+
+export const onRecordUpdated = async (
+  handler: (payload: RecordUpdatedPayload) => void
+): Promise<() => void> => {
+  try {
+    return await listen<unknown>("clipboard:record-updated", (event) => {
+      try {
+        handler(toRecordUpdatedPayload(event.payload));
+      } catch (error) {
+        logger.error("处理记录更新事件失败", { error: normalizeError(error) });
+      }
+    });
+  } catch (error) {
+    logger.error("订阅记录更新事件失败", { error: normalizeError(error) });
     throw error;
   }
 };

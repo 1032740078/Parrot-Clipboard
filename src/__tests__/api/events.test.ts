@@ -10,8 +10,31 @@ import {
   __setInvokeHandler,
   invokeCalls,
 } from "../../__mocks__/@tauri-apps/api/core";
-import { onNewRecord, onRecordDeleted } from "../../api/events";
-import { buildRecord } from "../fixtures/clipboardRecords";
+import { onNewRecord, onNewRecordSummary, onRecordDeleted, onRecordUpdated } from "../../api/events";
+
+const summaryRecord = {
+  id: 1,
+  content_type: "text" as const,
+  preview_text: "A",
+  source_app: "Notes",
+  created_at: 1000,
+  last_used_at: 1000,
+  text_meta: { char_count: 1, line_count: 1 },
+  image_meta: null,
+  files_meta: null,
+};
+
+const legacyRecord = {
+  id: 1,
+  content_type: "text" as const,
+  text_content: "A",
+  created_at: 1000,
+};
+
+const legacySummaryRecord = {
+  ...summaryRecord,
+  source_app: null,
+};
 
 describe("api/events", () => {
   beforeEach(() => {
@@ -20,15 +43,42 @@ describe("api/events", () => {
     delete (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
   });
 
-  it("new-record 事件会回调 payload", async () => {
-    const handler = vi.fn();
-    const unlisten = await onNewRecord(handler);
-    const payload = { record: buildRecord(1, "A", 1000) };
+  it("new-record 兼容事件和新摘要事件都可回调 payload", async () => {
+    const legacyHandler = vi.fn();
+    const summaryHandler = vi.fn();
+    const updatedHandler = vi.fn();
+    const unlistenLegacy = await onNewRecord(legacyHandler);
+    const unlistenSummary = await onNewRecordSummary(summaryHandler);
+    const unlistenUpdated = await onRecordUpdated(updatedHandler);
+    const newPayload = { record: summaryRecord, evicted_ids: [9] };
+    const updatedPayload = { reason: "promoted" as const, record: summaryRecord };
 
-    __emitMockEvent("clipboard:new-record", payload);
+    __emitMockEvent("clipboard:new-record", newPayload);
+    __emitMockEvent("clipboard:record-updated", updatedPayload);
 
-    expect(handler).toHaveBeenCalledWith(payload);
-    unlisten();
+    expect(legacyHandler).toHaveBeenCalledWith({ record: legacyRecord, evicted_id: 9 });
+    expect(summaryHandler).toHaveBeenCalledWith(newPayload);
+    expect(updatedHandler).toHaveBeenCalledWith(updatedPayload);
+    unlistenLegacy();
+    unlistenSummary();
+    unlistenUpdated();
+  });
+
+  it("old new-record payload 也会被兼容转换", async () => {
+    const legacyHandler = vi.fn();
+    const summaryHandler = vi.fn();
+    const unlistenLegacy = await onNewRecord(legacyHandler);
+    const unlistenSummary = await onNewRecordSummary(summaryHandler);
+
+    __emitMockEvent("clipboard:new-record", { record: legacyRecord, evicted_id: 8 });
+
+    expect(legacyHandler).toHaveBeenCalledWith({ record: legacyRecord, evicted_id: 8 });
+    expect(summaryHandler).toHaveBeenCalledWith({
+      record: legacySummaryRecord,
+      evicted_ids: [8],
+    });
+    unlistenLegacy();
+    unlistenSummary();
   });
 
   it("事件处理器抛错时会记录错误日志", async () => {
@@ -39,7 +89,7 @@ describe("api/events", () => {
       throw new Error("handler failed");
     });
 
-    __emitMockEvent("clipboard:record-deleted", { id: 1 });
+    __emitMockEvent("clipboard:record-deleted", { id: 1, reason: "manual" });
     await Promise.resolve();
 
     expect(invokeCalls[0]).toMatchObject({
@@ -56,5 +106,6 @@ describe("api/events", () => {
     __setListenError(new Error("subscribe failed"));
 
     await expect(onNewRecord(() => undefined)).rejects.toThrow("subscribe failed");
+    await expect(onRecordUpdated(() => undefined)).rejects.toThrow("subscribe failed");
   });
 });
