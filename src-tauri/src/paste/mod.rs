@@ -241,6 +241,18 @@ mod tests {
         fn delete(&self, _id: RecordId) -> Result<RecordId, AppError> {
             Err(AppError::RecordNotFound(1))
         }
+        fn finalize_pending_image(
+            &self,
+            _id: RecordId,
+        ) -> Result<
+            (
+                crate::clipboard::runtime_repository::RecordUpdateReason,
+                ClipboardRecordSummary,
+            ),
+            AppError,
+        > {
+            unreachable!()
+        }
         fn mark_thumbnail_ready(
             &self,
             _id: RecordId,

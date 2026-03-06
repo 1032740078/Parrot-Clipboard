@@ -100,7 +100,7 @@ impl ImageStorageService {
                     "decode original image `{original_path}` failed: {error}"
                 ))
             })?;
-        let thumbnail = image.resize(320, 240, FilterType::Triangle).into_rgba8();
+        let thumbnail = image.resize(200, 200, FilterType::Triangle).into_rgba8();
         write_png_rgba(&thumbnail_path, &thumbnail)?;
         Ok(thumbnail_path.display().to_string())
     }
@@ -178,5 +178,105 @@ fn remove_file_if_exists(path: &Path) {
 
     if let Err(error) = fs::remove_file(path) {
         tracing::warn!(path = %path.display(), error = %error, "remove image asset failed");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        env, fs,
+        path::PathBuf,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    use image::GenericImageView;
+
+    use crate::{
+        clipboard::payload::ClipboardImageData, persistence::sqlite::ImageAssetCleanupPaths,
+    };
+
+    use super::ImageStorageService;
+
+    #[test]
+    fn generate_thumbnail_keeps_image_within_200_bounds() {
+        let context = TestContext::new("generate-thumbnail");
+        let service = context.service();
+        let saved = service
+            .save_original("sample-image", &sample_image(400, 100))
+            .expect("original image should be saved");
+
+        let thumbnail_path = service
+            .generate_thumbnail("sample-image", &saved.original_path)
+            .expect("thumbnail should be generated");
+        let thumbnail = image::ImageReader::open(&thumbnail_path)
+            .expect("thumbnail should open")
+            .decode()
+            .expect("thumbnail should decode");
+
+        assert_eq!(thumbnail.dimensions(), (200, 50));
+    }
+
+    #[test]
+    fn remove_assets_deletes_original_and_thumbnail_files() {
+        let context = TestContext::new("remove-assets");
+        let service = context.service();
+        let saved = service
+            .save_original("cleanup-image", &sample_image(100, 100))
+            .expect("original image should be saved");
+        let thumbnail_path = service
+            .generate_thumbnail("cleanup-image", &saved.original_path)
+            .expect("thumbnail should be generated");
+
+        service.remove_assets(&[ImageAssetCleanupPaths {
+            original_path: saved.original_path.clone(),
+            thumbnail_path: Some(thumbnail_path.clone()),
+        }]);
+
+        assert!(!PathBuf::from(saved.original_path).exists());
+        assert!(!PathBuf::from(thumbnail_path).exists());
+    }
+
+    struct TestContext {
+        root_dir: PathBuf,
+    }
+
+    impl TestContext {
+        fn new(suffix: &str) -> Self {
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time should be after unix epoch")
+                .as_nanos();
+            let root_dir = env::temp_dir().join(format!(
+                "clipboard-manager-image-storage-test-{suffix}-{nanos}"
+            ));
+            fs::create_dir_all(&root_dir).expect("image storage test dir should be created");
+            Self { root_dir }
+        }
+
+        fn service(&self) -> ImageStorageService {
+            ImageStorageService::initialize_at(
+                self.root_dir.join("original"),
+                self.root_dir.join("thumbs"),
+            )
+            .expect("image storage should initialize")
+        }
+    }
+
+    impl Drop for TestContext {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root_dir);
+        }
+    }
+
+    fn sample_image(width: usize, height: usize) -> ClipboardImageData {
+        let mut bytes = Vec::with_capacity(width * height * 4);
+        for _ in 0..(width * height) {
+            bytes.extend_from_slice(&[12, 34, 56, 255]);
+        }
+        ClipboardImageData {
+            width,
+            height,
+            bytes,
+        }
     }
 }

@@ -1,4 +1,7 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use rusqlite::{params, OptionalExtension};
 
@@ -69,6 +72,10 @@ pub trait ClipboardRuntimeRepository: Send + Sync {
     fn get_detail(&self, id: RecordId) -> Result<Option<ClipboardRecordDetail>, AppError>;
     fn promote(&self, id: RecordId, promoted_at: i64) -> Result<ClipboardRecordSummary, AppError>;
     fn delete(&self, id: RecordId) -> Result<RecordId, AppError>;
+    fn finalize_pending_image(
+        &self,
+        id: RecordId,
+    ) -> Result<(RecordUpdateReason, ClipboardRecordSummary), AppError>;
     fn mark_thumbnail_ready(
         &self,
         id: RecordId,
@@ -144,22 +151,16 @@ impl ClipboardRuntimeRepository for SqliteClipboardRuntimeRepository {
 
         let saved = self.image_storage.save_original(&content_hash, &image)?;
         let record_id = insert_image_record(&self.database, &content_hash, &saved, captured_at)?;
-        let thumbnail_result = self
-            .image_storage
-            .generate_thumbnail(&content_hash, &saved.original_path);
-
-        let record = match thumbnail_result {
-            Ok(thumbnail_path) => self.mark_thumbnail_ready(record_id, thumbnail_path)?,
-            Err(error) => {
-                tracing::warn!(record_id = record_id.value(), error = %error, "generate thumbnail failed");
-                self.mark_thumbnail_failed(record_id)?
-            }
-        };
         let prune_result = self
             .database
             .prune_excess_records(ContentType::Image, self.config.max_image_records)?;
         self.image_storage
             .remove_assets(&prune_result.deleted_image_assets);
+        let record = self
+            .database
+            .find_record_detail(record_id)?
+            .ok_or_else(|| AppError::RecordNotFound(record_id.value()))?
+            .into();
 
         Ok(CaptureResult {
             action: CaptureAction::Added,
@@ -213,6 +214,47 @@ impl ClipboardRuntimeRepository for SqliteClipboardRuntimeRepository {
         let deleted_assets = delete_record_with_assets(&self.database, id)?;
         self.image_storage.remove_assets(&deleted_assets);
         Ok(id)
+    }
+
+    fn finalize_pending_image(
+        &self,
+        id: RecordId,
+    ) -> Result<(RecordUpdateReason, ClipboardRecordSummary), AppError> {
+        let detail = self
+            .database
+            .find_record_detail(id)?
+            .ok_or_else(|| AppError::RecordNotFound(id.value()))?;
+        let image_detail = detail
+            .image_detail
+            .as_ref()
+            .ok_or_else(|| AppError::InvalidParam("record is not image type".to_string()))?;
+        let hash = Path::new(&image_detail.original_path)
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .filter(|stem| !stem.is_empty())
+            .ok_or_else(|| {
+                AppError::Db(format!(
+                    "derive image hash from original path `{}` failed",
+                    image_detail.original_path
+                ))
+            })?;
+
+        match self
+            .image_storage
+            .generate_thumbnail(hash, &image_detail.original_path)
+        {
+            Ok(thumbnail_path) => Ok((
+                RecordUpdateReason::ThumbnailReady,
+                self.mark_thumbnail_ready(id, thumbnail_path)?,
+            )),
+            Err(error) => {
+                tracing::warn!(record_id = id.value(), error = %error, "generate thumbnail failed");
+                Ok((
+                    RecordUpdateReason::ThumbnailFailed,
+                    self.mark_thumbnail_failed(id)?,
+                ))
+            }
+        }
     }
 
     fn mark_thumbnail_ready(
@@ -472,7 +514,7 @@ mod tests {
     use super::{CaptureAction, ClipboardRuntimeRepository, SqliteClipboardRuntimeRepository};
 
     #[test]
-    fn capture_image_creates_record_and_thumbnail() {
+    fn capture_image_creates_pending_record_and_original_asset() {
         let context = TestContext::new("capture-image-create");
         let repository = context.repository();
 
@@ -489,12 +531,8 @@ mod tests {
         assert_eq!(image_meta.mime_type, "image/png");
         assert_eq!(image_meta.pixel_width, 2);
         assert_eq!(image_meta.pixel_height, 2);
-        assert_eq!(image_meta.thumbnail_state, ThumbnailState::Ready);
-
-        let thumbnail_path = image_meta
-            .thumbnail_path
-            .expect("thumbnail path should exist");
-        assert!(Path::new(&thumbnail_path).exists());
+        assert_eq!(image_meta.thumbnail_state, ThumbnailState::Pending);
+        assert_eq!(image_meta.thumbnail_path, None);
 
         let detail = repository
             .get_detail(RecordId::new(result.record.id))
@@ -512,6 +550,54 @@ mod tests {
             .expect("summary query should succeed");
         assert_eq!(summaries.len(), 1);
         assert_eq!(summaries[0].id, result.record.id);
+    }
+
+    #[test]
+    fn finalize_pending_image_marks_record_ready() {
+        let context = TestContext::new("capture-image-finalize-ready");
+        let repository = context.repository();
+        let captured = repository
+            .capture_image(sample_image(72), 1_000)
+            .expect("image should be captured");
+
+        let (reason, record) = repository
+            .finalize_pending_image(RecordId::new(captured.record.id))
+            .expect("thumbnail finalize should succeed");
+
+        assert_eq!(reason, super::RecordUpdateReason::ThumbnailReady);
+        let image_meta = record.image_meta.expect("image meta should exist");
+        assert_eq!(image_meta.thumbnail_state, ThumbnailState::Ready);
+        let thumbnail_path = image_meta
+            .thumbnail_path
+            .expect("thumbnail path should exist");
+        assert!(Path::new(&thumbnail_path).exists());
+    }
+
+    #[test]
+    fn finalize_pending_image_marks_record_failed_when_original_is_corrupted() {
+        let context = TestContext::new("capture-image-finalize-failed");
+        let repository = context.repository();
+        let captured = repository
+            .capture_image(sample_image(84), 1_000)
+            .expect("image should be captured");
+        let detail = repository
+            .get_detail(RecordId::new(captured.record.id))
+            .expect("detail query should succeed")
+            .expect("detail should exist");
+        let original_path = detail
+            .image_detail
+            .expect("image detail should exist")
+            .original_path;
+        fs::write(&original_path, b"not-a-valid-png").expect("original image should be corrupted");
+
+        let (reason, record) = repository
+            .finalize_pending_image(RecordId::new(captured.record.id))
+            .expect("thumbnail finalize should return failed state");
+
+        assert_eq!(reason, super::RecordUpdateReason::ThumbnailFailed);
+        let image_meta = record.image_meta.expect("image meta should exist");
+        assert_eq!(image_meta.thumbnail_state, ThumbnailState::Failed);
+        assert_eq!(image_meta.thumbnail_path, None);
     }
 
     #[test]

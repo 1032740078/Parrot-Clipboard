@@ -145,6 +145,8 @@ impl ClipboardMonitorService {
             ClipboardSnapshot::Image(image) => self.repository.capture_image(image, now)?,
             ClipboardSnapshot::Files(items) => self.repository.capture_files(items, now)?,
         };
+        let should_finalize_image = capture.action == CaptureAction::Added
+            && capture.record.content_type == crate::clipboard::types::ContentType::Image;
 
         match capture.action {
             CaptureAction::Added => {
@@ -162,7 +164,29 @@ impl ClipboardMonitorService {
                 .emit_record_deleted(RecordId::new(id), RecordDeleteReason::Retention)?;
         }
 
+        if should_finalize_image {
+            self.spawn_image_thumbnail_processing(RecordId::new(capture.record.id));
+        }
+
         Ok(())
+    }
+
+    fn spawn_image_thumbnail_processing(&self, id: RecordId) {
+        let repository = self.repository.clone();
+        let emitter = self.emitter.clone();
+
+        tauri::async_runtime::spawn(async move {
+            match repository.finalize_pending_image(id) {
+                Ok((reason, record)) => {
+                    if let Err(error) = emitter.emit_record_updated(reason, record) {
+                        tracing::error!(record_id = id.value(), error = %error, "emit thumbnail update failed");
+                    }
+                }
+                Err(error) => {
+                    tracing::error!(record_id = id.value(), error = %error, "finalize image thumbnail failed");
+                }
+            }
+        });
     }
 
     fn read_snapshot(&self) -> Result<ClipboardSnapshot, AppError> {
@@ -269,7 +293,7 @@ mod tests {
     fn poll_once_reads_image_snapshot_and_emits_new_record() {
         let repository = Arc::new(MockRepository::new(CaptureResult {
             action: CaptureAction::Added,
-            record: image_summary(7, 1_000),
+            record: image_summary_pending(7, 1_000),
             evicted_ids: Vec::new(),
         }));
         let clipboard = Arc::new(MockClipboard {
@@ -314,6 +338,84 @@ mod tests {
             .lock()
             .expect("deleted_records lock poisoned")
             .is_empty());
+    }
+
+    #[test]
+    fn poll_once_finalizes_image_thumbnail_and_emits_update() {
+        let repository = Arc::new(MockRepository::new_with_finalize(
+            CaptureResult {
+                action: CaptureAction::Added,
+                record: image_summary_pending(11, 1_000),
+                evicted_ids: Vec::new(),
+            },
+            Some((
+                RecordUpdateReason::ThumbnailReady,
+                image_summary_ready(11, 1_000),
+            )),
+        ));
+        let clipboard = Arc::new(MockClipboard {
+            text: None,
+            html: None,
+            image: Some(sample_image(99)),
+            files: None,
+            change_count: 1,
+        });
+        let emitter = Arc::new(MockEmitter::default());
+        let service = ClipboardMonitorService::new(
+            repository.clone(),
+            clipboard,
+            emitter.clone(),
+            Duration::from_millis(10),
+        );
+
+        service.poll_once().expect("image poll should succeed");
+
+        for _ in 0..20 {
+            if !emitter
+                .updated_records
+                .lock()
+                .expect("updated_records lock poisoned")
+                .is_empty()
+            {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+
+        assert_eq!(repository.capture_image_calls(), 1);
+        assert_eq!(repository.processed_image_ids(), vec![11]);
+        let new_records = emitter
+            .new_records
+            .lock()
+            .expect("new_records lock poisoned")
+            .clone();
+        assert_eq!(new_records.len(), 1);
+        assert_eq!(new_records[0].id, 11);
+        assert_eq!(
+            new_records[0]
+                .image_meta
+                .as_ref()
+                .expect("image meta should exist")
+                .thumbnail_state,
+            ThumbnailState::Pending
+        );
+
+        let updated_records = emitter
+            .updated_records
+            .lock()
+            .expect("updated_records lock poisoned")
+            .clone();
+        assert_eq!(updated_records.len(), 1);
+        assert_eq!(updated_records[0].0, RecordUpdateReason::ThumbnailReady);
+        assert_eq!(
+            updated_records[0]
+                .1
+                .image_meta
+                .as_ref()
+                .expect("image meta should exist")
+                .thumbnail_state,
+            ThumbnailState::Ready
+        );
     }
 
     #[test]
@@ -375,6 +477,8 @@ mod tests {
 
     struct MockRepository {
         result: CaptureResult,
+        finalize_result: Mutex<Option<(RecordUpdateReason, ClipboardRecordSummary)>>,
+        processed_image_ids: Mutex<Vec<u64>>,
         capture_texts: Mutex<Vec<String>>,
         capture_images: Mutex<Vec<ClipboardImageData>>,
         capture_files: Mutex<Vec<Vec<crate::clipboard::payload::ClipboardFileItem>>>,
@@ -382,8 +486,17 @@ mod tests {
 
     impl MockRepository {
         fn new(result: CaptureResult) -> Self {
+            Self::new_with_finalize(result, None)
+        }
+
+        fn new_with_finalize(
+            result: CaptureResult,
+            finalize_result: Option<(RecordUpdateReason, ClipboardRecordSummary)>,
+        ) -> Self {
             Self {
                 result,
+                finalize_result: Mutex::new(finalize_result),
+                processed_image_ids: Mutex::new(Vec::new()),
                 capture_texts: Mutex::new(Vec::new()),
                 capture_images: Mutex::new(Vec::new()),
                 capture_files: Mutex::new(Vec::new()),
@@ -420,6 +533,13 @@ mod tests {
                 .expect("capture_files lock poisoned")
                 .get(index)
                 .cloned()
+        }
+
+        fn processed_image_ids(&self) -> Vec<u64> {
+            self.processed_image_ids
+                .lock()
+                .expect("processed_image_ids lock poisoned")
+                .clone()
         }
     }
 
@@ -479,6 +599,21 @@ mod tests {
 
         fn delete(&self, _id: RecordId) -> Result<RecordId, AppError> {
             unreachable!()
+        }
+
+        fn finalize_pending_image(
+            &self,
+            id: RecordId,
+        ) -> Result<(RecordUpdateReason, ClipboardRecordSummary), AppError> {
+            self.processed_image_ids
+                .lock()
+                .expect("processed_image_ids lock poisoned")
+                .push(id.value());
+            self.finalize_result
+                .lock()
+                .expect("finalize_result lock poisoned")
+                .clone()
+                .ok_or_else(|| AppError::InvalidParam("no finalize result configured".to_string()))
         }
 
         fn mark_thumbnail_ready(
@@ -585,7 +720,27 @@ mod tests {
         }
     }
 
-    fn image_summary(id: u64, last_used_at: i64) -> ClipboardRecordSummary {
+    fn image_summary_pending(id: u64, last_used_at: i64) -> ClipboardRecordSummary {
+        ClipboardRecordSummary {
+            id,
+            content_type: ContentType::Image,
+            preview_text: "图片 2×2".to_string(),
+            source_app: None,
+            created_at: 1_000,
+            last_used_at,
+            text_meta: None,
+            image_meta: Some(ImageMeta {
+                mime_type: "image/png".to_string(),
+                pixel_width: 2,
+                pixel_height: 2,
+                thumbnail_path: None,
+                thumbnail_state: ThumbnailState::Pending,
+            }),
+            files_meta: None,
+        }
+    }
+
+    fn image_summary_ready(id: u64, last_used_at: i64) -> ClipboardRecordSummary {
         ClipboardRecordSummary {
             id,
             content_type: ContentType::Image,
