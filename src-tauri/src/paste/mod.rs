@@ -3,6 +3,7 @@ use std::{sync::Arc, time::Duration};
 use crate::{
     clipboard::{
         monitor::ClipboardMonitorControl,
+        record::ClipboardRecord,
         repository::ClipboardRecordRepository,
         types::{PasteMode, RecordId},
     },
@@ -38,7 +39,11 @@ impl PasteService {
         }
     }
 
-    pub async fn paste_record(&self, id: RecordId, mode: PasteMode) -> Result<(), AppError> {
+    pub async fn paste_record(
+        &self,
+        id: RecordId,
+        mode: PasteMode,
+    ) -> Result<ClipboardRecord, AppError> {
         tracing::debug!(record_id = id.value(), ?mode, "paste flow started");
 
         if mode != PasteMode::Original {
@@ -64,17 +69,19 @@ impl PasteService {
             );
 
             self.platform_clipboard.write_text(&record.text_content)?;
+            self.monitor.sync_clipboard_state()?;
             self.window_manager.hide()?;
             tokio::time::sleep(Duration::from_millis(80)).await;
             self.platform_key_sim.simulate_paste()?;
+            let promoted = self.repository.promote(id)?;
 
-            Ok(())
+            Ok(promoted)
         }
         .await;
 
         self.monitor.resume();
         match &result {
-            Ok(()) => tracing::info!(record_id = id.value(), "paste flow completed"),
+            Ok(record) => tracing::info!(record_id = record.id, "paste flow completed"),
             Err(error) => tracing::error!(
                 record_id = id.value(),
                 error = %error,
@@ -106,6 +113,7 @@ mod tests {
 
     struct MockRepository {
         record: Option<ClipboardRecord>,
+        promoted_ids: Arc<Mutex<Vec<u64>>>,
     }
 
     impl ClipboardRecordRepository for MockRepository {
@@ -123,6 +131,18 @@ mod tests {
 
         fn get_by_id(&self, id: RecordId) -> Option<ClipboardRecord> {
             self.record.clone().filter(|record| record.id == id.value())
+        }
+
+        fn promote(&self, id: RecordId) -> Result<ClipboardRecord, AppError> {
+            self.promoted_ids
+                .lock()
+                .expect("promoted_ids lock poisoned")
+                .push(id.value());
+
+            self.record
+                .clone()
+                .filter(|record| record.id == id.value())
+                .ok_or_else(|| AppError::RecordNotFound(id.value()))
         }
 
         fn delete(&self, _id: RecordId) -> Result<RecordId, AppError> {
@@ -148,6 +168,14 @@ mod tests {
                 .lock()
                 .expect("trace lock poisoned")
                 .push("resume");
+        }
+
+        fn sync_clipboard_state(&self) -> Result<(), AppError> {
+            self.trace
+                .lock()
+                .expect("trace lock poisoned")
+                .push("sync");
+            Ok(())
         }
 
         fn is_paused(&self) -> bool {
@@ -221,6 +249,7 @@ mod tests {
     #[tokio::test]
     async fn ut_paste_001_steps_execute_in_order() {
         let shared_trace = Arc::new(Mutex::new(Vec::<&'static str>::new()));
+        let promoted_ids = Arc::new(Mutex::new(Vec::<u64>::new()));
 
         let repository = Arc::new(MockRepository {
             record: Some(ClipboardRecord {
@@ -229,6 +258,7 @@ mod tests {
                 text_content: "Hello".to_string(),
                 created_at: 1000,
             }),
+            promoted_ids: promoted_ids.clone(),
         });
 
         let monitor = Arc::new(MockMonitor::default());
@@ -255,17 +285,28 @@ mod tests {
             .await;
 
         assert!(result.is_ok());
+        assert_eq!(result.expect("paste should succeed").id, 1);
 
         let monitor_trace = monitor.trace.lock().expect("trace lock poisoned").clone();
-        assert_eq!(monitor_trace, vec!["pause", "resume"]);
+        assert_eq!(monitor_trace, vec!["pause", "sync", "resume"]);
 
         let trace = shared_trace.lock().expect("trace lock poisoned").clone();
         assert_eq!(trace, vec!["write_text", "hide", "simulate_paste"]);
+        assert_eq!(
+            promoted_ids
+                .lock()
+                .expect("promoted_ids lock poisoned")
+                .as_slice(),
+            &[1]
+        );
     }
 
     #[tokio::test]
     async fn ut_paste_002_not_found_returns_error() {
-        let repository = Arc::new(MockRepository { record: None });
+        let repository = Arc::new(MockRepository {
+            record: None,
+            promoted_ids: Arc::new(Mutex::new(Vec::new())),
+        });
         let monitor = Arc::new(MockMonitor::default());
         let trace = Arc::new(Mutex::new(Vec::<&'static str>::new()));
 

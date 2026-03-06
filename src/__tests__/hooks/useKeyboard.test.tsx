@@ -40,8 +40,19 @@ describe("useKeyboard", () => {
 
   it("Enter 触发 paste_record", async () => {
     const store = useClipboardStore.getState();
-    store.setRecords([buildRecord(1, "A", 1000)]);
-    store.selectIndex(0);
+    const recordA = buildRecord(1, "A", 1000);
+    const recordB = buildRecord(2, "B", 900);
+    store.setRecords([recordA, recordB]);
+    store.selectIndex(1);
+    useUIStore.getState().showPanel();
+
+    __setInvokeHandler(async (command) => {
+      if (command === "paste_record") {
+        return recordB;
+      }
+
+      return undefined;
+    });
 
     render(<HookContainer />);
 
@@ -55,12 +66,17 @@ describe("useKeyboard", () => {
         true
       );
     });
+
+    expect(useClipboardStore.getState().records.map((record) => record.id)).toEqual([2, 1]);
+    expect(useClipboardStore.getState().selectedIndex).toBe(0);
+    expect(useUIStore.getState().isPanelVisible).toBe(true);
   });
 
   it("Delete/Backspace/Escape 分支触发对应命令", async () => {
     const store = useClipboardStore.getState();
     store.setRecords([buildRecord(1, "A", 1000), buildRecord(2, "B", 900)]);
     store.selectIndex(0);
+    useUIStore.getState().showPanel();
 
     render(<HookContainer />);
 
@@ -76,6 +92,8 @@ describe("useKeyboard", () => {
         true
       );
     });
+
+    expect(useUIStore.getState().isPanelVisible).toBe(true);
   });
 
   it("无选中项时 Enter 不触发 paste_record", async () => {

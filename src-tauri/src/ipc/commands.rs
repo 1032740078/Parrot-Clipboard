@@ -47,7 +47,7 @@ pub async fn paste_record(
     id: u64,
     mode: PasteMode,
     state: State<'_, AppState>,
-) -> Result<(), AppError> {
+) -> Result<crate::clipboard::record::ClipboardRecord, AppError> {
     tracing::info!(record_id = id, ?mode, "ipc paste_record requested");
     let result = state
         .paste_service
@@ -55,7 +55,7 @@ pub async fn paste_record(
         .await;
 
     match &result {
-        Ok(()) => tracing::info!(record_id = id, "ipc paste_record completed"),
+        Ok(record) => tracing::info!(record_id = record.id, "ipc paste_record completed"),
         Err(error) => tracing::error!(record_id = id, error = %error, "ipc paste_record failed"),
     }
 

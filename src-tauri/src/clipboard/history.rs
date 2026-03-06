@@ -1,7 +1,9 @@
 #![allow(dead_code)]
 
 use super::{
-    events::ClipboardDomainEvent, filter::is_duplicate_of_latest, record::ClipboardRecord,
+    events::ClipboardDomainEvent,
+    filter::{find_record_index_by_text, is_duplicate_of_latest},
+    record::ClipboardRecord,
     types::RecordId,
 };
 
@@ -31,6 +33,13 @@ impl ClipboardHistory {
             return Vec::new();
         }
 
+        if let Some(existing_index) = find_record_index_by_text(&self.records, &text) {
+            let mut record = self.records.remove(existing_index);
+            record.created_at = captured_at;
+            self.records.insert(0, record.clone());
+            return vec![ClipboardDomainEvent::RecordAdded { record }];
+        }
+
         let record = ClipboardRecord::new_text(RecordId::new(self.next_id), text, captured_at);
         self.next_id += 1;
         self.records.insert(0, record.clone());
@@ -46,6 +55,21 @@ impl ClipboardHistory {
         }
 
         events
+    }
+
+    pub fn promote_record(&mut self, id: RecordId) -> Option<ClipboardRecord> {
+        let index = self
+            .records
+            .iter()
+            .position(|record| record.id == id.value())?;
+
+        if index == 0 {
+            return self.records.first().cloned();
+        }
+
+        let record = self.records.remove(index);
+        self.records.insert(0, record.clone());
+        Some(record)
     }
 
     pub fn remove_record(&mut self, id: RecordId) -> Option<RecordId> {
@@ -127,6 +151,29 @@ mod tests {
     }
 
     #[test]
+    fn ut_hist_003b_duplicate_of_non_latest_moves_existing_record_to_front() {
+        let mut history = ClipboardHistory::new(20);
+        history.add_record("A".to_string(), 1000);
+        history.add_record("B".to_string(), 2000);
+
+        let events = history.add_record("A".to_string(), 3000);
+
+        assert_eq!(history.count(), 2);
+        assert_eq!(history.records()[0].text_content, "A");
+        assert_eq!(history.records()[0].created_at, 3000);
+        assert_eq!(history.records()[1].text_content, "B");
+        assert_eq!(events.len(), 1);
+
+        match &events[0] {
+            ClipboardDomainEvent::RecordAdded { record } => {
+                assert_eq!(record.text_content, "A");
+                assert_eq!(record.created_at, 3000);
+            }
+            _ => panic!("expect added event"),
+        }
+    }
+
+    #[test]
     fn ut_hist_004_delete_triggers_removed_event_semantics() {
         let mut history = ClipboardHistory::new(20);
         let events = history.add_record("to delete".to_string(), 1000);
@@ -159,5 +206,24 @@ mod tests {
         let before = history.count();
         history.remove_record(id);
         assert_eq!(history.count(), before - 1);
+    }
+
+    #[test]
+    fn ut_hist_006_promote_record_moves_existing_record_to_front_without_creating_new_one() {
+        let mut history = ClipboardHistory::new(20);
+        history.add_record("A".to_string(), 1000);
+        let events = history.add_record("B".to_string(), 2000);
+
+        let id = match &events[0] {
+            ClipboardDomainEvent::RecordAdded { record } => RecordId::new(record.id),
+            _ => panic!("expect added event"),
+        };
+
+        let promoted = history.promote_record(id).expect("record should exist");
+
+        assert_eq!(history.count(), 2);
+        assert_eq!(promoted.id, id.value());
+        assert_eq!(history.records()[0].id, id.value());
+        assert_eq!(history.records()[0].created_at, 2000);
     }
 }

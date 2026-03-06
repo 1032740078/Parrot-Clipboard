@@ -27,6 +27,37 @@ const clampIndex = (index: number, length: number): number => {
   return Math.max(0, Math.min(index, length - 1));
 };
 
+const resolveSelectedIndexAfterAdd = (
+  previousRecords: ClipboardRecord[],
+  previousSelectedIndex: number,
+  nextRecords: ClipboardRecord[],
+  incomingRecordId: number
+): number => {
+  if (nextRecords.length === 0) {
+    return -1;
+  }
+
+  const selectedRecordId =
+    previousSelectedIndex >= 0 && previousSelectedIndex < previousRecords.length
+      ? previousRecords[previousSelectedIndex]?.id
+      : undefined;
+
+  if (selectedRecordId === undefined) {
+    return 0;
+  }
+
+  if (selectedRecordId === incomingRecordId) {
+    return 0;
+  }
+
+  const preservedIndex = nextRecords.findIndex((record) => record.id === selectedRecordId);
+  if (preservedIndex >= 0) {
+    return preservedIndex;
+  }
+
+  return clampIndex(previousSelectedIndex, nextRecords.length);
+};
+
 export const useClipboardStore = create<ClipboardState>((set, get) => ({
   records: [],
   selectedIndex: -1,
@@ -47,7 +78,7 @@ export const useClipboardStore = create<ClipboardState>((set, get) => ({
 
       return {
         records: next,
-        selectedIndex: clampIndex(state.selectedIndex >= 0 ? state.selectedIndex : 0, next.length),
+        selectedIndex: resolveSelectedIndexAfterAdd(state.records, state.selectedIndex, next, record.id),
       };
     });
   },

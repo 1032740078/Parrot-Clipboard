@@ -2,7 +2,7 @@ import { useEffect } from "react";
 
 import { deleteRecord, hidePanel, pasteRecord } from "../api/commands";
 import { logger, normalizeError } from "../api/logger";
-import { useClipboardStore, useUIStore } from "../stores";
+import { useClipboardStore } from "../stores";
 
 interface UseKeyboardOptions {
   enabled: boolean;
@@ -11,10 +11,10 @@ interface UseKeyboardOptions {
 export const useKeyboard = ({ enabled }: UseKeyboardOptions): void => {
   const records = useClipboardStore((state) => state.records);
   const selectedIndex = useClipboardStore((state) => state.selectedIndex);
+  const addRecord = useClipboardStore((state) => state.addRecord);
   const selectPrev = useClipboardStore((state) => state.selectPrev);
   const selectNext = useClipboardStore((state) => state.selectNext);
   const removeRecord = useClipboardStore((state) => state.removeRecord);
-  const hidePanelState = useUIStore((state) => state.hidePanel);
 
   useEffect(() => {
     if (!enabled) {
@@ -41,9 +41,9 @@ export const useKeyboard = ({ enabled }: UseKeyboardOptions): void => {
         }
 
         event.preventDefault();
-        await pasteRecord(selected.id, "original");
+        const promotedRecord = await pasteRecord(selected.id, "original");
+        addRecord(promotedRecord);
         await hidePanel();
-        hidePanelState();
         logger.info("用户通过快捷键执行粘贴", { record_id: selected.id, trigger_key: "Enter" });
         return;
       }
@@ -66,7 +66,6 @@ export const useKeyboard = ({ enabled }: UseKeyboardOptions): void => {
       if (event.key === "Escape") {
         event.preventDefault();
         await hidePanel();
-        hidePanelState();
         logger.debug("用户通过快捷键隐藏面板", { trigger_key: "Escape" });
       }
     };
@@ -84,5 +83,5 @@ export const useKeyboard = ({ enabled }: UseKeyboardOptions): void => {
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [enabled, hidePanelState, records, removeRecord, selectNext, selectPrev, selectedIndex]);
+  }, [addRecord, enabled, records, removeRecord, selectNext, selectPrev, selectedIndex]);
 };

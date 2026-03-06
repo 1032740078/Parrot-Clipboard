@@ -51,6 +51,30 @@ describe("useClipboardStore", () => {
     expect(ids[0]).toBe(21);
   });
 
+  it("重复记录置顶时保持选中项为当前记录", () => {
+    const store = useClipboardStore.getState();
+    store.setRecords([buildRecord(1, "A", 1000), buildRecord(2, "B", 900), buildRecord(3, "C", 800)]);
+    store.selectIndex(2);
+
+    store.addRecord(buildRecord(3, "C", 800));
+
+    const state = useClipboardStore.getState();
+    expect(state.records.map((record) => record.id)).toEqual([3, 1, 2]);
+    expect(state.selectedIndex).toBe(0);
+  });
+
+  it("新增记录时保持原先选中记录的身份", () => {
+    const store = useClipboardStore.getState();
+    store.setRecords([buildRecord(1, "A", 1000), buildRecord(2, "B", 900)]);
+    store.selectIndex(1);
+
+    store.addRecord(buildRecord(3, "C", 1100));
+
+    const state = useClipboardStore.getState();
+    expect(state.records.map((record) => record.id)).toEqual([3, 1, 2]);
+    expect(state.selectedIndex).toBe(2);
+  });
+
   it("删除不存在记录时状态不变", () => {
     const store = useClipboardStore.getState();
     store.setRecords([buildRecord(1, "A", 1000)]);

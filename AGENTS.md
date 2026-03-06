@@ -1,5 +1,7 @@
 # Repository Guidelines
 
+每当修改代码后,都要更新`docs/{版本号}/版本迭代日志记录.md`文档
+每当决策发生改变的时候,都要更新`docs/项目决策记录文档.md`文档
 ## Project Structure & Module Organization
 - `src/`：前端应用（React + TypeScript）。按职责拆分为 `api/`、`components/`、`hooks/`、`stores/`、`types/`。
 - `src/__tests__/`：前端测试，按模块分为 `api/`、`components/`、`hooks/`、`stores/`，并包含 `fixtures/` 与 `setup.ts`。

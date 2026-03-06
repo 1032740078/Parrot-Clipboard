@@ -21,9 +21,12 @@ export const deleteRecord = async (id: number): Promise<void> => {
   }
 };
 
-export const pasteRecord = async (id: number, mode: PasteMode = "original"): Promise<void> => {
+export const pasteRecord = async (
+  id: number,
+  mode: PasteMode = "original"
+): Promise<ClipboardRecord> => {
   try {
-    await invoke<void>("paste_record", { id, mode });
+    return await invoke<ClipboardRecord>("paste_record", { id, mode });
   } catch (error) {
     logger.error("粘贴剪贴板记录失败", { id, mode, error: normalizeError(error) });
     throw error;

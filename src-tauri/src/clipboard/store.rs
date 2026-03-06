@@ -2,7 +2,11 @@
 
 use crate::error::AppError;
 
-use super::{filter::is_duplicate_of_latest, record::ClipboardRecord, types::RecordId};
+use super::{
+    filter::{find_record_index_by_text, is_duplicate_of_latest},
+    record::ClipboardRecord,
+    types::RecordId,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InsertResult {
@@ -31,6 +35,18 @@ impl InMemoryStore {
             let latest_id = self.records.first().map(|record| record.id).unwrap_or(0);
             return InsertResult {
                 inserted_id: latest_id,
+                evicted_id: None,
+                inserted: false,
+            };
+        }
+
+        if let Some(existing_index) = find_record_index_by_text(&self.records, &text) {
+            let mut record = self.records.remove(existing_index);
+            record.created_at = created_at;
+            let record_id = record.id;
+            self.records.insert(0, record);
+            return InsertResult {
+                inserted_id: record_id,
                 evicted_id: None,
                 inserted: false,
             };
@@ -108,6 +124,21 @@ mod tests {
 
         assert!(!result.inserted);
         assert_eq!(store.count(), 1);
+    }
+
+    #[test]
+    fn ut_store_002b_duplicate_of_non_latest_moves_existing_record_to_front() {
+        let mut store = InMemoryStore::new(20);
+        store.insert("A".to_string(), 1000);
+        store.insert("B".to_string(), 2000);
+
+        let result = store.insert("A".to_string(), 3000);
+
+        assert!(!result.inserted);
+        assert_eq!(result.inserted_id, 1);
+        assert_eq!(store.count(), 2);
+        assert_eq!(store.get_recent(20)[0].text_content, "A");
+        assert_eq!(store.get_recent(20)[0].created_at, 3000);
     }
 
     #[test]

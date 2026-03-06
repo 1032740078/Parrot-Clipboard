@@ -18,6 +18,7 @@ pub trait ClipboardRecordRepository: Send + Sync {
 
     fn get_recent(&self, limit: usize) -> Vec<ClipboardRecord>;
     fn get_by_id(&self, id: RecordId) -> Option<ClipboardRecord>;
+    fn promote(&self, id: RecordId) -> Result<ClipboardRecord, AppError>;
     fn delete(&self, id: RecordId) -> Result<RecordId, AppError>;
 }
 
@@ -53,6 +54,13 @@ impl ClipboardRecordRepository for InMemoryClipboardRepository {
 
     fn get_by_id(&self, id: RecordId) -> Option<ClipboardRecord> {
         self.history.read().expect("history poisoned").get_by_id(id)
+    }
+
+    fn promote(&self, id: RecordId) -> Result<ClipboardRecord, AppError> {
+        let mut history = self.history.write().expect("history poisoned");
+        history
+            .promote_record(id)
+            .ok_or_else(|| AppError::RecordNotFound(id.value()))
     }
 
     fn delete(&self, id: RecordId) -> Result<RecordId, AppError> {

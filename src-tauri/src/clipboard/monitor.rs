@@ -28,6 +28,7 @@ pub trait DomainEventEmitter: Send + Sync {
 pub trait ClipboardMonitorControl: Send + Sync {
     fn pause(&self);
     fn resume(&self);
+    fn sync_clipboard_state(&self) -> Result<(), AppError>;
     fn is_paused(&self) -> bool;
     fn is_monitoring(&self) -> bool;
 }
@@ -122,8 +123,7 @@ impl ClipboardMonitorService {
             return Ok(());
         }
 
-        self.last_change_count.store(change_count, Ordering::SeqCst);
-        *self.last_text.write().expect("last_text poisoned") = Some(text.clone());
+        self.capture_snapshot(change_count, &text);
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -155,6 +155,11 @@ impl ClipboardMonitorService {
 
         Ok(())
     }
+
+    fn capture_snapshot(&self, change_count: u64, text: &str) {
+        self.last_change_count.store(change_count, Ordering::SeqCst);
+        *self.last_text.write().expect("last_text poisoned") = Some(text.to_string());
+    }
 }
 
 impl ClipboardMonitorControl for ClipboardMonitorService {
@@ -166,6 +171,19 @@ impl ClipboardMonitorControl for ClipboardMonitorService {
     fn resume(&self) {
         self.is_paused.store(false, Ordering::SeqCst);
         tracing::debug!("clipboard monitor resumed");
+    }
+
+    fn sync_clipboard_state(&self) -> Result<(), AppError> {
+        let change_count = self.clipboard.change_count();
+        let Some(text) = self.clipboard.read_text()? else {
+            self.last_change_count.store(change_count, Ordering::SeqCst);
+            *self.last_text.write().expect("last_text poisoned") = None;
+            return Ok(());
+        };
+
+        self.capture_snapshot(change_count, &text);
+        tracing::debug!(change_count, "clipboard monitor snapshot synced");
+        Ok(())
     }
 
     fn is_paused(&self) -> bool {
