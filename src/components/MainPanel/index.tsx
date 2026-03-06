@@ -9,6 +9,7 @@ import { useKeyboard } from "../../hooks/useKeyboard";
 import { useClipboardStore, useUIStore } from "../../stores";
 import { CardList } from "./CardList";
 import { EmptyState } from "./EmptyState";
+import { panelMotionVariants } from "./motion";
 import { SkeletonCard } from "./SkeletonCard";
 
 export const MainPanel = () => {
@@ -47,12 +48,14 @@ export const MainPanel = () => {
     <AnimatePresence>
       {isPanelVisible ? (
         <motion.section
-          animate={{ y: "0%", opacity: 1 }}
+          animate="visible"
           className="fixed inset-x-0 bottom-0 z-50 h-panel border-t border-panel-border bg-panel-bg p-4 shadow-panel backdrop-blur-xl"
-          exit={{ y: "100%", opacity: 0 }}
-          initial={{ y: "100%", opacity: 0 }}
+          data-testid="main-panel"
+          exit="exit"
+          initial="hidden"
           key="main-panel"
-          transition={{ duration: 0.2, ease: "easeOut" }}
+          style={{ originY: 1 }}
+          variants={panelMotionVariants}
         >
           <div className="flex h-full flex-col">
             <div className="flex-1 overflow-hidden">

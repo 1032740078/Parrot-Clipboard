@@ -164,7 +164,7 @@ describe("MainPanel", () => {
     render(<MainPanel />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("card-list")).toBeInTheDocument();
+      expect(screen.getAllByTestId("text-card")).toHaveLength(10);
     });
 
     expect(screen.getByText("1-9 快选")).toBeInTheDocument();
