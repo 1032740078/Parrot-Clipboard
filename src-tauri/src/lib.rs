@@ -1,5 +1,6 @@
 #![allow(unexpected_cfgs)]
 
+mod autostart;
 mod clipboard;
 mod config;
 mod error;
@@ -15,6 +16,7 @@ mod window;
 
 use std::{error::Error, sync::Arc, time::Duration};
 
+use autostart::{AutostartControl, LaunchAgentService};
 use clipboard::{
     monitor::{ClipboardMonitorControl, ClipboardMonitorService, DomainEventEmitter},
     runtime_repository::{ClipboardRuntimeRepository, SqliteClipboardRuntimeRepository},
@@ -41,12 +43,19 @@ pub fn run() {
             let logging_state =
                 logging::init_logging(&app_handle).map_err(std::io::Error::other)?;
             tracing::info!("application setup started");
-            let config = config::load_or_create(&app_handle).map_err(std::io::Error::other)?;
+            let config_store =
+                config::ConfigStore::initialize(&app_handle).map_err(std::io::Error::other)?;
+            let config = config_store.current();
             let database =
                 Arc::new(persistence::initialize(&app_handle).map_err(std::io::Error::other)?);
             let image_storage = Arc::new(
                 ImageStorageService::initialize(&app_handle).map_err(std::io::Error::other)?,
             );
+            let autostart: Arc<dyn AutostartControl> = LaunchAgentService::initialize(&app_handle)?;
+
+            if let Err(error) = autostart.reconcile(config.launch_at_login) {
+                tracing::warn!(error = %error, "launch agent reconcile failed during setup");
+            }
 
             let repository: Arc<dyn ClipboardRuntimeRepository> =
                 Arc::new(SqliteClipboardRuntimeRepository::new(
@@ -84,7 +93,8 @@ pub fn run() {
             register_toggle_shortcut(&app_handle, &config.toggle_shortcut, window_manager.clone())?;
 
             app.manage(AppState {
-                config,
+                config_store,
+                autostart,
                 database,
                 image_storage,
                 repository,

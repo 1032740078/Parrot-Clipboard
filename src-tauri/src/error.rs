@@ -14,8 +14,14 @@ pub enum AppError {
     ClipboardRead(String),
     ClipboardWrite(String),
     KeySimulation(String),
+    ImageProcess(String),
+    FileAccess(String),
     Db(String),
     Window(String),
+    MonitorControl(String),
+    Autostart(String),
+    Tray(String),
+    Internal(String),
 }
 
 impl std::fmt::Display for AppError {
@@ -49,12 +55,36 @@ impl AppError {
                 code: "KEY_SIM_ERROR",
                 message: message.clone(),
             },
+            Self::ImageProcess(message) => ErrorPayload {
+                code: "IMAGE_PROCESS_ERROR",
+                message: message.clone(),
+            },
+            Self::FileAccess(message) => ErrorPayload {
+                code: "FILE_ACCESS_ERROR",
+                message: message.clone(),
+            },
             Self::Db(message) => ErrorPayload {
                 code: "DB_ERROR",
                 message: message.clone(),
             },
             Self::Window(message) => ErrorPayload {
                 code: "WINDOW_ERROR",
+                message: message.clone(),
+            },
+            Self::MonitorControl(message) => ErrorPayload {
+                code: "MONITOR_CONTROL_ERROR",
+                message: message.clone(),
+            },
+            Self::Autostart(message) => ErrorPayload {
+                code: "AUTOSTART_ERROR",
+                message: message.clone(),
+            },
+            Self::Tray(message) => ErrorPayload {
+                code: "TRAY_ERROR",
+                message: message.clone(),
+            },
+            Self::Internal(message) => ErrorPayload {
+                code: "INTERNAL",
                 message: message.clone(),
             },
         }

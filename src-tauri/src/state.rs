@@ -3,11 +3,12 @@
 use std::sync::Arc;
 
 use crate::{
+    autostart::AutostartControl,
     clipboard::{
         monitor::{ClipboardMonitorControl, DomainEventEmitter},
         runtime_repository::ClipboardRuntimeRepository,
     },
-    config::AppConfig,
+    config::ConfigStore,
     image::ImageStorageService,
     logging::LoggingState,
     paste::PasteService,
@@ -16,7 +17,8 @@ use crate::{
 };
 
 pub struct AppState {
-    pub config: AppConfig,
+    pub config_store: Arc<ConfigStore>,
+    pub autostart: Arc<dyn AutostartControl>,
     pub database: Arc<SqliteConnectionManager>,
     pub image_storage: Arc<ImageStorageService>,
     pub repository: Arc<dyn ClipboardRuntimeRepository>,
