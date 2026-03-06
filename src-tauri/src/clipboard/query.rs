@@ -111,3 +111,26 @@ pub struct ClipboardRecordDetail {
     pub image_detail: Option<ImageDetail>,
     pub files_detail: Option<FilesDetail>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PasteResult {
+    pub record: ClipboardRecordSummary,
+    pub paste_mode: super::types::PasteMode,
+    pub executed_at: i64,
+}
+
+impl From<ClipboardRecordDetail> for ClipboardRecordSummary {
+    fn from(value: ClipboardRecordDetail) -> Self {
+        Self {
+            id: value.id,
+            content_type: value.content_type,
+            preview_text: value.preview_text,
+            source_app: value.source_app,
+            created_at: value.created_at,
+            last_used_at: value.last_used_at,
+            text_meta: value.text_meta,
+            image_meta: value.image_meta,
+            files_meta: value.files_meta,
+        }
+    }
+}

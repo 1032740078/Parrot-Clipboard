@@ -1,0 +1,607 @@
+use std::{path::PathBuf, sync::Arc};
+
+use rusqlite::{params, OptionalExtension};
+
+use crate::{
+    clipboard::{
+        payload::{
+            build_files_preview, files_sha256_hex, text_sha256_hex, ClipboardFileItem,
+            ClipboardImageData,
+        },
+        query::{ClipboardRecordDetail, ClipboardRecordSummary, ThumbnailState},
+        types::{ContentType, RecordId},
+    },
+    config::AppConfig,
+    error::AppError,
+    image::ImageStorageService,
+    persistence::{sqlite::ImageAssetCleanupPaths, sqlite::SqliteConnectionManager},
+};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CaptureAction {
+    Added,
+    Promoted,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecordUpdateReason {
+    Promoted,
+    ThumbnailReady,
+    ThumbnailFailed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecordDeleteReason {
+    Manual,
+    Retention,
+}
+
+#[derive(Debug, Clone)]
+pub struct CaptureResult {
+    pub action: CaptureAction,
+    pub record: ClipboardRecordSummary,
+    pub evicted_ids: Vec<u64>,
+}
+
+pub trait ClipboardRuntimeRepository: Send + Sync {
+    fn capture_text(
+        &self,
+        text: String,
+        rich_content: Option<String>,
+        captured_at: i64,
+    ) -> Result<CaptureResult, AppError>;
+
+    fn capture_image(
+        &self,
+        image: ClipboardImageData,
+        captured_at: i64,
+    ) -> Result<CaptureResult, AppError>;
+
+    fn capture_files(
+        &self,
+        items: Vec<ClipboardFileItem>,
+        captured_at: i64,
+    ) -> Result<CaptureResult, AppError>;
+
+    fn list_summaries(&self, limit: usize) -> Result<Vec<ClipboardRecordSummary>, AppError>;
+    fn get_detail(&self, id: RecordId) -> Result<Option<ClipboardRecordDetail>, AppError>;
+    fn promote(&self, id: RecordId, promoted_at: i64) -> Result<ClipboardRecordSummary, AppError>;
+    fn delete(&self, id: RecordId) -> Result<RecordId, AppError>;
+    fn mark_thumbnail_ready(
+        &self,
+        id: RecordId,
+        thumbnail_path: String,
+    ) -> Result<ClipboardRecordSummary, AppError>;
+    fn mark_thumbnail_failed(&self, id: RecordId) -> Result<ClipboardRecordSummary, AppError>;
+}
+
+pub struct SqliteClipboardRuntimeRepository {
+    database: Arc<SqliteConnectionManager>,
+    image_storage: Arc<ImageStorageService>,
+    config: AppConfig,
+}
+
+impl SqliteClipboardRuntimeRepository {
+    pub fn new(
+        database: Arc<SqliteConnectionManager>,
+        image_storage: Arc<ImageStorageService>,
+        config: AppConfig,
+    ) -> Self {
+        Self {
+            database,
+            image_storage,
+            config,
+        }
+    }
+}
+
+impl ClipboardRuntimeRepository for SqliteClipboardRuntimeRepository {
+    fn capture_text(
+        &self,
+        text: String,
+        rich_content: Option<String>,
+        captured_at: i64,
+    ) -> Result<CaptureResult, AppError> {
+        let content_hash = text_sha256_hex(&text);
+        let preview_text = text.clone();
+        let record = upsert_text_record(
+            &self.database,
+            &content_hash,
+            &text,
+            rich_content.as_deref(),
+            &preview_text,
+            captured_at,
+        )?;
+        let prune_result = self
+            .database
+            .prune_excess_records(ContentType::Text, self.config.max_text_records)?;
+
+        Ok(CaptureResult {
+            action: record.0,
+            record: record.1,
+            evicted_ids: prune_result.deleted_record_ids,
+        })
+    }
+
+    fn capture_image(
+        &self,
+        image: ClipboardImageData,
+        captured_at: i64,
+    ) -> Result<CaptureResult, AppError> {
+        let content_hash = image.sha256_hex();
+        if let Some(existing_id) =
+            find_existing_id(&self.database, ContentType::Image, &content_hash)?
+        {
+            let record = promote_record(&self.database, existing_id, captured_at)?;
+            return Ok(CaptureResult {
+                action: CaptureAction::Promoted,
+                record,
+                evicted_ids: Vec::new(),
+            });
+        }
+
+        let saved = self.image_storage.save_original(&content_hash, &image)?;
+        let record_id = insert_image_record(&self.database, &content_hash, &saved, captured_at)?;
+        let thumbnail_result = self
+            .image_storage
+            .generate_thumbnail(&content_hash, &saved.original_path);
+
+        let record = match thumbnail_result {
+            Ok(thumbnail_path) => self.mark_thumbnail_ready(record_id, thumbnail_path)?,
+            Err(error) => {
+                tracing::warn!(record_id = record_id.value(), error = %error, "generate thumbnail failed");
+                self.mark_thumbnail_failed(record_id)?
+            }
+        };
+        let prune_result = self
+            .database
+            .prune_excess_records(ContentType::Image, self.config.max_image_records)?;
+        self.image_storage
+            .remove_assets(&prune_result.deleted_image_assets);
+
+        Ok(CaptureResult {
+            action: CaptureAction::Added,
+            record,
+            evicted_ids: prune_result.deleted_record_ids,
+        })
+    }
+
+    fn capture_files(
+        &self,
+        items: Vec<ClipboardFileItem>,
+        captured_at: i64,
+    ) -> Result<CaptureResult, AppError> {
+        let content_hash = files_sha256_hex(&items);
+        if let Some(existing_id) =
+            find_existing_id(&self.database, ContentType::Files, &content_hash)?
+        {
+            let record = promote_record(&self.database, existing_id, captured_at)?;
+            return Ok(CaptureResult {
+                action: CaptureAction::Promoted,
+                record,
+                evicted_ids: Vec::new(),
+            });
+        }
+
+        let record = insert_files_record(&self.database, &content_hash, &items, captured_at)?;
+        let prune_result = self
+            .database
+            .prune_excess_records(ContentType::Files, self.config.max_file_records)?;
+
+        Ok(CaptureResult {
+            action: CaptureAction::Added,
+            record,
+            evicted_ids: prune_result.deleted_record_ids,
+        })
+    }
+
+    fn list_summaries(&self, limit: usize) -> Result<Vec<ClipboardRecordSummary>, AppError> {
+        self.database.list_record_summaries(limit)
+    }
+
+    fn get_detail(&self, id: RecordId) -> Result<Option<ClipboardRecordDetail>, AppError> {
+        self.database.find_record_detail(id)
+    }
+
+    fn promote(&self, id: RecordId, promoted_at: i64) -> Result<ClipboardRecordSummary, AppError> {
+        promote_record(&self.database, id, promoted_at)
+    }
+
+    fn delete(&self, id: RecordId) -> Result<RecordId, AppError> {
+        let deleted_assets = delete_record_with_assets(&self.database, id)?;
+        self.image_storage.remove_assets(&deleted_assets);
+        Ok(id)
+    }
+
+    fn mark_thumbnail_ready(
+        &self,
+        id: RecordId,
+        thumbnail_path: String,
+    ) -> Result<ClipboardRecordSummary, AppError> {
+        update_thumbnail_state(
+            &self.database,
+            id,
+            ThumbnailState::Ready,
+            Some(thumbnail_path),
+        )
+    }
+
+    fn mark_thumbnail_failed(&self, id: RecordId) -> Result<ClipboardRecordSummary, AppError> {
+        update_thumbnail_state(&self.database, id, ThumbnailState::Failed, None)
+    }
+}
+
+fn upsert_text_record(
+    database: &SqliteConnectionManager,
+    content_hash: &str,
+    text: &str,
+    rich_content: Option<&str>,
+    preview_text: &str,
+    captured_at: i64,
+) -> Result<(CaptureAction, ClipboardRecordSummary), AppError> {
+    if let Some(existing_id) = find_existing_id(database, ContentType::Text, content_hash)? {
+        database.with_connection(|connection| {
+            connection
+                .execute(
+                    "UPDATE clipboard_items SET text_content = ?1, rich_content = ?2, preview_text = ?3, search_text = ?4, payload_bytes = ?5, last_used_at = ?6 WHERE id = ?7",
+                    params![
+                        text,
+                        rich_content,
+                        preview_text,
+                        text,
+                        text.len() as i64,
+                        captured_at,
+                        existing_id.value() as i64
+                    ],
+                )
+                .map_err(|error| AppError::Db(format!("update text record failed: {error}")))?;
+            Ok(())
+        })?;
+        return Ok((
+            CaptureAction::Promoted,
+            database
+                .find_record_detail(existing_id)?
+                .ok_or_else(|| AppError::RecordNotFound(existing_id.value()))?
+                .into(),
+        ));
+    }
+
+    let record_id = database.with_connection(|connection| {
+        connection
+            .execute(
+                "INSERT INTO clipboard_items (content_type, content_hash, text_content, rich_content, preview_text, search_text, source_app, file_count, payload_bytes, created_at, last_used_at) VALUES ('text', ?1, ?2, ?3, ?4, ?5, NULL, 0, ?6, ?7, ?7)",
+                params![content_hash, text, rich_content, preview_text, text, text.len() as i64, captured_at],
+            )
+            .map_err(|error| AppError::Db(format!("insert text record failed: {error}")))?;
+        let inserted_id = connection.last_insert_rowid();
+        u64::try_from(inserted_id)
+            .map(RecordId::new)
+            .map_err(|_| AppError::Db(format!("invalid inserted text id `{inserted_id}`")))
+    })?;
+
+    let record = database
+        .find_record_detail(record_id)?
+        .ok_or_else(|| AppError::RecordNotFound(record_id.value()))?
+        .into();
+    Ok((CaptureAction::Added, record))
+}
+
+fn insert_image_record(
+    database: &SqliteConnectionManager,
+    content_hash: &str,
+    saved: &crate::image::SavedImageAsset,
+    captured_at: i64,
+) -> Result<RecordId, AppError> {
+    database.with_connection(|connection| {
+        connection.execute(
+            "INSERT INTO clipboard_items (content_type, content_hash, text_content, rich_content, preview_text, search_text, source_app, file_count, payload_bytes, created_at, last_used_at) VALUES ('image', ?1, NULL, NULL, ?2, ?2, NULL, 0, ?3, ?4, ?4)",
+            params![
+                content_hash,
+                format!("图片 {}×{}", saved.pixel_width, saved.pixel_height),
+                saved.byte_size,
+                captured_at
+            ],
+        ).map_err(|error| AppError::Db(format!("insert image item failed: {error}")))?;
+        let item_id = connection.last_insert_rowid();
+        connection.execute(
+            "INSERT INTO image_assets (item_id, original_path, thumbnail_path, mime_type, pixel_width, pixel_height, byte_size, thumbnail_state, created_at) VALUES (?1, ?2, NULL, ?3, ?4, ?5, ?6, 'pending', ?7)",
+            params![item_id, saved.original_path, saved.mime_type, saved.pixel_width, saved.pixel_height, saved.byte_size, captured_at],
+        ).map_err(|error| AppError::Db(format!("insert image asset failed: {error}")))?;
+        u64::try_from(item_id)
+            .map(RecordId::new)
+            .map_err(|_| AppError::Db(format!("invalid inserted image id `{item_id}`")))
+    })
+}
+
+fn insert_files_record(
+    database: &SqliteConnectionManager,
+    content_hash: &str,
+    items: &[ClipboardFileItem],
+    captured_at: i64,
+) -> Result<ClipboardRecordSummary, AppError> {
+    let record_id = database.with_connection(|connection| {
+        connection.execute(
+            "INSERT INTO clipboard_items (content_type, content_hash, text_content, rich_content, preview_text, search_text, source_app, file_count, payload_bytes, created_at, last_used_at) VALUES ('files', ?1, NULL, NULL, ?2, ?2, NULL, ?3, 0, ?4, ?4)",
+            params![content_hash, build_files_preview(items), items.len() as i64, captured_at],
+        ).map_err(|error| AppError::Db(format!("insert files item failed: {error}")))?;
+        let item_id = connection.last_insert_rowid();
+        for (index, item) in items.iter().enumerate() {
+            connection.execute(
+                "INSERT INTO file_items (item_id, sort_order, path, display_name, entry_type, extension, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![item_id, index as i64, item.path.to_string_lossy().to_string(), item.display_name, match item.entry_type { crate::clipboard::query::FileEntryType::File => "file", crate::clipboard::query::FileEntryType::Directory => "directory" }, item.extension, captured_at],
+            ).map_err(|error| AppError::Db(format!("insert file item failed: {error}")))?;
+        }
+        u64::try_from(item_id)
+            .map(RecordId::new)
+            .map_err(|_| AppError::Db(format!("invalid inserted files id `{item_id}`")))
+    })?;
+
+    database
+        .find_record_detail(record_id)?
+        .ok_or_else(|| AppError::RecordNotFound(record_id.value()))
+        .map(Into::into)
+}
+
+fn find_existing_id(
+    database: &SqliteConnectionManager,
+    content_type: ContentType,
+    content_hash: &str,
+) -> Result<Option<RecordId>, AppError> {
+    database.with_connection(|connection| {
+        connection
+            .query_row(
+                "SELECT id FROM clipboard_items WHERE content_type = ?1 AND content_hash = ?2 LIMIT 1",
+                params![content_type.as_str(), content_hash],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()
+            .map_err(|error| AppError::Db(format!("query existing record failed: {error}")))?
+            .map(|id| {
+                u64::try_from(id)
+                    .map(RecordId::new)
+                    .map_err(|_| AppError::Db(format!("invalid existing record id `{id}`")))
+            })
+            .transpose()
+    })
+}
+
+fn promote_record(
+    database: &SqliteConnectionManager,
+    id: RecordId,
+    promoted_at: i64,
+) -> Result<ClipboardRecordSummary, AppError> {
+    database.with_connection(|connection| {
+        connection
+            .execute(
+                "UPDATE clipboard_items SET last_used_at = ?1 WHERE id = ?2",
+                params![promoted_at, id.value() as i64],
+            )
+            .map_err(|error| AppError::Db(format!("promote record failed: {error}")))?;
+        Ok(())
+    })?;
+
+    database
+        .find_record_detail(id)?
+        .ok_or_else(|| AppError::RecordNotFound(id.value()))
+        .map(Into::into)
+}
+
+fn delete_record_with_assets(
+    database: &SqliteConnectionManager,
+    id: RecordId,
+) -> Result<Vec<ImageAssetCleanupPaths>, AppError> {
+    database.with_connection(|connection| {
+        let image_assets: Option<(String, Option<String>)> = connection
+            .query_row(
+                "SELECT ia.original_path, ia.thumbnail_path FROM clipboard_items ci LEFT JOIN image_assets ia ON ia.item_id = ci.id WHERE ci.id = ?1 LIMIT 1",
+                params![id.value() as i64],
+                |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, Option<String>>(1)?)),
+            )
+            .optional()
+            .map_err(|error| AppError::Db(format!("query delete image assets failed: {error}")))?
+            .and_then(|(original_path, thumbnail_path)| original_path.map(|path| (path, thumbnail_path)));
+
+        let deleted = connection.execute(
+            "DELETE FROM clipboard_items WHERE id = ?1",
+            params![id.value() as i64],
+        ).map_err(|error| AppError::Db(format!("delete record failed: {error}")))?;
+        if deleted == 0 {
+            return Err(AppError::RecordNotFound(id.value()));
+        }
+
+        Ok(image_assets
+            .into_iter()
+            .map(|(original_path, thumbnail_path)| ImageAssetCleanupPaths { original_path, thumbnail_path })
+            .collect())
+    })
+}
+
+fn update_thumbnail_state(
+    database: &SqliteConnectionManager,
+    id: RecordId,
+    state: ThumbnailState,
+    thumbnail_path: Option<String>,
+) -> Result<ClipboardRecordSummary, AppError> {
+    let state_value = match state {
+        ThumbnailState::Pending => "pending",
+        ThumbnailState::Ready => "ready",
+        ThumbnailState::Failed => "failed",
+    };
+
+    database.with_connection(|connection| {
+        connection.execute(
+            "UPDATE image_assets SET thumbnail_state = ?1, thumbnail_path = COALESCE(?2, thumbnail_path) WHERE item_id = ?3",
+            params![state_value, thumbnail_path, id.value() as i64],
+        ).map_err(|error| AppError::Db(format!("update thumbnail state failed: {error}")))?;
+        Ok(())
+    })?;
+
+    database
+        .find_record_detail(id)?
+        .ok_or_else(|| AppError::RecordNotFound(id.value()))
+        .map(Into::into)
+}
+
+#[allow(dead_code)]
+fn _normalize_paths(paths: &[PathBuf]) -> Vec<PathBuf> {
+    paths.to_vec()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        env, fs,
+        path::{Path, PathBuf},
+        sync::Arc,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    use crate::{
+        clipboard::{
+            payload::ClipboardImageData,
+            query::ThumbnailState,
+            types::{ContentType, RecordId},
+        },
+        config::AppConfig,
+        image::ImageStorageService,
+        persistence::sqlite::SqliteConnectionManager,
+    };
+
+    use super::{CaptureAction, ClipboardRuntimeRepository, SqliteClipboardRuntimeRepository};
+
+    #[test]
+    fn capture_image_creates_record_and_thumbnail() {
+        let context = TestContext::new("capture-image-create");
+        let repository = context.repository();
+
+        let result = repository
+            .capture_image(sample_image(64), 1_000)
+            .expect("image should be captured");
+
+        assert_eq!(result.action, CaptureAction::Added);
+        assert!(result.evicted_ids.is_empty());
+        assert_eq!(result.record.content_type, ContentType::Image);
+        assert_eq!(result.record.preview_text, "图片 2×2");
+
+        let image_meta = result.record.image_meta.expect("image meta should exist");
+        assert_eq!(image_meta.mime_type, "image/png");
+        assert_eq!(image_meta.pixel_width, 2);
+        assert_eq!(image_meta.pixel_height, 2);
+        assert_eq!(image_meta.thumbnail_state, ThumbnailState::Ready);
+
+        let thumbnail_path = image_meta
+            .thumbnail_path
+            .expect("thumbnail path should exist");
+        assert!(Path::new(&thumbnail_path).exists());
+
+        let detail = repository
+            .get_detail(RecordId::new(result.record.id))
+            .expect("detail query should succeed")
+            .expect("detail should exist");
+        let image_detail = detail.image_detail.expect("image detail should exist");
+        assert!(Path::new(&image_detail.original_path).exists());
+        assert_eq!(image_detail.mime_type, "image/png");
+        assert_eq!(image_detail.pixel_width, 2);
+        assert_eq!(image_detail.pixel_height, 2);
+        assert!(image_detail.byte_size > 0);
+
+        let summaries = repository
+            .list_summaries(10)
+            .expect("summary query should succeed");
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries[0].id, result.record.id);
+    }
+
+    #[test]
+    fn capture_image_duplicate_promotes_existing_record() {
+        let context = TestContext::new("capture-image-promote");
+        let repository = context.repository();
+
+        let first = repository
+            .capture_image(sample_image(96), 1_000)
+            .expect("first image capture should succeed");
+        let second = repository
+            .capture_image(sample_image(96), 2_000)
+            .expect("duplicate image capture should succeed");
+
+        assert_eq!(first.action, CaptureAction::Added);
+        assert_eq!(second.action, CaptureAction::Promoted);
+        assert_eq!(first.record.id, second.record.id);
+        assert_eq!(second.record.last_used_at, 2_000);
+        assert!(second.evicted_ids.is_empty());
+
+        let summaries = repository
+            .list_summaries(10)
+            .expect("summary query should succeed");
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries[0].id, first.record.id);
+        assert_eq!(summaries[0].last_used_at, 2_000);
+    }
+
+    struct TestContext {
+        root_dir: PathBuf,
+        database: Arc<SqliteConnectionManager>,
+        image_storage: Arc<ImageStorageService>,
+        config: AppConfig,
+    }
+
+    impl TestContext {
+        fn new(suffix: &str) -> Self {
+            let root_dir = unique_test_dir(suffix);
+            let database = Arc::new(
+                SqliteConnectionManager::initialize_at(&root_dir.join("clipboard.db"))
+                    .expect("sqlite database should initialize"),
+            );
+            let image_storage = Arc::new(
+                ImageStorageService::initialize_at(
+                    root_dir.join("images/original"),
+                    root_dir.join("images/thumbs"),
+                )
+                .expect("image storage should initialize"),
+            );
+
+            Self {
+                root_dir,
+                database,
+                image_storage,
+                config: AppConfig::default(),
+            }
+        }
+
+        fn repository(&self) -> SqliteClipboardRuntimeRepository {
+            SqliteClipboardRuntimeRepository::new(
+                self.database.clone(),
+                self.image_storage.clone(),
+                self.config.clone(),
+            )
+        }
+    }
+
+    impl Drop for TestContext {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root_dir);
+        }
+    }
+
+    fn sample_image(seed: u8) -> ClipboardImageData {
+        ClipboardImageData {
+            width: 2,
+            height: 2,
+            bytes: vec![
+                seed, 0, 0, 255, 0, seed, 0, 255, 0, 0, seed, 255, 255, 255, 255, 255,
+            ],
+        }
+    }
+
+    fn unique_test_dir(suffix: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after unix epoch")
+            .as_nanos();
+        env::temp_dir().join(format!(
+            "clipboard-manager-runtime-repository-test-{suffix}-{nanos}"
+        ))
+    }
+}

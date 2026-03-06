@@ -1,15 +1,15 @@
 #![allow(unexpected_cfgs)]
 
-use std::{sync::Mutex, thread, time::Duration};
+use std::{path::PathBuf, sync::Mutex, thread, time::Duration};
 
-use arboard::Clipboard;
+use arboard::{Clipboard, ImageData};
 use core_graphics::{
     event::{CGEvent, CGEventFlags, CGEventTapLocation},
     event_source::{CGEventSource, CGEventSourceStateID},
 };
 use objc::{class, msg_send, sel, sel_impl};
 
-use crate::error::AppError;
+use crate::{clipboard::payload::ClipboardImageData, error::AppError};
 
 use super::{PlatformClipboard, PlatformKeySimulator};
 
@@ -37,16 +37,83 @@ impl PlatformClipboard for MacosPlatformClipboard {
             Ok(text) => Ok(Some(text)),
             Err(arboard::Error::ContentNotAvailable) => Ok(None),
             Err(error) => Err(AppError::ClipboardRead(format!(
-                "read clipboard failed: {error}"
+                "read clipboard text failed: {error}"
+            ))),
+        }
+    }
+
+    fn read_html(&self) -> Result<Option<String>, AppError> {
+        let mut clipboard = self.clipboard.lock().expect("clipboard lock poisoned");
+        match clipboard.get().html() {
+            Ok(html) => Ok(Some(html)),
+            Err(arboard::Error::ContentNotAvailable) => Ok(None),
+            Err(error) => Err(AppError::ClipboardRead(format!(
+                "read clipboard html failed: {error}"
+            ))),
+        }
+    }
+
+    fn read_image(&self) -> Result<Option<ClipboardImageData>, AppError> {
+        let mut clipboard = self.clipboard.lock().expect("clipboard lock poisoned");
+        match clipboard.get_image() {
+            Ok(image) => Ok(Some(ClipboardImageData {
+                width: image.width,
+                height: image.height,
+                bytes: image.bytes.into_owned(),
+            })),
+            Err(arboard::Error::ContentNotAvailable) => Ok(None),
+            Err(error) => Err(AppError::ClipboardRead(format!(
+                "read clipboard image failed: {error}"
+            ))),
+        }
+    }
+
+    fn read_file_list(&self) -> Result<Option<Vec<PathBuf>>, AppError> {
+        let mut clipboard = self.clipboard.lock().expect("clipboard lock poisoned");
+        match clipboard.get().file_list() {
+            Ok(files) if files.is_empty() => Ok(None),
+            Ok(files) => Ok(Some(files)),
+            Err(arboard::Error::ContentNotAvailable) => Ok(None),
+            Err(error) => Err(AppError::ClipboardRead(format!(
+                "read clipboard file list failed: {error}"
             ))),
         }
     }
 
     fn write_text(&self, text: &str) -> Result<(), AppError> {
         let mut clipboard = self.clipboard.lock().expect("clipboard lock poisoned");
+        clipboard.set_text(text.to_string()).map_err(|error| {
+            AppError::ClipboardWrite(format!("write clipboard text failed: {error}"))
+        })
+    }
+
+    fn write_html(&self, html: &str, alt_text: &str) -> Result<(), AppError> {
+        let mut clipboard = self.clipboard.lock().expect("clipboard lock poisoned");
         clipboard
-            .set_text(text.to_string())
-            .map_err(|error| AppError::ClipboardWrite(format!("write clipboard failed: {error}")))
+            .set_html(html.to_string(), Some(alt_text.to_string()))
+            .map_err(|error| {
+                AppError::ClipboardWrite(format!("write clipboard html failed: {error}"))
+            })
+    }
+
+    fn write_image(&self, image: &ClipboardImageData) -> Result<(), AppError> {
+        let mut clipboard = self.clipboard.lock().expect("clipboard lock poisoned");
+        clipboard
+            .set_image(ImageData {
+                width: image.width,
+                height: image.height,
+                bytes: image.bytes.clone().into(),
+            })
+            .map_err(|error| {
+                AppError::ClipboardWrite(format!("write clipboard image failed: {error}"))
+            })
+    }
+
+    fn write_file_list(&self, file_list: &[PathBuf]) -> Result<(), AppError> {
+        let mut clipboard = self.clipboard.lock().expect("clipboard lock poisoned");
+        clipboard.set().file_list(file_list).map_err(|error| {
+            AppError::ClipboardWrite(format!("write clipboard file list failed: {error}"))
+        })
     }
 
     fn change_count(&self) -> u64 {

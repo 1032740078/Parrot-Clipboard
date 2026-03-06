@@ -1,29 +1,38 @@
 use tauri::State;
 
 use crate::{
-    clipboard::types::{PasteMode, RecordId},
+    clipboard::{
+        query::{ClipboardRecordDetail, ClipboardRecordSummary, PasteResult},
+        runtime_repository::{RecordDeleteReason, RecordUpdateReason},
+        types::{PasteMode, RecordId},
+    },
     error::AppError,
     logging::{self, ClientLogLevel},
     state::AppState,
 };
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct MonitoringStatus {
+    pub monitoring: bool,
+}
+
 #[tauri::command]
 pub fn get_records(
     limit: usize,
     state: State<'_, AppState>,
-) -> Result<Vec<crate::clipboard::record::ClipboardRecord>, AppError> {
+) -> Result<Vec<ClipboardRecordSummary>, AppError> {
     tracing::debug!(limit, "ipc get_records requested");
 
     if limit == 0 {
         tracing::warn!(limit, "ipc get_records rejected due to invalid limit");
         return Err(AppError::InvalidParam("limit must be > 0".to_string()));
     }
-    if limit > 1000 {
+    if limit > 500 {
         tracing::warn!(limit, "ipc get_records rejected due to oversized limit");
-        return Err(AppError::InvalidParam("limit must be <= 1000".to_string()));
+        return Err(AppError::InvalidParam("limit must be <= 500".to_string()));
     }
 
-    let records = state.repository.get_recent(limit);
+    let records = state.repository.list_summaries(limit)?;
     tracing::debug!(
         limit,
         returned_count = records.len(),
@@ -33,11 +42,25 @@ pub fn get_records(
 }
 
 #[tauri::command]
+pub fn get_record_detail(
+    id: u64,
+    state: State<'_, AppState>,
+) -> Result<ClipboardRecordDetail, AppError> {
+    tracing::debug!(record_id = id, "ipc get_record_detail requested");
+    state
+        .repository
+        .get_detail(RecordId::new(id))?
+        .ok_or(AppError::RecordNotFound(id))
+}
+
+#[tauri::command]
 pub fn delete_record(id: u64, state: State<'_, AppState>) -> Result<(), AppError> {
     tracing::info!(record_id = id, "ipc delete_record requested");
     let record_id = RecordId::new(id);
     let deleted_id = state.repository.delete(record_id)?;
-    state.event_emitter.emit_record_deleted(deleted_id)?;
+    state
+        .event_emitter
+        .emit_record_deleted(deleted_id, RecordDeleteReason::Manual)?;
     tracing::info!(record_id = id, "ipc delete_record completed");
     Ok(())
 }
@@ -47,7 +70,7 @@ pub async fn paste_record(
     id: u64,
     mode: PasteMode,
     state: State<'_, AppState>,
-) -> Result<crate::clipboard::record::ClipboardRecord, AppError> {
+) -> Result<PasteResult, AppError> {
     tracing::info!(record_id = id, ?mode, "ipc paste_record requested");
     let result = state
         .paste_service
@@ -55,7 +78,15 @@ pub async fn paste_record(
         .await;
 
     match &result {
-        Ok(record) => tracing::info!(record_id = record.id, "ipc paste_record completed"),
+        Ok(paste_result) => {
+            state
+                .event_emitter
+                .emit_record_updated(RecordUpdateReason::Promoted, paste_result.record.clone())?;
+            tracing::info!(
+                record_id = paste_result.record.id,
+                "ipc paste_record completed"
+            );
+        }
         Err(error) => tracing::error!(record_id = id, error = %error, "ipc paste_record failed"),
     }
 
@@ -73,10 +104,10 @@ pub fn hide_panel(state: State<'_, AppState>) -> Result<(), AppError> {
 }
 
 #[tauri::command]
-pub fn get_monitoring_status(state: State<'_, AppState>) -> bool {
+pub fn get_monitoring_status(state: State<'_, AppState>) -> MonitoringStatus {
     let monitoring = state.monitor.is_monitoring();
     tracing::debug!(monitoring, "ipc get_monitoring_status requested");
-    monitoring
+    MonitoringStatus { monitoring }
 }
 
 #[tauri::command]

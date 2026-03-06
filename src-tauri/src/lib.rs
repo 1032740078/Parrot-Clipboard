@@ -3,6 +3,7 @@
 mod clipboard;
 mod config;
 mod error;
+mod image;
 mod ipc;
 mod logging;
 mod paste;
@@ -16,8 +17,9 @@ use std::{error::Error, sync::Arc, time::Duration};
 
 use clipboard::{
     monitor::{ClipboardMonitorControl, ClipboardMonitorService, DomainEventEmitter},
-    repository::{ClipboardRecordRepository, InMemoryClipboardRepository},
+    runtime_repository::{ClipboardRuntimeRepository, SqliteClipboardRuntimeRepository},
 };
+use image::ImageStorageService;
 use ipc::events::TauriEventEmitter;
 use paste::PasteService;
 use platform::{
@@ -42,9 +44,16 @@ pub fn run() {
             let config = config::load_or_create(&app_handle).map_err(std::io::Error::other)?;
             let database =
                 Arc::new(persistence::initialize(&app_handle).map_err(std::io::Error::other)?);
+            let image_storage = Arc::new(
+                ImageStorageService::initialize(&app_handle).map_err(std::io::Error::other)?,
+            );
 
-            let repository: Arc<dyn ClipboardRecordRepository> =
-                Arc::new(InMemoryClipboardRepository::new(config.max_text_records));
+            let repository: Arc<dyn ClipboardRuntimeRepository> =
+                Arc::new(SqliteClipboardRuntimeRepository::new(
+                    database.clone(),
+                    image_storage.clone(),
+                    config.clone(),
+                ));
             let window_manager: Arc<dyn WindowManager> =
                 TauriWindowManager::new(app_handle.clone(), "main", 220.0);
             let event_emitter: Arc<dyn DomainEventEmitter> =
@@ -69,6 +78,7 @@ pub fn run() {
                 platform_clipboard,
                 platform_key_sim,
                 window_manager.clone(),
+                image_storage.clone(),
             ));
 
             register_toggle_shortcut(&app_handle, &config.toggle_shortcut, window_manager.clone())?;
@@ -76,6 +86,7 @@ pub fn run() {
             app.manage(AppState {
                 config,
                 database,
+                image_storage,
                 repository,
                 monitor,
                 paste_service,
@@ -89,6 +100,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             ipc::commands::get_records,
+            ipc::commands::get_record_detail,
             ipc::commands::delete_record,
             ipc::commands::paste_record,
             ipc::commands::hide_panel,

@@ -79,7 +79,7 @@ fn serialize_config(config: &AppConfig) -> Result<String, serde_json::Error> {
 mod tests {
     use std::{
         env, fs,
-        path::PathBuf,
+        path::{Path, PathBuf},
         time::{SystemTime, UNIX_EPOCH},
     };
 
@@ -135,7 +135,7 @@ mod tests {
         env::temp_dir().join(format!("clipboard-manager-config-test-{suffix}"))
     }
 
-    fn cleanup_test_dir(config_path: &PathBuf) {
+    fn cleanup_test_dir(config_path: &Path) {
         if let Some(parent) = config_path.parent() {
             let _ = fs::remove_dir_all(parent);
         }

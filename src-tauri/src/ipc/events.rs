@@ -1,23 +1,36 @@
 use tauri::{AppHandle, Emitter};
 
 use crate::{
-    clipboard::{monitor::DomainEventEmitter, record::ClipboardRecord, types::RecordId},
+    clipboard::{
+        monitor::DomainEventEmitter,
+        query::ClipboardRecordSummary,
+        runtime_repository::{RecordDeleteReason, RecordUpdateReason},
+        types::RecordId,
+    },
     error::AppError,
 };
 
 pub const EVENT_NEW_RECORD: &str = "clipboard:new-record";
+pub const EVENT_RECORD_UPDATED: &str = "clipboard:record-updated";
 pub const EVENT_RECORD_DELETED: &str = "clipboard:record-deleted";
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct NewRecordPayload {
-    pub record: ClipboardRecord,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub evicted_id: Option<u64>,
+    pub record: ClipboardRecordSummary,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub evicted_ids: Vec<u64>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RecordUpdatedPayload {
+    pub reason: RecordUpdateReason,
+    pub record: ClipboardRecordSummary,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct RecordDeletedPayload {
     pub id: u64,
+    pub reason: RecordDeleteReason,
 }
 
 pub struct TauriEventEmitter {
@@ -33,13 +46,13 @@ impl TauriEventEmitter {
 impl DomainEventEmitter for TauriEventEmitter {
     fn emit_new_record(
         &self,
-        record: ClipboardRecord,
-        evicted_id: Option<RecordId>,
+        record: ClipboardRecordSummary,
+        evicted_ids: Vec<u64>,
     ) -> Result<(), AppError> {
         let record_id = record.id;
         let payload = NewRecordPayload {
             record,
-            evicted_id: evicted_id.map(|id| id.value()),
+            evicted_ids,
         };
 
         self.app_handle
@@ -49,13 +62,38 @@ impl DomainEventEmitter for TauriEventEmitter {
         Ok(())
     }
 
-    fn emit_record_deleted(&self, id: RecordId) -> Result<(), AppError> {
-        let payload = RecordDeletedPayload { id: id.value() };
+    fn emit_record_updated(
+        &self,
+        reason: RecordUpdateReason,
+        record: ClipboardRecordSummary,
+    ) -> Result<(), AppError> {
+        let record_id = record.id;
+        let payload = RecordUpdatedPayload { reason, record };
+        self.app_handle
+            .emit(EVENT_RECORD_UPDATED, payload)
+            .map_err(|error| AppError::Window(format!("emit record updated failed: {error}")))?;
+        tracing::debug!(record_id, ?reason, "ipc record updated event emitted");
+        Ok(())
+    }
+
+    fn emit_record_deleted(
+        &self,
+        id: RecordId,
+        reason: RecordDeleteReason,
+    ) -> Result<(), AppError> {
+        let payload = RecordDeletedPayload {
+            id: id.value(),
+            reason,
+        };
 
         self.app_handle
             .emit(EVENT_RECORD_DELETED, payload)
             .map_err(|error| AppError::Window(format!("emit record deleted failed: {error}")))?;
-        tracing::debug!(record_id = id.value(), "ipc record deleted event emitted");
+        tracing::debug!(
+            record_id = id.value(),
+            ?reason,
+            "ipc record deleted event emitted"
+        );
         Ok(())
     }
 }
