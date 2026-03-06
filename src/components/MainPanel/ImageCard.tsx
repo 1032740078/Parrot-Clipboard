@@ -1,5 +1,6 @@
 import type { ClipboardRecord } from "../../types/clipboard";
 import { getRecordPreviewText } from "../../types/clipboard";
+import { QuickSelectBadge } from "./QuickSelectBadge";
 import { formatRelativeTime } from "./time";
 
 interface ImageCardProps {
@@ -22,14 +23,18 @@ export const ImageCard = ({ record, isSelected, index }: ImageCardProps) => {
   return (
     <article
       aria-selected={isSelected}
-      className={`flex h-44 w-card shrink-0 flex-col overflow-hidden rounded-xl border bg-white/10 backdrop-blur-md ${wrapperClass}`}
+      className={`relative flex h-44 w-card shrink-0 flex-col overflow-hidden rounded-xl border bg-white/10 backdrop-blur-md ${wrapperClass}`}
       data-testid="image-card"
     >
+      <QuickSelectBadge index={index} />
+
       <header className="flex h-7 items-center bg-violet-500 px-3 text-[13px] font-semibold text-white">
         图片
       </header>
 
-      <div className="px-3 pt-2 text-xs text-[#8E8E93]">{formatRelativeTime(record.created_at)}</div>
+      <div className="px-3 pt-2 text-xs text-[#8E8E93]">
+        {formatRelativeTime(record.created_at)}
+      </div>
 
       <div className="mx-3 mt-2 flex h-24 items-center justify-center overflow-hidden rounded-lg bg-white/10">
         {thumbnailState === "ready" && thumbnailPath ? (
@@ -55,7 +60,6 @@ export const ImageCard = ({ record, isSelected, index }: ImageCardProps) => {
       <footer className="flex h-8 items-center justify-between px-3 text-[11px] text-slate-300">
         <span>{mimeLabel}</span>
         <span>{sizeLabel}</span>
-        <span>#{index + 1}</span>
       </footer>
     </article>
   );

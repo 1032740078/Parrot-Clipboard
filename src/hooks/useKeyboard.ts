@@ -10,14 +10,42 @@ interface UseKeyboardOptions {
   enabled: boolean;
 }
 
+const isEditableTarget = (target: EventTarget | null): boolean => {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  const tagName = target.tagName.toLowerCase();
+  return (
+    tagName === "input" ||
+    tagName === "textarea" ||
+    tagName === "select" ||
+    target.isContentEditable
+  );
+};
+
+const resolveQuickSelectIndex = (event: KeyboardEvent): number | null => {
+  if (event.metaKey || event.ctrlKey || event.altKey) {
+    return null;
+  }
+
+  if (!/^[1-9]$/.test(event.key)) {
+    return null;
+  }
+
+  return Number(event.key) - 1;
+};
+
 export const useKeyboard = ({ enabled }: UseKeyboardOptions): void => {
   const records = useClipboardStore((state) => state.records);
   const selectedIndex = useClipboardStore((state) => state.selectedIndex);
   const upsertRecord = useClipboardStore((state) => state.upsertRecord);
   const selectPrev = useClipboardStore((state) => state.selectPrev);
   const selectNext = useClipboardStore((state) => state.selectNext);
+  const selectIndex = useClipboardStore((state) => state.selectIndex);
   const removeRecord = useClipboardStore((state) => state.removeRecord);
 
+  const clearHistoryDialog = useUIStore((state) => state.clearHistoryDialog);
   const hidePanelState = useUIStore((state) => state.hidePanel);
   const showToast = useUIStore((state) => state.showToast);
 
@@ -27,6 +55,26 @@ export const useKeyboard = ({ enabled }: UseKeyboardOptions): void => {
     }
 
     const handleKeyDown = async (event: KeyboardEvent): Promise<void> => {
+      if (clearHistoryDialog) {
+        return;
+      }
+
+      const quickSelectIndex = resolveQuickSelectIndex(event);
+      if (quickSelectIndex !== null) {
+        if (isEditableTarget(event.target) || quickSelectIndex >= records.length) {
+          return;
+        }
+
+        event.preventDefault();
+        selectIndex(quickSelectIndex);
+        logger.debug("用户通过数字键快选记录", {
+          trigger_key: event.key,
+          selected_index: quickSelectIndex,
+          record_id: records[quickSelectIndex]?.id,
+        });
+        return;
+      }
+
       if (event.key === "ArrowLeft") {
         selectPrev();
         return;
@@ -134,5 +182,17 @@ export const useKeyboard = ({ enabled }: UseKeyboardOptions): void => {
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [enabled, hidePanelState, records, removeRecord, selectNext, selectPrev, selectedIndex, showToast, upsertRecord]);
+  }, [
+    clearHistoryDialog,
+    enabled,
+    hidePanelState,
+    records,
+    removeRecord,
+    selectIndex,
+    selectNext,
+    selectPrev,
+    selectedIndex,
+    showToast,
+    upsertRecord,
+  ]);
 };

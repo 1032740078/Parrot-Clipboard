@@ -9,7 +9,7 @@ import {
 } from "../../__mocks__/@tauri-apps/api/core";
 import { useClipboardStore } from "../../stores/useClipboardStore";
 import { useUIStore } from "../../stores/useUIStore";
-import { fixtureRecords, mixedFixtureRecords } from "../fixtures/clipboardRecords";
+import { buildRecord, fixtureRecords, mixedFixtureRecords } from "../fixtures/clipboardRecords";
 
 const setInvokeForRecords = (records = mixedFixtureRecords) => {
   __setInvokeHandler(async (command: string, args?: Record<string, unknown>) => {
@@ -60,7 +60,10 @@ describe("MainPanel", () => {
       async (command: string, args?: Record<string, unknown>) =>
         new Promise((resolve) => {
           if (command === "get_records") {
-            setTimeout(() => resolve(mixedFixtureRecords.slice(0, (args?.limit as number) ?? 20)), 50);
+            setTimeout(
+              () => resolve(mixedFixtureRecords.slice(0, (args?.limit as number) ?? 20)),
+              50
+            );
             return;
           }
 
@@ -95,12 +98,10 @@ describe("MainPanel", () => {
     fireEvent.keyDown(window, { key: "Enter" });
 
     await waitFor(() => {
-      expect(invokeCalls.find((call: { command: string }) => call.command === "paste_record")).toEqual(
-        {
-          command: "paste_record",
-          args: { id: 2, mode: "original" },
-        }
-      );
+      expect(invokeCalls.find((call) => call.command === "paste_record")).toEqual({
+        command: "paste_record",
+        args: { id: 2, mode: "original" },
+      });
     });
   });
 
@@ -115,9 +116,7 @@ describe("MainPanel", () => {
     fireEvent.keyDown(window, { key: "Enter", shiftKey: true });
 
     await waitFor(() => {
-      expect(invokeCalls.some((call: { command: string }) => call.command === "paste_record")).toBe(
-        true
-      );
+      expect(invokeCalls.some((call) => call.command === "paste_record")).toBe(true);
     });
   });
 
@@ -151,10 +150,27 @@ describe("MainPanel", () => {
     fireEvent.keyDown(window, { key: "Delete" });
 
     await waitFor(() => {
-      expect(
-        invokeCalls.some((call: { command: string }) => call.command === "delete_record")
-      ).toBe(true);
+      expect(invokeCalls.some((call) => call.command === "delete_record")).toBe(true);
       expect(screen.queryByTestId("image-card")).not.toBeInTheDocument();
     });
+  });
+
+  it("UT-PANEL-006 显示 1-9 快选提示且仅前 9 条展示数字槽位", async () => {
+    const records = Array.from({ length: 10 }, (_, index) =>
+      buildRecord(index + 1, `记录 ${index + 1}`, 1000 - index)
+    );
+    setInvokeForRecords(records);
+
+    render(<MainPanel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("card-list")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("1-9 快选")).toBeInTheDocument();
+    expect(screen.getAllByTestId("quick-select-badge")).toHaveLength(9);
+    expect(
+      screen.getAllByTestId("quick-select-badge").map((element) => element.textContent)
+    ).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9"]);
   });
 });

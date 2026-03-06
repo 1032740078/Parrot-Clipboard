@@ -38,6 +38,71 @@ describe("useKeyboard", () => {
     expect(useClipboardStore.getState().selectedIndex).toBe(0);
   });
 
+  it("数字键 1-9 可直接选中对应记录", () => {
+    const store = useClipboardStore.getState();
+    store.hydrate([buildRecord(1, "A", 1000), buildRecord(2, "B", 999), buildRecord(3, "C", 998)]);
+    store.selectIndex(0);
+
+    render(<HookContainer />);
+
+    fireEvent.keyDown(window, { key: "3" });
+    expect(useClipboardStore.getState().selectedIndex).toBe(2);
+
+    fireEvent.keyDown(window, { key: "1" });
+    expect(useClipboardStore.getState().selectedIndex).toBe(0);
+  });
+
+  it("超出记录数量的数字键不会改变当前选中项", () => {
+    const store = useClipboardStore.getState();
+    store.hydrate([buildRecord(1, "A", 1000), buildRecord(2, "B", 999)]);
+    store.selectIndex(1);
+
+    render(<HookContainer />);
+
+    fireEvent.keyDown(window, { key: "9" });
+    expect(useClipboardStore.getState().selectedIndex).toBe(1);
+  });
+
+  it("数字键快选后 Enter 会粘贴当前选中记录", async () => {
+    const store = useClipboardStore.getState();
+    const recordA = buildRecord(1, "A", 1000);
+    const recordB = buildRecord(2, "B", 999);
+    const recordC = buildRecord(3, "C", 998);
+    store.hydrate([recordA, recordB, recordC]);
+    store.selectIndex(0);
+    useUIStore.getState().showPanel();
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "paste_record") {
+        const id = args?.id as number;
+        const record = [recordA, recordB, recordC].find((item) => item.id === id) ?? recordA;
+        return {
+          record: { ...record, last_used_at: 1300 },
+          paste_mode: "original",
+          executed_at: 1300,
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<HookContainer />);
+
+    fireEvent.keyDown(window, { key: "3" });
+    await waitFor(() => {
+      expect(useClipboardStore.getState().selectedIndex).toBe(2);
+    });
+
+    fireEvent.keyDown(window, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(invokeCalls.find((call) => call.command === "paste_record")).toEqual({
+        command: "paste_record",
+        args: { id: 3, mode: "original" },
+      });
+    });
+  });
+
   it("Enter 触发 paste_record 并关闭面板", async () => {
     const store = useClipboardStore.getState();
     const recordA = buildRecord(1, "A", 1000);
@@ -63,12 +128,8 @@ describe("useKeyboard", () => {
     fireEvent.keyDown(window, { key: "Enter" });
 
     await waitFor(() => {
-      expect(invokeCalls.some((call: { command: string }) => call.command === "paste_record")).toBe(
-        true
-      );
-      expect(invokeCalls.some((call: { command: string }) => call.command === "hide_panel")).toBe(
-        true
-      );
+      expect(invokeCalls.some((call) => call.command === "paste_record")).toBe(true);
+      expect(invokeCalls.some((call) => call.command === "hide_panel")).toBe(true);
     });
 
     expect(useClipboardStore.getState().records.map((record) => record.id)).toEqual([2, 1]);
@@ -100,7 +161,7 @@ describe("useKeyboard", () => {
     fireEvent.keyDown(window, { key: "Enter", shiftKey: true });
 
     await waitFor(() => {
-      expect(invokeCalls.find((call: { command: string }) => call.command === "paste_record")).toEqual({
+      expect(invokeCalls.find((call) => call.command === "paste_record")).toEqual({
         command: "paste_record",
         args: { id: 1, mode: "plain_text" },
       });
@@ -121,9 +182,7 @@ describe("useKeyboard", () => {
     fireEvent.keyDown(window, { key: "Enter", shiftKey: true });
 
     await waitFor(() => {
-      expect(invokeCalls.some((call: { command: string }) => call.command === "paste_record")).toBe(
-        false
-      );
+      expect(invokeCalls.some((call) => call.command === "paste_record")).toBe(false);
     });
 
     expect(useUIStore.getState().toast?.message).toBe("仅文本记录支持纯文本粘贴");

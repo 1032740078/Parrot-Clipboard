@@ -69,12 +69,16 @@ export const MainPanel = () => {
               )}
             </div>
 
-            <footer className="mt-3 flex items-center justify-between text-[11px] text-slate-300" data-testid="shortcut-bar">
+            <footer
+              className="mt-3 flex items-center justify-between text-[11px] text-slate-300"
+              data-testid="shortcut-bar"
+            >
               <span>Enter 粘贴</span>
               <span className={plainTextEnabled ? "" : "opacity-40"} data-testid="plain-text-hint">
                 Shift+Enter 纯文本
               </span>
               <span>Delete 删除</span>
+              <span>1-9 快选</span>
               <span>Esc 关闭</span>
             </footer>
           </div>
