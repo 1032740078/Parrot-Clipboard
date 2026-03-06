@@ -419,6 +419,47 @@ mod tests {
     }
 
     #[test]
+    fn poll_once_emits_promoted_update_for_reused_record() {
+        let context = TestPathContext::new("monitor-promoted-files");
+        let paths = context.sample_paths();
+        let repository = Arc::new(MockRepository::new(CaptureResult {
+            action: CaptureAction::Promoted,
+            record: files_summary(21, 2_000),
+            evicted_ids: Vec::new(),
+        }));
+        let clipboard = Arc::new(MockClipboard {
+            text: None,
+            html: None,
+            image: None,
+            files: Some(paths),
+            change_count: 1,
+        });
+        let emitter = Arc::new(MockEmitter::default());
+        let service = ClipboardMonitorService::new(
+            repository,
+            clipboard,
+            emitter.clone(),
+            Duration::from_millis(10),
+        );
+
+        service.poll_once().expect("files poll should succeed");
+
+        let updated_records = emitter
+            .updated_records
+            .lock()
+            .expect("updated_records lock poisoned")
+            .clone();
+        assert_eq!(updated_records.len(), 1);
+        assert_eq!(updated_records[0].0, RecordUpdateReason::Promoted);
+        assert_eq!(updated_records[0].1.id, 21);
+        assert!(emitter
+            .new_records
+            .lock()
+            .expect("new_records lock poisoned")
+            .is_empty());
+    }
+
+    #[test]
     fn poll_once_reads_file_list_before_image_and_text() {
         let context = TestPathContext::new("monitor-files-priority");
         let paths = context.sample_paths();

@@ -677,6 +677,77 @@ mod tests {
     }
 
     #[test]
+    fn mixed_duplicate_records_reuse_existing_ids_and_move_to_front() {
+        let context = TestContext::new("mixed-duplicate-promote");
+        let repository = context.repository();
+        let file_items = sample_file_items(&context.root_dir, "mixed");
+
+        let text_first = repository
+            .capture_text("alpha".to_string(), None, 1_000)
+            .expect("text should be captured");
+        let image_first = repository
+            .capture_image(sample_image(90), 2_000)
+            .expect("image should be captured");
+        let files_first = repository
+            .capture_files(file_items.clone(), 3_000)
+            .expect("files should be captured");
+
+        let text_second = repository
+            .capture_text("alpha".to_string(), None, 4_000)
+            .expect("duplicate text should be promoted");
+        assert_eq!(text_second.action, CaptureAction::Promoted);
+        assert_eq!(text_second.record.id, text_first.record.id);
+
+        let summaries = repository
+            .list_summaries(10)
+            .expect("summary query should succeed");
+        assert_eq!(
+            summaries.iter().map(|record| record.id).collect::<Vec<_>>(),
+            vec![
+                text_first.record.id,
+                files_first.record.id,
+                image_first.record.id
+            ]
+        );
+
+        let image_second = repository
+            .capture_image(sample_image(90), 5_000)
+            .expect("duplicate image should be promoted");
+        assert_eq!(image_second.action, CaptureAction::Promoted);
+        assert_eq!(image_second.record.id, image_first.record.id);
+
+        let summaries = repository
+            .list_summaries(10)
+            .expect("summary query should succeed");
+        assert_eq!(
+            summaries.iter().map(|record| record.id).collect::<Vec<_>>(),
+            vec![
+                image_first.record.id,
+                text_first.record.id,
+                files_first.record.id
+            ]
+        );
+
+        let files_second = repository
+            .capture_files(file_items, 6_000)
+            .expect("duplicate files should be promoted");
+        assert_eq!(files_second.action, CaptureAction::Promoted);
+        assert_eq!(files_second.record.id, files_first.record.id);
+
+        let summaries = repository
+            .list_summaries(10)
+            .expect("summary query should succeed");
+        assert_eq!(
+            summaries.iter().map(|record| record.id).collect::<Vec<_>>(),
+            vec![
+                files_first.record.id,
+                image_first.record.id,
+                text_first.record.id
+            ]
+        );
+    }
+
+    #[test]
     fn capture_files_duplicate_promotes_existing_record() {
         let context = TestContext::new("capture-files-promote");
         let repository = context.repository();
