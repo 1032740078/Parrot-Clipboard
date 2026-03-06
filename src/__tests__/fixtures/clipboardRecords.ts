@@ -68,3 +68,9 @@ export const fixtureRecords: ClipboardRecord[] = [
   buildRecord(2, "第二条", 2000),
   buildRecord(1, "第一条", 1000),
 ];
+
+export const mixedFixtureRecords: ClipboardRecord[] = [
+  buildRecord(3, "第三条", 3000),
+  buildImageRecord(2, "屏幕截图 2026-03-06", 2000, "ready"),
+  buildFileRecord(1, "需求文档.md", 1000, 4, true),
+];

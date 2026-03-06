@@ -9,6 +9,7 @@ import { useKeyboard } from "../../hooks/useKeyboard";
 import { useClipboardStore, useUIStore } from "../../stores";
 import { CardList } from "./CardList";
 import { EmptyState } from "./EmptyState";
+import { SkeletonCard } from "./SkeletonCard";
 
 export const MainPanel = () => {
   const records = useClipboardStore((state) => state.records);
@@ -51,7 +52,11 @@ export const MainPanel = () => {
           transition={{ duration: 0.2, ease: "easeOut" }}
         >
           {isHydrating ? (
-            <div className="flex h-full items-center justify-center text-sm text-slate-300">加载中...</div>
+            <div className="flex gap-4 overflow-x-auto pb-2" data-testid="skeleton-list">
+              {Array.from({ length: 3 }, (_, index) => (
+                <SkeletonCard key={`skeleton-${index}`} index={index} />
+              ))}
+            </div>
           ) : records.length === 0 ? (
             <EmptyState />
           ) : (

@@ -9,9 +9,9 @@ import {
 } from "../../__mocks__/@tauri-apps/api/core";
 import { useClipboardStore } from "../../stores/useClipboardStore";
 import { useUIStore } from "../../stores/useUIStore";
-import { fixtureRecords } from "../fixtures/clipboardRecords";
+import { fixtureRecords, mixedFixtureRecords } from "../fixtures/clipboardRecords";
 
-const setInvokeForRecords = (records = fixtureRecords) => {
+const setInvokeForRecords = (records = mixedFixtureRecords) => {
   __setInvokeHandler(async (command: string, args?: Record<string, unknown>) => {
     if (command === "get_records") {
       const limit = (args?.limit as number) ?? 20;
@@ -30,12 +30,34 @@ describe("MainPanel", () => {
     __resetInvokeMock();
   });
 
-  it("UT-PANEL-001 有记录时渲染卡片列表", async () => {
+  it("UT-PANEL-001 有记录时渲染混合卡片列表", async () => {
     setInvokeForRecords();
     render(<MainPanel />);
 
     await waitFor(() => {
       expect(screen.getByTestId("card-list")).toBeInTheDocument();
+      expect(screen.getAllByTestId("text-card")).toHaveLength(1);
+      expect(screen.getAllByTestId("image-card")).toHaveLength(1);
+      expect(screen.getAllByTestId("file-card")).toHaveLength(1);
+    });
+  });
+
+  it("加载中时渲染骨架卡片", async () => {
+    __setInvokeHandler(
+      async (command: string, args?: Record<string, unknown>) =>
+        new Promise((resolve) => {
+          if (command === "get_records") {
+            setTimeout(() => resolve((mixedFixtureRecords).slice(0, (args?.limit as number) ?? 20)), 50);
+            return;
+          }
+
+          resolve(undefined);
+        })
+    );
+    render(<MainPanel />);
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("skeleton-card")).toHaveLength(3);
     });
   });
 
@@ -49,7 +71,7 @@ describe("MainPanel", () => {
   });
 
   it("UT-PANEL-003 / 004 方向键切换选中卡片", async () => {
-    setInvokeForRecords();
+    setInvokeForRecords(fixtureRecords);
     render(<MainPanel />);
 
     await waitFor(() => {
@@ -64,7 +86,7 @@ describe("MainPanel", () => {
   });
 
   it("UT-PANEL-005 Enter 触发 paste_record", async () => {
-    setInvokeForRecords();
+    setInvokeForRecords(fixtureRecords);
     render(<MainPanel />);
 
     await waitFor(() => {
@@ -81,7 +103,7 @@ describe("MainPanel", () => {
   });
 
   it("UT-PANEL-006 Delete 触发 delete_record", async () => {
-    setInvokeForRecords();
+    setInvokeForRecords(fixtureRecords);
     render(<MainPanel />);
 
     await waitFor(() => {
