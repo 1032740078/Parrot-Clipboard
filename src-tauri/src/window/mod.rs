@@ -4,7 +4,7 @@ use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize};
 
 use crate::error::AppError;
 
-use self::position::calculate_panel_frame;
+use self::position::{calculate_panel_frame_for_work_area, select_target_work_area, WorkArea};
 
 #[cfg(target_os = "macos")]
 use objc::{class, msg_send, runtime::Object, sel, sel_impl};
@@ -50,21 +50,40 @@ impl TauriWindowManager {
             .ok_or_else(|| AppError::Window("main window not found".to_string()))
     }
 
-    fn resize_and_position(&self, window: &tauri::WebviewWindow) -> Result<(), AppError> {
-        let monitor = self
+    fn resolve_target_work_area(&self) -> Result<WorkArea, AppError> {
+        let primary_monitor = self
             .app_handle
             .primary_monitor()
-            .map_err(|error| AppError::Window(format!("read monitor failed: {error}")))?
+            .map_err(|error| AppError::Window(format!("read primary monitor failed: {error}")))?
             .ok_or_else(|| AppError::Window("primary monitor not available".to_string()))?;
+        let fallback = to_work_area(&primary_monitor);
 
-        let work_area = monitor.work_area();
-        let panel_frame = calculate_panel_frame(
-            work_area.position.x,
-            work_area.position.y,
-            work_area.size.width,
-            work_area.size.height,
-            self.panel_height,
-        );
+        let available_monitors = self.app_handle.available_monitors().map_err(|error| {
+            AppError::Window(format!("read available monitors failed: {error}"))
+        })?;
+        let work_areas = available_monitors
+            .iter()
+            .map(to_work_area)
+            .collect::<Vec<_>>();
+
+        let cursor_position = match self.app_handle.cursor_position() {
+            Ok(position) => Some((position.x, position.y)),
+            Err(error) => {
+                tracing::warn!(error = %error, "read cursor position failed, fallback to primary monitor");
+                None
+            }
+        };
+
+        Ok(select_target_work_area(
+            &work_areas,
+            cursor_position,
+            fallback,
+        ))
+    }
+
+    fn resize_and_position(&self, window: &tauri::WebviewWindow) -> Result<(), AppError> {
+        let work_area = self.resolve_target_work_area()?;
+        let panel_frame = calculate_panel_frame_for_work_area(work_area, self.panel_height);
 
         window
             .set_size(PhysicalSize::new(panel_frame.width, panel_frame.height))
@@ -197,6 +216,16 @@ impl TauriWindowManager {
     #[cfg(not(target_os = "macos"))]
     fn restore_focus_to_app(&self, _pid: i32) -> Result<(), AppError> {
         Ok(())
+    }
+}
+
+fn to_work_area(monitor: &tauri::Monitor) -> WorkArea {
+    let work_area = monitor.work_area();
+    WorkArea {
+        x: work_area.position.x,
+        y: work_area.position.y,
+        width: work_area.size.width,
+        height: work_area.size.height,
     }
 }
 
