@@ -6,10 +6,11 @@ import { logger, normalizeError } from "../../api/logger";
 import { isTextRecord, toClipboardRecord } from "../../types/clipboard";
 import { useClipboardEvents } from "../../hooks/useClipboardEvents";
 import { useKeyboard } from "../../hooks/useKeyboard";
-import { useClipboardStore, useUIStore } from "../../stores";
+import { useClipboardStore, useSystemStore, useUIStore } from "../../stores";
 import { CardList } from "./CardList";
 import { EmptyState } from "./EmptyState";
 import { getPanelMotionVariants, prefersReducedMotion } from "./motion";
+import { PauseHint } from "./PauseHint";
 import { SkeletonCard } from "./SkeletonCard";
 
 export const MainPanel = () => {
@@ -21,6 +22,7 @@ export const MainPanel = () => {
   const setHydrating = useClipboardStore((state) => state.setHydrating);
 
   const isPanelVisible = useUIStore((state) => state.isPanelVisible);
+  const monitoring = useSystemStore((state) => state.monitoring);
 
   useClipboardEvents();
   useKeyboard({ enabled: isPanelVisible });
@@ -59,6 +61,8 @@ export const MainPanel = () => {
           variants={panelMotionVariants}
         >
           <div className="flex h-full flex-col">
+            {monitoring ? null : <PauseHint />}
+
             <div className="flex-1 overflow-hidden">
               {isHydrating ? (
                 <div className="flex gap-4 overflow-x-auto pb-2" data-testid="skeleton-list">

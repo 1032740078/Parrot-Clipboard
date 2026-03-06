@@ -8,6 +8,7 @@ import {
   invokeCalls,
 } from "../../__mocks__/@tauri-apps/api/core";
 import { useClipboardStore } from "../../stores/useClipboardStore";
+import { useSystemStore } from "../../stores/useSystemStore";
 import { useUIStore } from "../../stores/useUIStore";
 import { buildRecord, fixtureRecords, mixedFixtureRecords } from "../fixtures/clipboardRecords";
 
@@ -35,6 +36,7 @@ const setInvokeForRecords = (records = mixedFixtureRecords) => {
 describe("MainPanel", () => {
   beforeEach(() => {
     useClipboardStore.getState().reset();
+    useSystemStore.getState().reset();
     useUIStore.getState().reset();
     useUIStore.getState().showPanel();
     __resetInvokeMock();
@@ -172,5 +174,22 @@ describe("MainPanel", () => {
     expect(
       screen.getAllByTestId("quick-select-badge").map((element) => element.textContent)
     ).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9"]);
+  });
+
+  it("UT-PANEL-007 监听暂停时展示弱提示且不影响历史浏览", async () => {
+    setInvokeForRecords(mixedFixtureRecords);
+    useSystemStore.getState().setMonitoring(false);
+
+    render(<MainPanel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("pause-hint")).toBeInTheDocument();
+      expect(screen.getByTestId("card-list")).toBeInTheDocument();
+      expect(screen.getAllByTestId("image-card")).toHaveLength(1);
+    });
+
+    expect(screen.getByTestId("pause-hint")).toHaveTextContent(
+      "监听已暂停，新复制的内容不会被记录，可从托盘恢复"
+    );
   });
 });

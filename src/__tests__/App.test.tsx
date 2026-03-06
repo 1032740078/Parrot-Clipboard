@@ -50,6 +50,19 @@ describe("App", () => {
     });
   });
 
+  it("运行态为暂停监听时展示弱提示且不影响历史列表", async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("pause-hint")).toBeInTheDocument();
+      expect(screen.getByTestId("card-list")).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("pause-hint")).toHaveTextContent(
+      "监听已暂停，新复制的内容不会被记录，可从托盘恢复"
+    );
+  });
+
   it("窗口重新聚焦后会恢复主面板显示", async () => {
     render(<App />);
 
