@@ -23,6 +23,32 @@ impl WorkArea {
     }
 }
 
+pub fn calculate_macos_display_point_from_mouse_location(
+    mouse_x: f64,
+    mouse_y: f64,
+    main_display_height: f64,
+) -> (f64, f64) {
+    (mouse_x, main_display_height - mouse_y)
+}
+
+pub fn calculate_macos_work_area(
+    display_origin_x: f64,
+    display_origin_y: f64,
+    screen_frame_origin_x: f64,
+    visible_frame_origin_x: f64,
+    visible_frame_width: f64,
+    visible_frame_height: f64,
+    scale_factor: f64,
+) -> WorkArea {
+    WorkArea {
+        x: ((display_origin_x + visible_frame_origin_x - screen_frame_origin_x) * scale_factor)
+            .round() as i32,
+        y: (display_origin_y * scale_factor).round() as i32,
+        width: (visible_frame_width * scale_factor).round() as u32,
+        height: (visible_frame_height * scale_factor).round() as u32,
+    }
+}
+
 pub fn select_target_work_area(
     work_areas: &[WorkArea],
     cursor_position: Option<(f64, f64)>,
@@ -77,6 +103,7 @@ pub fn calculate_panel_frame(
 #[cfg(test)]
 mod tests {
     use super::{
+        calculate_macos_display_point_from_mouse_location, calculate_macos_work_area,
         calculate_panel_frame, calculate_panel_frame_for_work_area, select_target_work_area,
         PanelFrame, WorkArea,
     };
@@ -196,5 +223,27 @@ mod tests {
             select_target_work_area(&[primary, secondary], Some((-200.0, -200.0)), primary);
 
         assert_eq!(selected, primary);
+    }
+
+    #[test]
+    fn should_convert_macos_mouse_location_to_global_display_coordinates() {
+        let point = calculate_macos_display_point_from_mouse_location(2_200.0, 320.0, 1_440.0);
+
+        assert_eq!(point, (2_200.0, 1_120.0));
+    }
+
+    #[test]
+    fn should_calculate_macos_work_area_with_scale_factor_and_side_dock_offset() {
+        let work_area = calculate_macos_work_area(756.0, 0.0, 756.0, 804.0, 1_416.0, 982.0, 2.0);
+
+        assert_eq!(
+            work_area,
+            WorkArea {
+                x: 1608,
+                y: 0,
+                width: 2832,
+                height: 1964,
+            }
+        );
     }
 }

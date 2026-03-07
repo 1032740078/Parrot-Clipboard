@@ -2,9 +2,15 @@ use std::sync::{Arc, Mutex};
 
 use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize};
 
+#[cfg(target_os = "macos")]
+use core_graphics::{display::CGDisplayBounds, geometry::CGPoint};
+
 use crate::error::AppError;
 
-use self::position::{calculate_panel_frame_for_work_area, select_target_work_area, WorkArea};
+use self::position::{
+    calculate_macos_display_point_from_mouse_location, calculate_macos_work_area,
+    calculate_panel_frame_for_work_area, select_target_work_area, WorkArea,
+};
 
 #[cfg(target_os = "macos")]
 use objc::{class, msg_send, runtime::Object, sel, sel_impl};
@@ -58,6 +64,11 @@ impl TauriWindowManager {
             .ok_or_else(|| AppError::Window("primary monitor not available".to_string()))?;
         let fallback = to_work_area(&primary_monitor);
 
+        #[cfg(target_os = "macos")]
+        if let Some(work_area) = self.resolve_target_work_area_macos()? {
+            return Ok(work_area);
+        }
+
         let available_monitors = self.app_handle.available_monitors().map_err(|error| {
             AppError::Window(format!("read available monitors failed: {error}"))
         })?;
@@ -79,6 +90,29 @@ impl TauriWindowManager {
             cursor_position,
             fallback,
         ))
+    }
+
+    #[cfg(target_os = "macos")]
+    fn resolve_target_work_area_macos(&self) -> Result<Option<WorkArea>, AppError> {
+        let display_id = match active_display_id_under_cursor() {
+            Ok(Some(display_id)) => display_id,
+            Ok(None) => return Ok(None),
+            Err(error) => {
+                tracing::warn!(error = %error, "resolve active macOS display failed, fallback to tauri cursor position");
+                return Ok(None);
+            }
+        };
+
+        let work_area = macos_work_area_for_display(display_id)?;
+        tracing::debug!(
+            display_id,
+            x = work_area.x,
+            y = work_area.y,
+            width = work_area.width,
+            height = work_area.height,
+            "resolved active work area from macOS display services"
+        );
+        Ok(Some(work_area))
     }
 
     fn resize_and_position(&self, window: &tauri::WebviewWindow) -> Result<(), AppError> {
@@ -217,6 +251,152 @@ impl TauriWindowManager {
     fn restore_focus_to_app(&self, _pid: i32) -> Result<(), AppError> {
         Ok(())
     }
+}
+
+#[cfg(target_os = "macos")]
+type CGDirectDisplayID = u32;
+
+#[cfg(target_os = "macos")]
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct NSPoint {
+    x: f64,
+    y: f64,
+}
+
+#[cfg(target_os = "macos")]
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct NSSize {
+    width: f64,
+    height: f64,
+}
+
+#[cfg(target_os = "macos")]
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct NSRect {
+    origin: NSPoint,
+    size: NSSize,
+}
+
+#[cfg(target_os = "macos")]
+#[link(name = "CoreGraphics", kind = "framework")]
+unsafe extern "C" {
+    fn CGGetDisplaysWithPoint(
+        point: CGPoint,
+        max_displays: u32,
+        displays: *mut CGDirectDisplayID,
+        matching_display_count: *mut u32,
+    ) -> i32;
+}
+
+#[cfg(target_os = "macos")]
+fn active_display_id_under_cursor() -> Result<Option<CGDirectDisplayID>, AppError> {
+    let point: NSPoint = unsafe { msg_send![class!(NSEvent), mouseLocation] };
+    let main_bounds = unsafe { CGDisplayBounds(core_graphics::display::CGMainDisplayID()) };
+    let (display_x, display_y) = calculate_macos_display_point_from_mouse_location(
+        point.x,
+        point.y,
+        main_bounds.size.height,
+    );
+
+    let mut display_id = 0_u32;
+    let mut matching_display_count = 0_u32;
+    let result = unsafe {
+        CGGetDisplaysWithPoint(
+            CGPoint::new(display_x, display_y),
+            1,
+            &mut display_id,
+            &mut matching_display_count,
+        )
+    };
+
+    if result != 0 {
+        return Err(AppError::Window(format!(
+            "CGGetDisplaysWithPoint failed with code {result}"
+        )));
+    }
+
+    if matching_display_count == 0 {
+        return Ok(None);
+    }
+
+    Ok(Some(display_id))
+}
+
+#[cfg(target_os = "macos")]
+fn macos_work_area_for_display(display_id: CGDirectDisplayID) -> Result<WorkArea, AppError> {
+    let screen = find_ns_screen_for_display(display_id)?;
+    let scale_factor: f64 = unsafe { msg_send![screen, backingScaleFactor] };
+    let frame: NSRect = unsafe { msg_send![screen, frame] };
+    let visible_frame: NSRect = unsafe { msg_send![screen, visibleFrame] };
+    let display_bounds = unsafe { CGDisplayBounds(display_id) };
+
+    Ok(calculate_macos_work_area(
+        display_bounds.origin.x,
+        display_bounds.origin.y,
+        frame.origin.x,
+        visible_frame.origin.x,
+        visible_frame.size.width,
+        visible_frame.size.height,
+        scale_factor,
+    ))
+}
+
+#[cfg(target_os = "macos")]
+fn find_ns_screen_for_display(display_id: CGDirectDisplayID) -> Result<*mut Object, AppError> {
+    let screens: *mut Object = unsafe { msg_send![class!(NSScreen), screens] };
+    if screens.is_null() {
+        return Err(AppError::Window(
+            "NSScreen.screens returned null".to_string(),
+        ));
+    }
+
+    let key = ns_string("NSScreenNumber")?;
+    let count: usize = unsafe { msg_send![screens, count] };
+
+    for index in 0..count {
+        let screen: *mut Object = unsafe { msg_send![screens, objectAtIndex: index] };
+        if screen.is_null() {
+            continue;
+        }
+
+        let device_description: *mut Object = unsafe { msg_send![screen, deviceDescription] };
+        if device_description.is_null() {
+            continue;
+        }
+
+        let value: *mut Object = unsafe { msg_send![device_description, objectForKey: key] };
+        if value.is_null() {
+            continue;
+        }
+
+        let screen_number: usize = unsafe { msg_send![value, unsignedIntegerValue] };
+        if screen_number as u32 == display_id {
+            return Ok(screen);
+        }
+    }
+
+    Err(AppError::Window(format!(
+        "failed to find NSScreen for display `{display_id}`"
+    )))
+}
+
+#[cfg(target_os = "macos")]
+fn ns_string(value: &str) -> Result<*mut Object, AppError> {
+    let c_string = std::ffi::CString::new(value)
+        .map_err(|error| AppError::Window(format!("build NSString source failed: {error}")))?;
+    let string: *mut Object =
+        unsafe { msg_send![class!(NSString), stringWithUTF8String: c_string.as_ptr()] };
+
+    if string.is_null() {
+        return Err(AppError::Window(format!(
+            "create NSString `{value}` failed"
+        )));
+    }
+
+    Ok(string)
 }
 
 fn to_work_area(monitor: &tauri::Monitor) -> WorkArea {
