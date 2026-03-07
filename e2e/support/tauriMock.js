@@ -40,6 +40,69 @@
     active_app_detection: "supported",
     reasons: [],
   };
+  const defaultReleaseInfo = {
+    app_version: "1.0.0",
+    platform: defaultPlatformCapabilities.platform,
+    session_type: defaultPlatformCapabilities.session_type,
+    schema_version: 2,
+    config_version: 2,
+    build_profile: "debug",
+  };
+  const defaultPermissionStatus = {
+    platform: defaultPlatformCapabilities.platform,
+    accessibility: "unsupported",
+    checked_at: 1700000000000,
+    reason: "accessibility_permission_not_applicable",
+  };
+  const defaultDiagnosticsSnapshot = {
+    release: {
+      app_version: defaultReleaseInfo.app_version,
+      platform: defaultReleaseInfo.platform,
+      session_type: defaultReleaseInfo.session_type,
+      schema_version: defaultReleaseInfo.schema_version,
+      config_version: defaultReleaseInfo.config_version,
+      build_profile: defaultReleaseInfo.build_profile,
+    },
+    permission: {
+      platform: defaultPermissionStatus.platform,
+      accessibility: defaultPermissionStatus.accessibility,
+      checked_at: defaultPermissionStatus.checked_at,
+      reason: defaultPermissionStatus.reason,
+    },
+    log_directory: "/tmp/e2e-logs",
+    migration: {
+      current_schema_version: 2,
+      migrated: false,
+      recovered_from_corruption: false,
+      checked_at: 1700000001000,
+      backup_paths: [],
+    },
+    last_orphan_cleanup: null,
+    capabilities: {
+      platform: defaultPlatformCapabilities.platform,
+      session_type: defaultPlatformCapabilities.session_type,
+      clipboard_monitoring: defaultPlatformCapabilities.clipboard_monitoring,
+      global_shortcut: defaultPlatformCapabilities.global_shortcut,
+      launch_at_login: defaultPlatformCapabilities.launch_at_login,
+      tray: defaultPlatformCapabilities.tray,
+      active_app_detection: defaultPlatformCapabilities.active_app_detection,
+      reasons: [...defaultPlatformCapabilities.reasons],
+    },
+  };
+  const defaultUpdateCheckResult = {
+    status: "latest",
+    checked_at: 1700000002000,
+    current_version: defaultReleaseInfo.app_version,
+    latest_version: defaultReleaseInfo.app_version,
+    release_notes_url: null,
+    download_url: null,
+    message: "当前已是最新版本",
+  };
+  const defaultOrphanCleanupSummary = {
+    deleted_original_files: 0,
+    deleted_thumbnail_files: 0,
+    executed_at: 1700000003000,
+  };
 
   let nextCallbackId = 1;
   let nextEventId = 1;
@@ -55,17 +118,37 @@
   let platformCapabilities = globalThis.window.__E2E_PLATFORM_CAPABILITIES__
     ? JSON.parse(JSON.stringify(globalThis.window.__E2E_PLATFORM_CAPABILITIES__))
     : JSON.parse(JSON.stringify(defaultPlatformCapabilities));
+  let releaseInfo = globalThis.window.__E2E_RELEASE_INFO__
+    ? JSON.parse(JSON.stringify(globalThis.window.__E2E_RELEASE_INFO__))
+    : JSON.parse(JSON.stringify(defaultReleaseInfo));
+  let permissionStatus = globalThis.window.__E2E_PERMISSION_STATUS__
+    ? JSON.parse(JSON.stringify(globalThis.window.__E2E_PERMISSION_STATUS__))
+    : JSON.parse(JSON.stringify(defaultPermissionStatus));
+  let diagnosticsSnapshot = globalThis.window.__E2E_DIAGNOSTICS_SNAPSHOT__
+    ? JSON.parse(JSON.stringify(globalThis.window.__E2E_DIAGNOSTICS_SNAPSHOT__))
+    : JSON.parse(JSON.stringify(defaultDiagnosticsSnapshot));
+  let updateCheckResult = globalThis.window.__E2E_UPDATE_CHECK_RESULT__
+    ? JSON.parse(JSON.stringify(globalThis.window.__E2E_UPDATE_CHECK_RESULT__))
+    : JSON.parse(JSON.stringify(defaultUpdateCheckResult));
+  let orphanCleanupSummary =
+    typeof globalThis.window.__E2E_ORPHAN_CLEANUP_SUMMARY__ !== "undefined"
+      ? JSON.parse(JSON.stringify(globalThis.window.__E2E_ORPHAN_CLEANUP_SUMMARY__))
+      : JSON.parse(JSON.stringify(defaultOrphanCleanupSummary));
 
   const clone = (value) => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
   const sortRecords = (items) =>
     [...items].sort((left, right) => {
-      const timeDelta = (right.last_used_at ?? right.created_at) - (left.last_used_at ?? left.created_at);
+      const timeDelta =
+        (right.last_used_at ?? right.created_at) - (left.last_used_at ?? left.created_at);
       if (timeDelta !== 0) {
         return timeDelta;
       }
       return right.id - left.id;
     });
-  const normalizeIdentifier = (value) => String(value ?? "").trim().toLowerCase();
+  const normalizeIdentifier = (value) =>
+    String(value ?? "")
+      .trim()
+      .toLowerCase();
   const normalizeShortcut = (shortcut) =>
     String(shortcut ?? "")
       .split("+")
@@ -126,6 +209,81 @@
       ...clone(defaultPlatformCapabilities),
       ...(clone(nextCapabilities) ?? {}),
     };
+    releaseInfo = {
+      ...releaseInfo,
+      platform: platformCapabilities.platform,
+      session_type: platformCapabilities.session_type,
+    };
+    permissionStatus = {
+      ...permissionStatus,
+      platform: platformCapabilities.platform,
+    };
+    diagnosticsSnapshot = {
+      ...diagnosticsSnapshot,
+      release: clone(releaseInfo),
+      permission: clone(permissionStatus),
+      capabilities: clone(platformCapabilities),
+    };
+  };
+  const setReleaseInfo = (nextReleaseInfo) => {
+    releaseInfo = {
+      ...clone(defaultReleaseInfo),
+      ...(clone(nextReleaseInfo) ?? {}),
+    };
+    diagnosticsSnapshot = {
+      ...diagnosticsSnapshot,
+      release: clone(releaseInfo),
+    };
+  };
+  const setPermissionStatus = (nextPermissionStatus) => {
+    permissionStatus = {
+      ...clone(defaultPermissionStatus),
+      ...(clone(nextPermissionStatus) ?? {}),
+    };
+    diagnosticsSnapshot = {
+      ...diagnosticsSnapshot,
+      permission: clone(permissionStatus),
+    };
+  };
+  const setDiagnosticsSnapshot = (nextDiagnosticsSnapshot) => {
+    diagnosticsSnapshot = {
+      ...clone(defaultDiagnosticsSnapshot),
+      ...(clone(nextDiagnosticsSnapshot) ?? {}),
+      release: {
+        ...clone(defaultDiagnosticsSnapshot.release),
+        ...(clone(nextDiagnosticsSnapshot?.release) ?? {}),
+      },
+      permission: {
+        ...clone(defaultDiagnosticsSnapshot.permission),
+        ...(clone(nextDiagnosticsSnapshot?.permission) ?? {}),
+      },
+      migration: {
+        ...clone(defaultDiagnosticsSnapshot.migration),
+        ...(clone(nextDiagnosticsSnapshot?.migration) ?? {}),
+      },
+      capabilities: {
+        ...clone(defaultDiagnosticsSnapshot.capabilities),
+        ...(clone(nextDiagnosticsSnapshot?.capabilities) ?? {}),
+      },
+    };
+    releaseInfo = clone(diagnosticsSnapshot.release);
+    permissionStatus = clone(diagnosticsSnapshot.permission);
+    platformCapabilities = clone(diagnosticsSnapshot.capabilities);
+  };
+  const setUpdateCheckResult = (nextUpdateCheckResult) => {
+    updateCheckResult = {
+      ...clone(defaultUpdateCheckResult),
+      ...(clone(nextUpdateCheckResult) ?? {}),
+    };
+  };
+  const setOrphanCleanupSummary = (nextSummary) => {
+    const summary = clone(nextSummary);
+    orphanCleanupSummary = summary
+      ? {
+          ...clone(defaultOrphanCleanupSummary),
+          ...summary,
+        }
+      : clone(defaultOrphanCleanupSummary);
   };
   const upsertRecord = (record) => {
     records = sortRecords([record, ...records.filter((item) => item.id !== record.id)]);
@@ -160,7 +318,11 @@
     );
 
   const applyEventSideEffects = (event, payload) => {
-    if (event === "system:monitoring-changed" && payload && typeof payload.monitoring === "boolean") {
+    if (
+      event === "system:monitoring-changed" &&
+      payload &&
+      typeof payload.monitoring === "boolean"
+    ) {
       syncRuntimeStatus({ monitoring: payload.monitoring });
     }
 
@@ -176,8 +338,16 @@
       setSettingsSnapshot(payload);
     }
 
-    if (event === "system:launch-at-login-changed" && payload && typeof payload.launch_at_login === "boolean") {
+    if (
+      event === "system:launch-at-login-changed" &&
+      payload &&
+      typeof payload.launch_at_login === "boolean"
+    ) {
       syncRuntimeStatus({ launch_at_login: payload.launch_at_login });
+    }
+
+    if (event === "system:diagnostics-updated" && payload) {
+      setDiagnosticsSnapshot(payload);
     }
   };
 
@@ -186,6 +356,11 @@
     runtimeStatus = clone(defaultRuntimeStatus);
     settingsSnapshot = clone(defaultSettingsSnapshot);
     platformCapabilities = clone(defaultPlatformCapabilities);
+    releaseInfo = clone(defaultReleaseInfo);
+    permissionStatus = clone(defaultPermissionStatus);
+    diagnosticsSnapshot = clone(defaultDiagnosticsSnapshot);
+    updateCheckResult = clone(defaultUpdateCheckResult);
+    orphanCleanupSummary = clone(defaultOrphanCleanupSummary);
     invokeCalls.splice(0, invokeCalls.length);
     eventListeners.clear();
   };
@@ -214,6 +389,11 @@
   records = sortRecords(records);
   setSettingsSnapshot(settingsSnapshot);
   setPlatformCapabilities(platformCapabilities);
+  setReleaseInfo(releaseInfo);
+  setPermissionStatus(permissionStatus);
+  setDiagnosticsSnapshot(diagnosticsSnapshot);
+  setUpdateCheckResult(updateCheckResult);
+  setOrphanCleanupSummary(orphanCleanupSummary);
 
   globalThis.window.__E2E_TAURI__ = {
     reset: resetState,
@@ -237,6 +417,26 @@
     getPlatformCapabilities() {
       return clone(platformCapabilities);
     },
+    setReleaseInfo,
+    getReleaseInfo() {
+      return clone(releaseInfo);
+    },
+    setPermissionStatus,
+    getPermissionStatus() {
+      return clone(permissionStatus);
+    },
+    setDiagnosticsSnapshot,
+    getDiagnosticsSnapshot() {
+      return clone(diagnosticsSnapshot);
+    },
+    setUpdateCheckResult,
+    getUpdateCheckResult() {
+      return clone(updateCheckResult);
+    },
+    setOrphanCleanupSummary,
+    getOrphanCleanupSummary() {
+      return clone(orphanCleanupSummary);
+    },
     getInvokeCalls() {
       return clone(invokeCalls);
     },
@@ -244,9 +444,11 @@
     simulateClipboardCapture,
   };
 
-  const windowLabel = new globalThis.URLSearchParams(globalThis.window.location.search).get("window") === "settings"
-    ? "settings"
-    : "main";
+  const windowType = new globalThis.URLSearchParams(globalThis.window.location.search).get(
+    "window"
+  );
+  const windowLabel =
+    windowType === "settings" ? "settings" : windowType === "about" ? "about" : "main";
 
   globalThis.window.__TAURI_INTERNALS__ = {
     metadata: {
@@ -320,13 +522,21 @@
         settingsSnapshot = {
           ...settingsSnapshot,
           history: {
-            max_text_records: Number(args?.max_text_records ?? settingsSnapshot.history.max_text_records),
-            max_image_records: Number(args?.max_image_records ?? settingsSnapshot.history.max_image_records),
-            max_file_records: Number(args?.max_file_records ?? settingsSnapshot.history.max_file_records),
+            max_text_records: Number(
+              args?.max_text_records ?? settingsSnapshot.history.max_text_records
+            ),
+            max_image_records: Number(
+              args?.max_image_records ?? settingsSnapshot.history.max_image_records
+            ),
+            max_file_records: Number(
+              args?.max_file_records ?? settingsSnapshot.history.max_file_records
+            ),
             max_image_storage_mb: Number(
               args?.max_image_storage_mb ?? settingsSnapshot.history.max_image_storage_mb
             ),
-            capture_images: Boolean(args?.capture_images ?? settingsSnapshot.history.capture_images),
+            capture_images: Boolean(
+              args?.capture_images ?? settingsSnapshot.history.capture_images
+            ),
             capture_files: Boolean(args?.capture_files ?? settingsSnapshot.history.capture_files),
           },
         };
@@ -374,7 +584,9 @@
           ...settingsSnapshot,
           shortcut: {
             ...settingsSnapshot.shortcut,
-            toggle_panel: normalizeShortcut(args?.shortcut ?? settingsSnapshot.shortcut.toggle_panel),
+            toggle_panel: normalizeShortcut(
+              args?.shortcut ?? settingsSnapshot.shortcut.toggle_panel
+            ),
           },
         };
         return clone(settingsSnapshot);
@@ -424,7 +636,9 @@
                     app_name: String(args?.app_name ?? rule.app_name),
                     platform: args?.platform ?? rule.platform,
                     match_type: args?.match_type ?? rule.match_type,
-                    app_identifier: normalizeIdentifier(args?.app_identifier ?? rule.app_identifier),
+                    app_identifier: normalizeIdentifier(
+                      args?.app_identifier ?? rule.app_identifier
+                    ),
                     enabled: Boolean(args?.enabled),
                     updated_at: 1700000001000,
                   }
@@ -445,6 +659,45 @@
           },
         };
         return clone(settingsSnapshot);
+      }
+
+      if (command === "get_release_info") {
+        return clone(releaseInfo);
+      }
+
+      if (command === "get_diagnostics_snapshot") {
+        return clone(diagnosticsSnapshot);
+      }
+
+      if (command === "get_permission_status") {
+        return clone(permissionStatus);
+      }
+
+      if (command === "open_accessibility_settings") {
+        return null;
+      }
+
+      if (command === "check_app_update") {
+        emitEvent("system:update-check-finished", clone(updateCheckResult));
+        return clone(updateCheckResult);
+      }
+
+      if (command === "run_orphan_cleanup") {
+        const cleanupResult = {
+          ...(clone(orphanCleanupSummary) ?? clone(defaultOrphanCleanupSummary)),
+          executed_at: Date.now(),
+        };
+        orphanCleanupSummary = clone(cleanupResult);
+        diagnosticsSnapshot = {
+          ...diagnosticsSnapshot,
+          last_orphan_cleanup: clone(cleanupResult),
+        };
+        emitEvent("system:diagnostics-updated", clone(diagnosticsSnapshot));
+        return clone(cleanupResult);
+      }
+
+      if (command === "show_about_window") {
+        return null;
       }
 
       if (command === "show_settings_window") {

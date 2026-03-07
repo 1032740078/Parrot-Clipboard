@@ -89,6 +89,53 @@ interface PlatformCapabilities {
   reasons: string[];
 }
 
+interface PermissionStatus {
+  platform: PlatformKind;
+  accessibility: "granted" | "missing" | "unsupported";
+  checked_at: number;
+  reason?: string | null;
+}
+
+interface ReleaseInfo {
+  app_version: string;
+  platform: PlatformKind;
+  session_type: SessionType;
+  schema_version: number;
+  config_version: number;
+  build_profile: "debug" | "release";
+}
+
+interface CleanupSummary {
+  deleted_original_files: number;
+  deleted_thumbnail_files: number;
+  executed_at: number;
+}
+
+interface DiagnosticsSnapshot {
+  release: ReleaseInfo;
+  permission: PermissionStatus;
+  log_directory: string;
+  migration: {
+    current_schema_version: number;
+    migrated: boolean;
+    recovered_from_corruption: boolean;
+    checked_at: number;
+    backup_paths: string[];
+  };
+  last_orphan_cleanup?: CleanupSummary | null;
+  capabilities: PlatformCapabilities;
+}
+
+interface UpdateCheckResult {
+  status: "available" | "latest" | "failed";
+  checked_at: number;
+  current_version: string;
+  latest_version?: string | null;
+  release_notes_url?: string | null;
+  download_url?: string | null;
+  message?: string | null;
+}
+
 interface InvokeCall {
   command: string;
   args?: Record<string, unknown>;
@@ -113,6 +160,15 @@ interface E2ETauriMock {
   getRuntimeStatus: () => RuntimeStatus;
   getSettingsSnapshot: () => SettingsSnapshot;
   getPlatformCapabilities: () => PlatformCapabilities;
+  getReleaseInfo: () => ReleaseInfo;
+  setPermissionStatus: (status: PermissionStatus) => void;
+  getPermissionStatus: () => PermissionStatus;
+  setDiagnosticsSnapshot: (snapshot: DiagnosticsSnapshot) => void;
+  getDiagnosticsSnapshot: () => DiagnosticsSnapshot;
+  setUpdateCheckResult: (result: UpdateCheckResult) => void;
+  getUpdateCheckResult: () => UpdateCheckResult;
+  setOrphanCleanupSummary: (summary: CleanupSummary | null) => void;
+  getOrphanCleanupSummary: () => CleanupSummary | null;
   getInvokeCalls: () => InvokeCall[];
   emitEvent: (event: string, payload: Record<string, unknown>) => void;
   simulateClipboardCapture: (payload: {
@@ -127,6 +183,11 @@ declare global {
     __E2E_RUNTIME_STATUS__?: RuntimeStatus;
     __E2E_INITIAL_SETTINGS__?: SettingsSnapshot;
     __E2E_PLATFORM_CAPABILITIES__?: PlatformCapabilities;
+    __E2E_RELEASE_INFO__?: ReleaseInfo;
+    __E2E_PERMISSION_STATUS__?: PermissionStatus;
+    __E2E_DIAGNOSTICS_SNAPSHOT__?: DiagnosticsSnapshot;
+    __E2E_UPDATE_CHECK_RESULT__?: UpdateCheckResult;
+    __E2E_ORPHAN_CLEANUP_SUMMARY__?: CleanupSummary;
     __E2E_TAURI__: E2ETauriMock;
     __TAURI_INTERNALS__?: {
       metadata: {
@@ -177,6 +238,53 @@ const defaultPlatformCapabilities: PlatformCapabilities = {
   reasons: [],
 };
 
+const defaultReleaseInfo: ReleaseInfo = {
+  app_version: "1.0.0",
+  platform: defaultPlatformCapabilities.platform,
+  session_type: defaultPlatformCapabilities.session_type,
+  schema_version: 2,
+  config_version: 2,
+  build_profile: "debug",
+};
+
+const defaultPermissionStatus: PermissionStatus = {
+  platform: defaultPlatformCapabilities.platform,
+  accessibility: "unsupported",
+  checked_at: 1700000000000,
+  reason: "accessibility_permission_not_applicable",
+};
+
+const defaultDiagnosticsSnapshot: DiagnosticsSnapshot = {
+  release: defaultReleaseInfo,
+  permission: defaultPermissionStatus,
+  log_directory: "/tmp/e2e-logs",
+  migration: {
+    current_schema_version: 2,
+    migrated: false,
+    recovered_from_corruption: false,
+    checked_at: 1700000001000,
+    backup_paths: [],
+  },
+  last_orphan_cleanup: null,
+  capabilities: defaultPlatformCapabilities,
+};
+
+const defaultUpdateCheckResult: UpdateCheckResult = {
+  status: "latest",
+  checked_at: 1700000002000,
+  current_version: defaultReleaseInfo.app_version,
+  latest_version: defaultReleaseInfo.app_version,
+  release_notes_url: null,
+  download_url: null,
+  message: "当前已是最新版本",
+};
+
+const defaultCleanupSummary: CleanupSummary = {
+  deleted_original_files: 0,
+  deleted_thumbnail_files: 0,
+  executed_at: 1700000003000,
+};
+
 const buildTextRecord = (id: number, label: string, timestamp: number): ClipboardRecord => ({
   id,
   content_type: "text",
@@ -225,12 +333,65 @@ const buildPlatformCapabilities = (
   ...overrides,
 });
 
+const buildReleaseInfo = (overrides: Partial<ReleaseInfo> = {}): ReleaseInfo => ({
+  ...defaultReleaseInfo,
+  ...overrides,
+});
+
+const buildPermissionStatus = (overrides: Partial<PermissionStatus> = {}): PermissionStatus => ({
+  ...defaultPermissionStatus,
+  ...overrides,
+});
+
+const buildDiagnosticsSnapshot = (
+  overrides: Partial<DiagnosticsSnapshot> & {
+    release?: Partial<ReleaseInfo>;
+    permission?: Partial<PermissionStatus>;
+    migration?: Partial<DiagnosticsSnapshot["migration"]>;
+    capabilities?: Partial<PlatformCapabilities>;
+  } = {}
+): DiagnosticsSnapshot => ({
+  ...defaultDiagnosticsSnapshot,
+  ...overrides,
+  release: {
+    ...defaultDiagnosticsSnapshot.release,
+    ...overrides.release,
+  },
+  permission: {
+    ...defaultDiagnosticsSnapshot.permission,
+    ...overrides.permission,
+  },
+  migration: {
+    ...defaultDiagnosticsSnapshot.migration,
+    ...overrides.migration,
+  },
+  capabilities: {
+    ...defaultDiagnosticsSnapshot.capabilities,
+    ...overrides.capabilities,
+  },
+});
+
+const buildUpdateCheckResult = (overrides: Partial<UpdateCheckResult> = {}): UpdateCheckResult => ({
+  ...defaultUpdateCheckResult,
+  ...overrides,
+});
+
+const buildCleanupSummary = (overrides: Partial<CleanupSummary> = {}): CleanupSummary => ({
+  ...defaultCleanupSummary,
+  ...overrides,
+});
+
 interface ScenarioOptions {
   route?: string;
   records?: ClipboardRecord[];
   runtimeStatus?: RuntimeStatus;
   settingsSnapshot?: SettingsSnapshot;
   platformCapabilities?: PlatformCapabilities;
+  releaseInfo?: ReleaseInfo;
+  permissionStatus?: PermissionStatus;
+  diagnosticsSnapshot?: DiagnosticsSnapshot;
+  updateCheckResult?: UpdateCheckResult;
+  orphanCleanupSummary?: CleanupSummary;
 }
 
 const gotoWithScenario = async (
@@ -241,6 +402,11 @@ const gotoWithScenario = async (
     runtimeStatus,
     settingsSnapshot,
     platformCapabilities,
+    releaseInfo,
+    permissionStatus,
+    diagnosticsSnapshot,
+    updateCheckResult,
+    orphanCleanupSummary,
   }: ScenarioOptions = {}
 ) => {
   if (records) {
@@ -267,6 +433,36 @@ const gotoWithScenario = async (
     }, platformCapabilities);
   }
 
+  if (releaseInfo) {
+    await page.addInitScript((initialReleaseInfo: ReleaseInfo) => {
+      window.__E2E_RELEASE_INFO__ = initialReleaseInfo;
+    }, releaseInfo);
+  }
+
+  if (permissionStatus) {
+    await page.addInitScript((initialPermissionStatus: PermissionStatus) => {
+      window.__E2E_PERMISSION_STATUS__ = initialPermissionStatus;
+    }, permissionStatus);
+  }
+
+  if (diagnosticsSnapshot) {
+    await page.addInitScript((initialDiagnosticsSnapshot: DiagnosticsSnapshot) => {
+      window.__E2E_DIAGNOSTICS_SNAPSHOT__ = initialDiagnosticsSnapshot;
+    }, diagnosticsSnapshot);
+  }
+
+  if (updateCheckResult) {
+    await page.addInitScript((initialUpdateCheckResult: UpdateCheckResult) => {
+      window.__E2E_UPDATE_CHECK_RESULT__ = initialUpdateCheckResult;
+    }, updateCheckResult);
+  }
+
+  if (orphanCleanupSummary) {
+    await page.addInitScript((initialCleanupSummary: CleanupSummary) => {
+      window.__E2E_ORPHAN_CLEANUP_SUMMARY__ = initialCleanupSummary;
+    }, orphanCleanupSummary);
+  }
+
   await page.addInitScript({ path: tauriMockPath });
   await page.goto(route);
 };
@@ -277,16 +473,18 @@ const openScenarioPage = async (browser: Browser, options: ScenarioOptions): Pro
   return page;
 };
 
-const getInvokeCalls = (page: Page) =>
-  page.evaluate(() => window.__E2E_TAURI__.getInvokeCalls());
+const getInvokeCalls = (page: Page) => page.evaluate(() => window.__E2E_TAURI__.getInvokeCalls());
 const getRuntimeStatus = (page: Page) =>
   page.evaluate(() => window.__E2E_TAURI__.getRuntimeStatus());
-const getMockRecords = (page: Page) =>
-  page.evaluate(() => window.__E2E_TAURI__.getRecords());
+const getMockRecords = (page: Page) => page.evaluate(() => window.__E2E_TAURI__.getRecords());
 const getSettingsSnapshot = (page: Page) =>
   page.evaluate(() => window.__E2E_TAURI__.getSettingsSnapshot());
 const getPlatformCapabilities = (page: Page) =>
   page.evaluate(() => window.__E2E_TAURI__.getPlatformCapabilities());
+const setPermissionStatus = (page: Page, status: PermissionStatus) =>
+  page.evaluate((nextStatus) => window.__E2E_TAURI__.setPermissionStatus(nextStatus), status);
+const getDiagnosticsSnapshot = (page: Page) =>
+  page.evaluate(() => window.__E2E_TAURI__.getDiagnosticsSnapshot());
 const getCurrentWindowLabel = (page: Page) =>
   page.evaluate(() => window.__TAURI_INTERNALS__?.metadata.currentWindow.label ?? "unknown");
 const getCurrentTheme = (page: Page) =>
@@ -401,7 +599,11 @@ test("BDD-01-03 保存通用设置后主题与运行态同步", async ({ browser
   const settingsRuntimeStatus = await getRuntimeStatus(settingsPage);
   expect(settingsRuntimeStatus.launch_at_login).toBe(false);
 
-  await emitEvent(mainPage, "system:settings-updated", savedSnapshot as unknown as Record<string, unknown>);
+  await emitEvent(
+    mainPage,
+    "system:settings-updated",
+    savedSnapshot as unknown as Record<string, unknown>
+  );
   await emitEvent(mainPage, "system:launch-at-login-changed", {
     launch_at_login: false,
     changed_at: 1_700_000_000_000,
@@ -459,8 +661,7 @@ test("BDD-02-01 保存新的快捷键后立即生效", async ({ page }) => {
   ).toBe(true);
   expect(
     invokeCalls.some(
-      (call) =>
-        call.command === "update_toggle_shortcut" && call.args?.shortcut === "control+alt+k"
+      (call) => call.command === "update_toggle_shortcut" && call.args?.shortcut === "control+alt+k"
     )
   ).toBe(true);
 });
@@ -598,9 +799,15 @@ test("BDD-04-03 Linux Wayland 显示能力降级提示", async ({ page }) => {
   });
 
   await expect(page.getByText("当前会话能力受限")).toBeVisible();
-  await expect(page.getByText("当前会话不支持全局快捷键，请改用托盘菜单打开主面板。", { exact: true })).toBeVisible();
-  await expect(page.getByText("当前会话的粘贴板监听能力受限，记录采集可能存在限制。", { exact: true })).toBeVisible();
-  await expect(page.getByText("当前会话不支持活动应用识别，隐私黑名单过滤会受到限制。", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("当前会话不支持全局快捷键，请改用托盘菜单打开主面板。", { exact: true })
+  ).toBeVisible();
+  await expect(
+    page.getByText("当前会话的粘贴板监听能力受限，记录采集可能存在限制。", { exact: true })
+  ).toBeVisible();
+  await expect(
+    page.getByText("当前会话不支持活动应用识别，隐私黑名单过滤会受到限制。", { exact: true })
+  ).toBeVisible();
   await expect(page.getByText(/未知错误/)).toHaveCount(0);
 
   await openSettingsSection(page, "快捷键");
@@ -646,6 +853,307 @@ test("BDD-NFR-03 主题切换后主面板仍可继续操作", async ({ page }) =
   await expect(page.getByTestId("shortcut-bar")).toHaveCount(0);
 
   const invokeCalls = await getInvokeCalls(page);
-  expect(invokeCalls.some((call) => call.command === "delete_record" && call.args?.id === 2)).toBe(true);
-  expect(invokeCalls.some((call) => call.command === "paste_record" && call.args?.id === 1)).toBe(true);
+  expect(invokeCalls.some((call) => call.command === "delete_record" && call.args?.id === 2)).toBe(
+    true
+  );
+  expect(invokeCalls.some((call) => call.command === "paste_record" && call.args?.id === 1)).toBe(
+    true
+  );
+});
+
+test("v1.0 BDD-01-03 清空历史后数据库与图片资源保持一致", async ({ page }) => {
+  const records: ClipboardRecord[] = [
+    buildTextRecord(1, "文本记录", 3_000),
+    {
+      id: 2,
+      content_type: "image",
+      preview_text: "屏幕截图 2026-03-08 10.20.00",
+      source_app: "Preview",
+      created_at: 2_000,
+      last_used_at: 2_000,
+      image_meta: {
+        mime_type: "image/png",
+        pixel_width: 1440,
+        pixel_height: 900,
+        thumbnail_path: "/tmp/e2e-thumb.png",
+        thumbnail_state: "ready",
+      },
+      text_meta: null,
+      files_meta: null,
+    },
+    {
+      id: 3,
+      content_type: "files",
+      preview_text: "合同.pdf 等 2 项",
+      source_app: "Finder",
+      created_at: 1_000,
+      last_used_at: 1_000,
+      text_meta: null,
+      image_meta: null,
+      files_meta: {
+        count: 2,
+        primary_name: "合同.pdf",
+        contains_directory: true,
+      },
+    },
+  ];
+
+  await gotoWithScenario(page, {
+    route: "/",
+    records,
+    runtimeStatus: defaultRuntimeStatus,
+  });
+
+  await emitEvent(page, "system:clear-history-requested", {
+    confirm_token: "confirm-clear-history-v0.3",
+  });
+
+  await expect(page.getByTestId("confirm-dialog")).toBeVisible();
+  await page.getByTestId("confirm-dialog-confirm").click();
+
+  await expect(page.getByTestId("empty-state")).toBeVisible();
+  await expect(page.getByTestId("toast")).toContainText("已清空 3 条历史记录");
+  await expect.poll(() => getMockRecords(page).then((items) => items.length)).toBe(0);
+
+  const invokeCalls = await getInvokeCalls(page);
+  expect(
+    invokeCalls.some(
+      (call) =>
+        call.command === "clear_history" &&
+        call.args?.confirm_token === "confirm-clear-history-v0.3"
+    )
+  ).toBe(true);
+});
+
+test("v1.0 BDD-02-01 macOS 权限缺失时展示辅助功能引导", async ({ page }) => {
+  const permissionStatus = buildPermissionStatus({
+    platform: "macos",
+    accessibility: "missing",
+    reason: "macos_accessibility_not_granted",
+  });
+  const capabilities = buildPlatformCapabilities({
+    platform: "macos",
+    session_type: "native",
+  });
+
+  await gotoWithScenario(page, {
+    route: "/",
+    records: [buildTextRecord(1, "待浏览的记录", 3_000)],
+    platformCapabilities: capabilities,
+    permissionStatus,
+  });
+
+  await expect(page.getByTestId("permission-guide-dialog")).toBeVisible();
+  await expect(page.getByTestId("permission-status-bar")).toContainText("辅助功能权限缺失");
+  await expect(page.getByTestId("text-card")).toHaveCount(1);
+});
+
+test("v1.0 BDD-02-02 授权完成后重试可恢复可用状态", async ({ page }) => {
+  const missingStatus = buildPermissionStatus({
+    platform: "macos",
+    accessibility: "missing",
+    reason: "macos_accessibility_not_granted",
+  });
+
+  await gotoWithScenario(page, {
+    route: "/",
+    records: [buildTextRecord(1, "待粘贴记录", 3_000)],
+    platformCapabilities: buildPlatformCapabilities({
+      platform: "macos",
+      session_type: "native",
+    }),
+    permissionStatus: missingStatus,
+  });
+
+  await expect(page.getByTestId("permission-guide-dialog")).toBeVisible();
+  await page.getByRole("button", { name: "打开系统设置" }).click();
+  await setPermissionStatus(
+    page,
+    buildPermissionStatus({
+      platform: "macos",
+      accessibility: "granted",
+      reason: null,
+    })
+  );
+  await page.getByRole("button", { name: "重新检测" }).click();
+
+  await expect(page.getByTestId("toast")).toContainText("辅助功能权限已就绪");
+  await expect(page.getByTestId("permission-guide-dialog")).toHaveCount(0);
+
+  const invokeCalls = await getInvokeCalls(page);
+  expect(invokeCalls.some((call) => call.command === "open_accessibility_settings")).toBe(true);
+});
+
+test("v1.0 BDD-03-01 关于页展示版本、平台与日志目录", async ({ page }) => {
+  const capabilities = buildPlatformCapabilities({
+    platform: "macos",
+    session_type: "native",
+  });
+  const releaseInfo = buildReleaseInfo({
+    platform: "macos",
+    session_type: "native",
+    schema_version: 2,
+  });
+  const diagnosticsSnapshot = buildDiagnosticsSnapshot({
+    release: releaseInfo,
+    permission: buildPermissionStatus({
+      platform: "macos",
+      accessibility: "granted",
+      reason: null,
+    }),
+    capabilities,
+    log_directory: "/tmp/e2e-logs",
+  });
+
+  await gotoWithScenario(page, {
+    route: "/?window=about",
+    releaseInfo,
+    diagnosticsSnapshot,
+    settingsSnapshot: buildSettingsSnapshot(),
+  });
+
+  await expect(page.getByRole("heading", { name: "关于" })).toBeVisible();
+  await expect(page.getByTestId("about-release-card")).toContainText("1.0.0");
+  await expect(page.getByTestId("about-log-directory")).toContainText("/tmp/e2e-logs");
+  await expect(page.getByTestId("about-license-details")).toBeVisible();
+  expect(await getCurrentWindowLabel(page)).toBe("about");
+});
+
+test("v1.0 BDD-03-02 检测到新版本时提供明确反馈", async ({ page }) => {
+  const releaseInfo = buildReleaseInfo({
+    platform: "windows",
+    session_type: "native",
+  });
+  const diagnosticsSnapshot = buildDiagnosticsSnapshot({
+    release: releaseInfo,
+    log_directory: "/tmp/e2e-logs",
+  });
+  const updateCheckResult = buildUpdateCheckResult({
+    status: "available",
+    current_version: "1.0.0",
+    latest_version: "1.0.1",
+    download_url: "https://example.com/downloads/1.0.1",
+    release_notes_url: "https://example.com/releases/1.0.1",
+    message: "发现可用更新",
+  });
+
+  await gotoWithScenario(page, {
+    route: "/?window=about",
+    releaseInfo,
+    diagnosticsSnapshot,
+    updateCheckResult,
+    settingsSnapshot: buildSettingsSnapshot(),
+  });
+
+  await page.getByTestId("about-check-update-button").click();
+
+  await expect(page.getByTestId("about-update-result")).toContainText("发现新版本");
+  await expect(page.getByTestId("about-download-button")).toBeVisible();
+  await expect(page.getByTestId("about-release-notes-button")).toBeVisible();
+});
+
+test("v1.0 BDD-03-03 检查更新失败时不阻塞其他功能", async ({ page }) => {
+  const releaseInfo = buildReleaseInfo();
+  const diagnosticsSnapshot = buildDiagnosticsSnapshot({
+    release: releaseInfo,
+    log_directory: "/tmp/e2e-logs",
+  });
+  const updateCheckResult = buildUpdateCheckResult({
+    status: "failed",
+    latest_version: null,
+    download_url: null,
+    release_notes_url: null,
+    message: "更新源暂时不可用",
+  });
+
+  await gotoWithScenario(page, {
+    route: "/?window=about",
+    releaseInfo,
+    diagnosticsSnapshot,
+    updateCheckResult,
+    settingsSnapshot: buildSettingsSnapshot(),
+  });
+
+  await page.getByTestId("about-check-update-button").click();
+
+  await expect(page.getByTestId("about-update-result")).toContainText("更新检查失败");
+  await expect(page.getByTestId("about-log-directory")).toContainText("/tmp/e2e-logs");
+  await expect(page.getByRole("button", { name: "关闭" })).toBeVisible();
+});
+
+test("v1.0 BDD-04-01 大历史列表下虚拟滚动保持交互稳定", async ({ page }) => {
+  const records = Array.from({ length: 200 }, (_, index) =>
+    buildTextRecord(index + 1, `历史记录 ${index + 1}`, 20_000 - index)
+  );
+
+  await gotoWithScenario(page, {
+    route: "/",
+    records,
+    settingsSnapshot: buildSettingsSnapshot(),
+  });
+
+  await expect(page.getByTestId("virtualized-track")).toBeVisible();
+  const renderedCount = await page
+    .locator('[data-testid="text-card"], [data-testid="image-card"], [data-testid="file-card"]')
+    .count();
+  expect(renderedCount).toBeLessThan(40);
+
+  const selectedCard = page.locator('[aria-selected="true"]').first();
+  const beforeText = await selectedCard.textContent();
+  await page.keyboard.press("ArrowRight");
+  await expect(selectedCard).not.toContainText(beforeText ?? "");
+
+  await page.keyboard.press("Delete");
+  await expect.poll(() => getMockRecords(page).then((items) => items.length)).toBe(199);
+
+  await page.keyboard.press("1");
+  await page.keyboard.press("Enter");
+  await expect(
+    page.locator('[data-testid="shortcut-bar"], [data-testid="main-panel"]')
+  ).toHaveCount(0);
+
+  const invokeCalls = await getInvokeCalls(page);
+  expect(invokeCalls.some((call) => call.command === "delete_record")).toBe(true);
+  expect(invokeCalls.some((call) => call.command === "paste_record")).toBe(true);
+});
+
+test("v1.0 BDD-05-01 孤立图片文件会被自动识别并清理", async ({ page }) => {
+  const releaseInfo = buildReleaseInfo();
+  const diagnosticsSnapshot = buildDiagnosticsSnapshot({
+    release: releaseInfo,
+    last_orphan_cleanup: null,
+  });
+  const cleanupSummary = buildCleanupSummary({
+    deleted_original_files: 2,
+    deleted_thumbnail_files: 1,
+  });
+
+  await gotoWithScenario(page, {
+    route: "/?window=about",
+    releaseInfo,
+    diagnosticsSnapshot,
+    orphanCleanupSummary: cleanupSummary,
+    settingsSnapshot: buildSettingsSnapshot(),
+  });
+
+  await expect(page.getByTestId("about-orphan-cleanup-summary")).toContainText(
+    "尚未执行孤立图片清理"
+  );
+  await page.getByTestId("about-run-orphan-cleanup-button").click();
+
+  await expect(page.getByTestId("about-orphan-cleanup-feedback")).toContainText(
+    "已删除原图 2 个、缩略图 1 个"
+  );
+  await expect(page.getByTestId("about-orphan-cleanup-summary")).toContainText(
+    "已删除原图 2 个、缩略图 1 个"
+  );
+  await expect
+    .poll(() => getDiagnosticsSnapshot(page).then((snapshot) => snapshot.last_orphan_cleanup))
+    .toMatchObject({
+      deleted_original_files: cleanupSummary.deleted_original_files,
+      deleted_thumbnail_files: cleanupSummary.deleted_thumbnail_files,
+    });
+
+  const lastCleanup = await getDiagnosticsSnapshot(page).then((snapshot) => snapshot.last_orphan_cleanup);
+  expect(lastCleanup?.executed_at).toEqual(expect.any(Number));
 });
