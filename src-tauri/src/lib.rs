@@ -10,6 +10,7 @@ mod logging;
 mod paste;
 mod persistence;
 mod platform;
+pub mod settings;
 mod shortcut;
 mod state;
 mod tray;
