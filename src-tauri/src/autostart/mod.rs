@@ -1,5 +1,6 @@
 use std::{fs, path::PathBuf, sync::Arc};
 
+pub mod linux;
 pub mod windows;
 
 use tauri::{process::current_binary, AppHandle, Manager};
@@ -61,7 +62,12 @@ pub fn create_autostart_service(
         return Ok(WindowsAutostartService::initialize(app_handle)?);
     }
 
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(target_os = "linux")]
+    {
+        return Ok(linux::LinuxAutostartService::initialize(app_handle)?);
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
         let _ = app_handle;
         Ok(Arc::new(UnavailableAutostartService::new(

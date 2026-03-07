@@ -3,6 +3,7 @@ use std::{path::PathBuf, sync::Arc};
 use crate::{clipboard::payload::ClipboardImageData, error::AppError};
 
 pub mod capabilities;
+pub mod linux;
 pub mod windows;
 pub use capabilities::{PlatformCapabilities, PlatformCapabilityResolver};
 
@@ -17,7 +18,12 @@ pub fn create_platform_clipboard() -> Result<Arc<dyn PlatformClipboard>, AppErro
         return Ok(Arc::new(WindowsPlatformClipboard::new()?));
     }
 
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(target_os = "linux")]
+    {
+        return Ok(Arc::new(linux::LinuxPlatformClipboard::new()?));
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
         Ok(Arc::new(MacosPlatformClipboard::new()?))
     }
@@ -34,7 +40,12 @@ pub fn create_platform_key_simulator() -> Result<Arc<dyn PlatformKeySimulator>, 
         return Ok(Arc::new(WindowsKeySimulator));
     }
 
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(target_os = "linux")]
+    {
+        return Ok(Arc::new(linux::LinuxKeySimulator));
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
         Ok(Arc::new(MacosKeySimulator))
     }
