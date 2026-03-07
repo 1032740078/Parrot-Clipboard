@@ -8,6 +8,7 @@ use crate::{
     },
     error::AppError,
     logging::{self, ClientLogLevel},
+    platform::PlatformCapabilities,
     state::AppState,
     tray,
 };
@@ -219,6 +220,13 @@ pub fn write_client_log(
 #[tauri::command]
 pub fn get_log_directory(state: State<'_, AppState>) -> String {
     state.logging_state.log_directory.clone()
+}
+
+#[tauri::command]
+pub fn get_platform_capabilities() -> PlatformCapabilities {
+    let capabilities = crate::platform::PlatformCapabilityResolver::current().resolve();
+    tracing::debug!(platform = ?capabilities.platform, session_type = ?capabilities.session_type, "ipc get_platform_capabilities requested");
+    capabilities
 }
 
 fn now_ms() -> i64 {

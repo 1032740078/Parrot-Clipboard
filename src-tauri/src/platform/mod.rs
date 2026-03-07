@@ -2,6 +2,9 @@ use std::path::PathBuf;
 
 use crate::{clipboard::payload::ClipboardImageData, error::AppError};
 
+pub mod capabilities;
+pub use capabilities::{PlatformCapabilities, PlatformCapabilityResolver};
+
 pub trait PlatformClipboard: Send + Sync {
     fn read_text(&self) -> Result<Option<String>, AppError>;
     fn read_html(&self) -> Result<Option<String>, AppError>;
@@ -119,3 +122,6 @@ pub mod macos {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
