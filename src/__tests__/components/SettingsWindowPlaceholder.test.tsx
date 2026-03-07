@@ -175,6 +175,79 @@ const setupComponent = ({
       return currentSnapshot;
     }
 
+    if (command === "create_blacklist_rule") {
+      const normalizedIdentifier = String(args?.app_identifier ?? "")
+        .trim()
+        .toLowerCase();
+      const duplicated = currentSnapshot.privacy.blacklist_rules.some(
+        (rule) =>
+          rule.platform === args?.platform &&
+          rule.match_type === args?.match_type &&
+          rule.app_identifier.trim().toLowerCase() === normalizedIdentifier
+      );
+      if (duplicated) {
+        throw { code: "INVALID_PARAM", message: "同一平台与匹配类型下已存在相同应用标识" };
+      }
+
+      currentSnapshot = {
+        ...currentSnapshot,
+        privacy: {
+          blacklist_rules: [
+            ...currentSnapshot.privacy.blacklist_rules,
+            {
+              id: `rule-${currentSnapshot.privacy.blacklist_rules.length + 1}`,
+              app_name: String(args?.app_name ?? ""),
+              platform:
+                args?.platform as SettingsSnapshot["privacy"]["blacklist_rules"][number]["platform"],
+              match_type:
+                args?.match_type as SettingsSnapshot["privacy"]["blacklist_rules"][number]["match_type"],
+              app_identifier: normalizedIdentifier,
+              enabled: true,
+              created_at: 1700000000000,
+              updated_at: 1700000000000,
+            },
+          ],
+        },
+      };
+      return currentSnapshot;
+    }
+
+    if (command === "update_blacklist_rule") {
+      currentSnapshot = {
+        ...currentSnapshot,
+        privacy: {
+          blacklist_rules: currentSnapshot.privacy.blacklist_rules.map((rule) =>
+            rule.id === args?.id
+              ? {
+                  ...rule,
+                  app_name: String(args?.app_name ?? rule.app_name),
+                  platform: args?.platform as typeof rule.platform,
+                  match_type: args?.match_type as typeof rule.match_type,
+                  app_identifier: String(args?.app_identifier ?? rule.app_identifier)
+                    .trim()
+                    .toLowerCase(),
+                  enabled: Boolean(args?.enabled),
+                  updated_at: 1700000001000,
+                }
+              : rule
+          ),
+        },
+      };
+      return currentSnapshot;
+    }
+
+    if (command === "delete_blacklist_rule") {
+      currentSnapshot = {
+        ...currentSnapshot,
+        privacy: {
+          blacklist_rules: currentSnapshot.privacy.blacklist_rules.filter(
+            (rule) => rule.id !== args?.id
+          ),
+        },
+      };
+      return currentSnapshot;
+    }
+
     return undefined;
   });
 
@@ -360,6 +433,144 @@ describe("components/SettingsWindowPlaceholder", () => {
 
     expect(await screen.findByText("Shift + Ctrl + V")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "保存本页" })).toBeEnabled();
+  });
+
+  it("隐私页展示黑名单规则列表并允许编辑保存", async () => {
+    const { getCurrentSnapshot } = setupComponent({
+      snapshot: createSettingsSnapshot({
+        privacy: {
+          blacklist_rules: [
+            {
+              id: "rule-1",
+              app_name: "微信",
+              platform: "windows",
+              match_type: "app_id",
+              app_identifier: "wechat.exe",
+              enabled: true,
+              created_at: 1700000000000,
+              updated_at: 1700000000000,
+            },
+          ],
+        },
+      }),
+    });
+    await screen.findByText("设置中心");
+
+    fireEvent.click(screen.getByRole("tab", { name: /隐私/ }));
+    await screen.findByRole("heading", { name: "隐私设置" });
+
+    expect(screen.getByText("微信")).toBeInTheDocument();
+    expect(screen.getByText("wechat.exe")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "编辑规则" }));
+    fireEvent.change(screen.getByLabelText("应用名称"), { target: { value: "企业微信" } });
+    fireEvent.change(screen.getByLabelText("应用标识"), { target: { value: "wxwork.exe" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存规则" }));
+
+    expect(await screen.findByText("黑名单规则已更新")).toBeInTheDocument();
+    expect(
+      invokeCalls.some(
+        (call) =>
+          call.command === "update_blacklist_rule" &&
+          call.args?.id === "rule-1" &&
+          call.args?.app_name === "企业微信" &&
+          call.args?.app_identifier === "wxwork.exe"
+      )
+    ).toBe(true);
+    expect(getCurrentSnapshot().privacy.blacklist_rules[0]?.app_name).toBe("企业微信");
+  });
+
+  it("隐私页允许新增黑名单规则", async () => {
+    const { getCurrentSnapshot } = setupComponent();
+    await screen.findByText("设置中心");
+
+    fireEvent.click(screen.getByRole("tab", { name: /隐私/ }));
+    await screen.findByRole("heading", { name: "隐私设置" });
+
+    fireEvent.change(screen.getByLabelText("应用名称"), { target: { value: "Terminal" } });
+    fireEvent.change(screen.getByLabelText("应用标识"), {
+      target: { value: "org.wezfurlong.wezterm" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "新增规则" }));
+
+    expect(await screen.findByText("黑名单规则已新增")).toBeInTheDocument();
+    expect(
+      invokeCalls.some(
+        (call) =>
+          call.command === "create_blacklist_rule" &&
+          call.args?.app_name === "Terminal" &&
+          call.args?.app_identifier === "org.wezfurlong.wezterm"
+      )
+    ).toBe(true);
+    expect(getCurrentSnapshot().privacy.blacklist_rules).toHaveLength(1);
+  });
+
+  it("隐私页支持停用并删除黑名单规则", async () => {
+    const { getCurrentSnapshot } = setupComponent({
+      snapshot: createSettingsSnapshot({
+        privacy: {
+          blacklist_rules: [
+            {
+              id: "rule-1",
+              app_name: "微信",
+              platform: "windows",
+              match_type: "app_id",
+              app_identifier: "wechat.exe",
+              enabled: true,
+              created_at: 1700000000000,
+              updated_at: 1700000000000,
+            },
+          ],
+        },
+      }),
+    });
+    await screen.findByText("设置中心");
+
+    fireEvent.click(screen.getByRole("tab", { name: /隐私/ }));
+    await screen.findByRole("heading", { name: "隐私设置" });
+
+    fireEvent.click(screen.getByRole("button", { name: "停用规则" }));
+    expect(await screen.findByText("黑名单规则已停用")).toBeInTheDocument();
+    expect(getCurrentSnapshot().privacy.blacklist_rules[0]?.enabled).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "删除规则" }));
+    expect(await screen.findByText("黑名单规则已删除")).toBeInTheDocument();
+    expect(getCurrentSnapshot().privacy.blacklist_rules).toHaveLength(0);
+    expect(screen.getByText("当前未配置黑名单应用")).toBeInTheDocument();
+  });
+
+  it("重复黑名单规则时展示错误并阻止新增成功", async () => {
+    const { getCurrentSnapshot } = setupComponent({
+      snapshot: createSettingsSnapshot({
+        privacy: {
+          blacklist_rules: [
+            {
+              id: "rule-1",
+              app_name: "微信",
+              platform: "windows",
+              match_type: "app_id",
+              app_identifier: "wechat.exe",
+              enabled: true,
+              created_at: 1700000000000,
+              updated_at: 1700000000000,
+            },
+          ],
+        },
+      }),
+    });
+    await screen.findByText("设置中心");
+
+    fireEvent.click(screen.getByRole("tab", { name: /隐私/ }));
+    await screen.findByRole("heading", { name: "隐私设置" });
+
+    fireEvent.change(screen.getByLabelText("应用名称"), { target: { value: "微信重复" } });
+    fireEvent.change(screen.getByLabelText("应用标识"), { target: { value: "WeChat.EXE" } });
+    fireEvent.click(screen.getByRole("button", { name: "新增规则" }));
+
+    expect(
+      (await screen.findAllByText("同一平台与匹配类型下已存在相同应用标识")).length
+    ).toBeGreaterThan(0);
+    expect(getCurrentSnapshot().privacy.blacklist_rules).toHaveLength(1);
   });
 
   it("Wayland 下禁用快捷键录制与保存并提示替代路径", async () => {

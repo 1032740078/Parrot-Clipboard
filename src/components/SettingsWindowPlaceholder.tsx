@@ -5,15 +5,21 @@ import { getPlatformCapabilities } from "../api/commands";
 import { getErrorMessage } from "../api/errorHandler";
 import { logger, normalizeError } from "../api/logger";
 import {
+  createBlacklistRule,
+  deleteBlacklistRule,
   getSettingsSnapshot,
+  updateBlacklistRule,
   updateGeneralSettings,
   updateHistorySettings,
   updateToggleShortcut,
   validateToggleShortcut,
 } from "../api/settings";
 import type {
+  BlacklistMatchType,
+  BlacklistRule,
   CapabilityState,
   PlatformCapabilities,
+  PlatformKind,
   SettingsSnapshot,
   ShortcutValidationResult,
   ThemeMode,
@@ -50,15 +56,25 @@ interface SettingsShortcutDraft {
   platformDefault: string;
 }
 
-interface SettingsPrivacyPreview {
-  blacklistRuleCount: number;
+interface SettingsPrivacyDraft {
+  blacklistRules: BlacklistRule[];
+}
+
+interface PrivacyRuleFormDraft {
+  mode: "create" | "edit";
+  id?: string;
+  appName: string;
+  platform: PlatformKind;
+  matchType: BlacklistMatchType;
+  appIdentifier: string;
+  enabled: boolean;
 }
 
 interface SettingsDrafts {
   general: SettingsGeneralDraft;
   history: SettingsHistoryDraft;
   shortcut: SettingsShortcutDraft;
-  privacy: SettingsPrivacyPreview;
+  privacy: SettingsPrivacyDraft;
 }
 
 interface PendingAction {
@@ -132,7 +148,7 @@ const SETTINGS_SECTIONS: Array<{
     key: "privacy",
     label: "隐私",
     title: "隐私设置",
-    description: "展示黑名单列表区域与说明容器。",
+    description: "管理黑名单规则，并明确说明规则命中后的行为。",
   },
 ];
 
@@ -156,6 +172,64 @@ const REASON_MESSAGES: Record<string, string> = {
   linux_session_type_unknown: "当前 Linux 会话类型未识别，快捷键、监听与黑名单能力可能受限。",
 };
 
+const PLATFORM_LABELS: Record<PlatformKind, string> = {
+  macos: "macOS",
+  windows: "Windows",
+  linux: "Linux",
+};
+
+const MATCH_TYPE_LABELS: Record<BlacklistMatchType, string> = {
+  bundle_id: "Bundle ID",
+  process_name: "进程名",
+  app_id: "App ID",
+  wm_class: "WM Class",
+};
+
+const PLATFORM_OPTIONS: Array<{ value: PlatformKind; label: string }> = [
+  { value: "macos", label: "macOS" },
+  { value: "windows", label: "Windows" },
+  { value: "linux", label: "Linux" },
+];
+
+const MATCH_TYPE_OPTIONS: Array<{ value: BlacklistMatchType; label: string }> = [
+  { value: "bundle_id", label: "Bundle ID" },
+  { value: "process_name", label: "进程名" },
+  { value: "app_id", label: "App ID" },
+  { value: "wm_class", label: "WM Class" },
+];
+
+const defaultMatchTypeForPlatform = (platform: PlatformKind): BlacklistMatchType => {
+  switch (platform) {
+    case "macos":
+      return "bundle_id";
+    case "windows":
+      return "app_id";
+    case "linux":
+      return "process_name";
+    default:
+      return "process_name";
+  }
+};
+
+const buildEmptyPrivacyFormDraft = (platform: PlatformKind = "windows"): PrivacyRuleFormDraft => ({
+  mode: "create",
+  appName: "",
+  platform,
+  matchType: defaultMatchTypeForPlatform(platform),
+  appIdentifier: "",
+  enabled: true,
+});
+
+const buildPrivacyFormDraftFromRule = (rule: BlacklistRule): PrivacyRuleFormDraft => ({
+  mode: "edit",
+  id: rule.id,
+  appName: rule.app_name,
+  platform: rule.platform,
+  matchType: rule.match_type,
+  appIdentifier: rule.app_identifier,
+  enabled: rule.enabled,
+});
+
 const buildFallbackDrafts = (): SettingsDrafts => ({
   general: {
     theme: "system",
@@ -175,7 +249,7 @@ const buildFallbackDrafts = (): SettingsDrafts => ({
     platformDefault: "shift+control+v",
   },
   privacy: {
-    blacklistRuleCount: 0,
+    blacklistRules: [],
   },
 });
 
@@ -198,7 +272,7 @@ const buildDraftsFromSnapshot = (snapshot: SettingsSnapshot): SettingsDrafts => 
     platformDefault: snapshot.shortcut.platform_default,
   },
   privacy: {
-    blacklistRuleCount: snapshot.privacy.blacklist_rules.length,
+    blacklistRules: snapshot.privacy.blacklist_rules,
   },
 });
 
@@ -445,6 +519,13 @@ export const SettingsWindowPlaceholder = () => {
   const [activeSection, setActiveSection] = useState<SettingsSectionKey>("general");
   const [drafts, setDrafts] = useState<SettingsDrafts>(() => buildFallbackDrafts());
   const [savedDrafts, setSavedDrafts] = useState<SettingsDrafts>(() => buildFallbackDrafts());
+  const [privacyFormDraft, setPrivacyFormDraft] = useState<PrivacyRuleFormDraft>(() =>
+    buildEmptyPrivacyFormDraft()
+  );
+  const [privacyFormBaseline, setPrivacyFormBaseline] = useState<PrivacyRuleFormDraft>(() =>
+    buildEmptyPrivacyFormDraft()
+  );
+  const [privacyFormError, setPrivacyFormError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -453,16 +534,24 @@ export const SettingsWindowPlaceholder = () => {
     null
   );
 
+  const isPrivacyFormDirty =
+    JSON.stringify(privacyFormDraft) !== JSON.stringify(privacyFormBaseline);
   const hasUnsavedChanges = useMemo(
-    () => SETTINGS_SECTIONS.some((section) => isSectionDirty(drafts, savedDrafts, section.key)),
-    [drafts, savedDrafts]
+    () =>
+      SETTINGS_SECTIONS.some((section) => isSectionDirty(drafts, savedDrafts, section.key)) ||
+      isPrivacyFormDirty,
+    [drafts, isPrivacyFormDirty, savedDrafts]
   );
-  const currentSectionDirty = isSectionDirty(drafts, savedDrafts, activeSection);
+  const currentSectionDirty =
+    isSectionDirty(drafts, savedDrafts, activeSection) ||
+    (activeSection === "privacy" && isPrivacyFormDirty);
   const activeSectionMeta = getSectionMeta(activeSection);
   const reasonMessages = useMemo(
     () => (capabilities ? resolveReasonMessages(capabilities) : []),
     [capabilities]
   );
+  const privacyFormValid =
+    privacyFormDraft.appName.trim().length > 0 && privacyFormDraft.appIdentifier.trim().length > 0;
   const hasUnsavedChangesRef = useRef(hasUnsavedChanges);
   const forceCloseRef = useRef(false);
   const canSaveShortcut =
@@ -471,9 +560,11 @@ export const SettingsWindowPlaceholder = () => {
     Boolean(shortcutValidation?.valid) &&
     !shortcutValidation?.conflict &&
     capabilities?.global_shortcut === "supported";
+  const canSavePrivacy = activeSection === "privacy" && currentSectionDirty && privacyFormValid;
   const canSaveCurrentSection =
     ((activeSection === "general" || activeSection === "history") && currentSectionDirty) ||
-    canSaveShortcut;
+    canSaveShortcut ||
+    canSavePrivacy;
 
   useEffect(() => {
     hasUnsavedChangesRef.current = hasUnsavedChanges;
@@ -493,9 +584,13 @@ export const SettingsWindowPlaceholder = () => {
         }
 
         const nextDrafts = buildDraftsFromSnapshot(settingsSnapshot);
+        const initialPrivacyForm = buildEmptyPrivacyFormDraft(capabilitySnapshot.platform);
         setCapabilities(capabilitySnapshot);
         setDrafts(nextDrafts);
         setSavedDrafts(nextDrafts);
+        setPrivacyFormDraft(initialPrivacyForm);
+        setPrivacyFormBaseline(initialPrivacyForm);
+        setPrivacyFormError(null);
         setShortcutValidation({
           normalized_shortcut: settingsSnapshot.shortcut.toggle_panel,
           valid: true,
@@ -573,6 +668,15 @@ export const SettingsWindowPlaceholder = () => {
     };
   }, [activeSection, isShortcutRecording, capabilities?.platform]);
 
+  const resetPrivacyFormToCreate = (
+    platform: PlatformKind = capabilities?.platform ?? "windows"
+  ) => {
+    const nextForm = buildEmptyPrivacyFormDraft(platform);
+    setPrivacyFormDraft(nextForm);
+    setPrivacyFormBaseline(nextForm);
+    setPrivacyFormError(null);
+  };
+
   const applySettingsSnapshot = (snapshot: SettingsSnapshot): void => {
     const nextDrafts = buildDraftsFromSnapshot(snapshot);
     setDrafts(nextDrafts);
@@ -583,6 +687,32 @@ export const SettingsWindowPlaceholder = () => {
       conflict: false,
       reason: null,
     });
+  };
+
+  const startPrivacyRuleEdit = (rule: BlacklistRule): void => {
+    const nextForm = buildPrivacyFormDraftFromRule(rule);
+    setPrivacyFormDraft(nextForm);
+    setPrivacyFormBaseline(nextForm);
+    setPrivacyFormError(null);
+  };
+
+  const syncPrivacyFormFromSnapshot = (snapshot: SettingsSnapshot): void => {
+    if (privacyFormDraft.mode !== "edit" || !privacyFormDraft.id) {
+      return;
+    }
+
+    const matchedRule = snapshot.privacy.blacklist_rules.find(
+      (rule) => rule.id === privacyFormDraft.id
+    );
+    if (!matchedRule) {
+      resetPrivacyFormToCreate(privacyFormDraft.platform);
+      return;
+    }
+
+    const nextForm = buildPrivacyFormDraftFromRule(matchedRule);
+    setPrivacyFormDraft(nextForm);
+    setPrivacyFormBaseline(nextForm);
+    setPrivacyFormError(null);
   };
 
   const handleSectionClick = (section: SettingsSectionKey): void => {
@@ -612,6 +742,10 @@ export const SettingsWindowPlaceholder = () => {
       });
       setIsShortcutRecording(false);
     }
+    if (activeSection === "privacy") {
+      setPrivacyFormDraft(privacyFormBaseline);
+      setPrivacyFormError(null);
+    }
   };
 
   const handleDiscardPendingAction = async (): Promise<void> => {
@@ -633,6 +767,10 @@ export const SettingsWindowPlaceholder = () => {
         });
         setIsShortcutRecording(false);
       }
+      if (activeSection === "privacy") {
+        setPrivacyFormDraft(privacyFormBaseline);
+        setPrivacyFormError(null);
+      }
       setActiveSection(pendingAction.targetSection);
       setPendingAction(null);
       return;
@@ -640,6 +778,8 @@ export const SettingsWindowPlaceholder = () => {
 
     if (pendingAction.type === "close-window") {
       setDrafts(savedDrafts);
+      setPrivacyFormDraft(privacyFormBaseline);
+      setPrivacyFormError(null);
       setPendingAction(null);
       forceCloseRef.current = true;
       try {
@@ -669,6 +809,91 @@ export const SettingsWindowPlaceholder = () => {
         message: getErrorMessage(error),
         duration: 2600,
       });
+    }
+  };
+
+  const savePrivacyForm = async (): Promise<void> => {
+    setPrivacyFormError(null);
+
+    const payload = {
+      app_name: privacyFormDraft.appName,
+      platform: privacyFormDraft.platform,
+      match_type: privacyFormDraft.matchType,
+      app_identifier: privacyFormDraft.appIdentifier,
+    };
+
+    try {
+      if (privacyFormDraft.mode === "edit" && privacyFormDraft.id) {
+        const snapshot = await updateBlacklistRule({
+          id: privacyFormDraft.id,
+          ...payload,
+          enabled: privacyFormDraft.enabled,
+        });
+        applySettingsSnapshot(snapshot);
+        syncPrivacyFormFromSnapshot(snapshot);
+        setToast({ level: "info", message: "黑名单规则已更新", duration: 2500 });
+        return;
+      }
+
+      const snapshot = await createBlacklistRule(payload);
+      applySettingsSnapshot(snapshot);
+      resetPrivacyFormToCreate(privacyFormDraft.platform);
+      setToast({ level: "info", message: "黑名单规则已新增", duration: 2500 });
+    } catch (error) {
+      const message = getErrorMessage(error);
+      setPrivacyFormError(message);
+      setToast({ level: "error", message, duration: 2600 });
+    }
+  };
+
+  const handleToggleBlacklistRule = async (rule: BlacklistRule): Promise<void> => {
+    setIsSaving(true);
+    try {
+      const snapshot = await updateBlacklistRule({
+        id: rule.id,
+        app_name: rule.app_name,
+        platform: rule.platform,
+        match_type: rule.match_type,
+        app_identifier: rule.app_identifier,
+        enabled: !rule.enabled,
+      });
+      applySettingsSnapshot(snapshot);
+      syncPrivacyFormFromSnapshot(snapshot);
+      setToast({
+        level: "info",
+        message: !rule.enabled ? "黑名单规则已启用" : "黑名单规则已停用",
+        duration: 2500,
+      });
+    } catch (error) {
+      setToast({
+        level: "error",
+        message: getErrorMessage(error),
+        duration: 2600,
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteBlacklistRule = async (rule: BlacklistRule): Promise<void> => {
+    setIsSaving(true);
+    try {
+      const snapshot = await deleteBlacklistRule({ id: rule.id });
+      applySettingsSnapshot(snapshot);
+      if (privacyFormDraft.mode === "edit" && privacyFormDraft.id === rule.id) {
+        resetPrivacyFormToCreate(rule.platform);
+      } else {
+        syncPrivacyFormFromSnapshot(snapshot);
+      }
+      setToast({ level: "info", message: "黑名单规则已删除", duration: 2500 });
+    } catch (error) {
+      setToast({
+        level: "error",
+        message: getErrorMessage(error),
+        duration: 2600,
+      });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -706,6 +931,10 @@ export const SettingsWindowPlaceholder = () => {
         const snapshot = await updateToggleShortcut(drafts.shortcut.togglePanel);
         applySettingsSnapshot(snapshot);
         setToast({ level: "info", message: "快捷键已更新", duration: 2500 });
+      }
+
+      if (activeSection === "privacy") {
+        await savePrivacyForm();
       }
     } catch (error) {
       setToast({
@@ -984,20 +1213,256 @@ export const SettingsWindowPlaceholder = () => {
       case "privacy":
         return (
           <div className="flex flex-col gap-4">
-            <article className="rounded-2xl border border-white/10 bg-slate-950/60 p-5">
-              <p className="text-sm font-medium text-white">隐私规则列表壳层</p>
-              <p className="mt-2 text-sm leading-6 text-slate-300">
-                黑名单列表、表单新增与删除流程将在后续任务接入；当前先读取规则数量并预留空态容器。
-              </p>
-              <div className="mt-4 rounded-xl border border-dashed border-white/15 bg-white/[0.03] px-5 py-8 text-center text-sm text-slate-300">
-                当前未配置黑名单应用
-                <p className="mt-2 text-xs leading-6 text-slate-400">
-                  预计下一任务会在此显示规则列表、启停开关与删除操作。
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_380px]">
+              <article className="rounded-2xl border border-white/10 bg-slate-950/60 p-5">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium text-white">黑名单规则列表</p>
+                    <p className="mt-2 text-sm leading-6 text-slate-300">
+                      命中黑名单后不会记录复制内容；停用规则不会删除，仅会停止参与匹配。
+                    </p>
+                  </div>
+                  <button
+                    className="rounded-xl border border-white/10 px-4 py-2 text-sm text-slate-100 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={isSaving}
+                    onClick={() => {
+                      resetPrivacyFormToCreate(capabilities?.platform ?? privacyFormDraft.platform);
+                    }}
+                    type="button"
+                  >
+                    新建规则
+                  </button>
+                </div>
+
+                <p className="mt-4 text-xs uppercase tracking-[0.18em] text-slate-500">
+                  当前规则数：{drafts.privacy.blacklistRules.length}
                 </p>
-                <p className="mt-3 text-xs text-slate-500">
-                  当前规则数：{drafts.privacy.blacklistRuleCount}
-                </p>
-              </div>
+
+                {drafts.privacy.blacklistRules.length === 0 ? (
+                  <div className="mt-4 rounded-xl border border-dashed border-white/15 bg-white/[0.03] px-5 py-8 text-center text-sm text-slate-300">
+                    当前未配置黑名单应用
+                    <p className="mt-2 text-xs leading-6 text-slate-400">
+                      新增后将按“平台 + 匹配类型 + 应用标识”参与过滤判断。
+                    </p>
+                  </div>
+                ) : (
+                  <div className="mt-4 space-y-3">
+                    {drafts.privacy.blacklistRules.map((rule) => (
+                      <article
+                        className="rounded-2xl border border-white/10 bg-white/[0.03] p-4"
+                        data-testid={`privacy-rule-${rule.id}`}
+                        key={rule.id}
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div>
+                            <p className="text-sm font-medium text-white">{rule.app_name}</p>
+                            <p className="mt-1 text-xs text-slate-400">
+                              {PLATFORM_LABELS[rule.platform]} ·{" "}
+                              {MATCH_TYPE_LABELS[rule.match_type]}
+                            </p>
+                            <p className="mt-3 font-mono text-xs text-slate-300">
+                              {rule.app_identifier}
+                            </p>
+                          </div>
+                          <span
+                            className={`inline-flex rounded-full border px-3 py-1 text-xs ${rule.enabled ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100" : "border-slate-500/40 bg-slate-500/10 text-slate-300"}`}
+                          >
+                            {rule.enabled ? "启用中" : "已停用"}
+                          </span>
+                        </div>
+                        <div className="mt-4 flex flex-wrap gap-3">
+                          <button
+                            className="rounded-xl border border-white/10 px-3 py-2 text-xs text-slate-100 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={isSaving}
+                            onClick={() => {
+                              void handleToggleBlacklistRule(rule);
+                            }}
+                            type="button"
+                          >
+                            {rule.enabled ? "停用规则" : "启用规则"}
+                          </button>
+                          <button
+                            className="rounded-xl border border-white/10 px-3 py-2 text-xs text-slate-100 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={isSaving}
+                            onClick={() => {
+                              startPrivacyRuleEdit(rule);
+                            }}
+                            type="button"
+                          >
+                            编辑规则
+                          </button>
+                          <button
+                            className="rounded-xl border border-rose-400/30 px-3 py-2 text-xs text-rose-100 transition hover:bg-rose-400/10 disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={isSaving}
+                            onClick={() => {
+                              void handleDeleteBlacklistRule(rule);
+                            }}
+                            type="button"
+                          >
+                            删除规则
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </article>
+
+              <article className="rounded-2xl border border-white/10 bg-slate-950/60 p-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium text-white">
+                      {privacyFormDraft.mode === "edit" ? "编辑黑名单规则" : "新增黑名单规则"}
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-slate-300">
+                      填写应用名称、目标平台、匹配类型与应用标识后保存；编辑态可额外调整启用状态。
+                    </p>
+                  </div>
+                  {privacyFormDraft.mode === "edit" ? (
+                    <button
+                      className="rounded-xl border border-white/10 px-3 py-2 text-xs text-slate-100 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={isSaving}
+                      onClick={() => {
+                        resetPrivacyFormToCreate(privacyFormDraft.platform);
+                      }}
+                      type="button"
+                    >
+                      切换到新增
+                    </button>
+                  ) : null}
+                </div>
+
+                <div className="mt-4 grid gap-4">
+                  <label className="block rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4">
+                    <span className="text-sm font-medium text-white">应用名称</span>
+                    <input
+                      aria-label="应用名称"
+                      className="mt-3 w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white outline-none transition focus:border-sky-400/60"
+                      onChange={(event) => {
+                        setPrivacyFormDraft((currentDraft) => ({
+                          ...currentDraft,
+                          appName: event.target.value,
+                        }));
+                        setPrivacyFormError(null);
+                      }}
+                      placeholder="例如：微信 / 企业微信 / Terminal"
+                      type="text"
+                      value={privacyFormDraft.appName}
+                    />
+                  </label>
+
+                  <label className="block rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4">
+                    <span className="text-sm font-medium text-white">目标平台</span>
+                    <select
+                      aria-label="目标平台"
+                      className="mt-3 w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white outline-none transition focus:border-sky-400/60"
+                      onChange={(event) => {
+                        const nextPlatform = event.target.value as PlatformKind;
+                        setPrivacyFormDraft((currentDraft) => ({
+                          ...currentDraft,
+                          platform: nextPlatform,
+                          matchType: defaultMatchTypeForPlatform(nextPlatform),
+                        }));
+                        setPrivacyFormError(null);
+                      }}
+                      value={privacyFormDraft.platform}
+                    >
+                      {PLATFORM_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="block rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4">
+                    <span className="text-sm font-medium text-white">匹配类型</span>
+                    <select
+                      aria-label="匹配类型"
+                      className="mt-3 w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white outline-none transition focus:border-sky-400/60"
+                      onChange={(event) => {
+                        setPrivacyFormDraft((currentDraft) => ({
+                          ...currentDraft,
+                          matchType: event.target.value as BlacklistMatchType,
+                        }));
+                        setPrivacyFormError(null);
+                      }}
+                      value={privacyFormDraft.matchType}
+                    >
+                      {MATCH_TYPE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="block rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4">
+                    <span className="text-sm font-medium text-white">应用标识</span>
+                    <input
+                      aria-label="应用标识"
+                      className="mt-3 w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white outline-none transition focus:border-sky-400/60"
+                      onChange={(event) => {
+                        setPrivacyFormDraft((currentDraft) => ({
+                          ...currentDraft,
+                          appIdentifier: event.target.value,
+                        }));
+                        setPrivacyFormError(null);
+                      }}
+                      placeholder="例如：com.tencent.xinwechat / wechat.exe / org.wezfurlong.wezterm"
+                      type="text"
+                      value={privacyFormDraft.appIdentifier}
+                    />
+                  </label>
+
+                  {privacyFormDraft.mode === "edit" ? (
+                    <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 text-sm text-slate-200">
+                      <input
+                        checked={privacyFormDraft.enabled}
+                        className="mt-1 h-4 w-4 rounded border-white/20 bg-slate-950 text-sky-400"
+                        onChange={(event) => {
+                          setPrivacyFormDraft((currentDraft) => ({
+                            ...currentDraft,
+                            enabled: event.target.checked,
+                          }));
+                          setPrivacyFormError(null);
+                        }}
+                        type="checkbox"
+                      />
+                      <span>
+                        <span className="font-medium text-white">启用该规则</span>
+                        <span className="mt-1 block leading-6 text-slate-300">
+                          停用后不会删除规则，仅暂停参与隐私黑名单匹配。
+                        </span>
+                      </span>
+                    </label>
+                  ) : (
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 text-sm text-slate-300">
+                      新增规则默认启用；后续可在左侧列表中单独停用或再次编辑。
+                    </div>
+                  )}
+
+                  <div
+                    className={`rounded-2xl border px-4 py-4 text-sm ${privacyFormError ? "border-rose-400/20 bg-rose-400/10 text-rose-50" : !privacyFormValid ? "border-amber-400/20 bg-amber-400/10 text-amber-50" : "border-emerald-400/20 bg-emerald-400/10 text-emerald-50"}`}
+                  >
+                    {privacyFormError ? (
+                      <p>{privacyFormError}</p>
+                    ) : !privacyFormValid ? (
+                      <p>请先填写“应用名称”和“应用标识”后再保存。</p>
+                    ) : (
+                      <p>保存后规则会立即写入配置，并参与后续黑名单过滤链路。</p>
+                    )}
+                  </div>
+                </div>
+              </article>
+            </div>
+
+            <article className="rounded-2xl border border-amber-400/20 bg-amber-400/10 px-5 py-4 text-sm text-amber-50">
+              <p className="font-medium text-amber-100">隐私规则提示</p>
+              <ul className="mt-2 space-y-2 leading-6 text-slate-100">
+                <li>命中黑名单后不会记录新的复制内容，但不会追溯删除已有历史。</li>
+                <li>删除规则只会移除后续过滤条件，不会恢复此前未记录的内容。</li>
+              </ul>
             </article>
             <CapabilityNotice
               capabilities={capabilities}
@@ -1021,7 +1486,7 @@ export const SettingsWindowPlaceholder = () => {
             </p>
             <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white">设置中心</h1>
             <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-300">
-              当前任务已完成快捷键录制、冲突校验、恢复默认与保存，设置窗口的核心交互链路已经基本具备。
+              当前任务已完成快捷键与隐私规则两条核心交互链路，设置窗口已经具备真实可保存的主要配置能力。
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -1095,11 +1560,15 @@ export const SettingsWindowPlaceholder = () => {
                 >
                   {isSaving
                     ? "保存中..."
-                    : activeSection === "general" ||
-                        activeSection === "history" ||
-                        activeSection === "shortcut"
-                      ? "保存本页"
-                      : "当前页稍后接入"}
+                    : activeSection === "privacy"
+                      ? privacyFormDraft.mode === "edit"
+                        ? "保存规则"
+                        : "新增规则"
+                      : activeSection === "general" ||
+                          activeSection === "history" ||
+                          activeSection === "shortcut"
+                        ? "保存本页"
+                        : "当前页稍后接入"}
                 </button>
               </div>
             </div>
