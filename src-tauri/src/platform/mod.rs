@@ -2,6 +2,20 @@ use std::{path::PathBuf, sync::Arc};
 
 use crate::{clipboard::payload::ClipboardImageData, error::AppError};
 
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub struct UnsupportedKeySimulator {
+    message: String,
+}
+
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+impl UnsupportedKeySimulator {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
 pub mod capabilities;
 pub mod linux;
 pub mod windows;
@@ -42,6 +56,13 @@ pub fn create_platform_key_simulator() -> Result<Arc<dyn PlatformKeySimulator>, 
 
     #[cfg(target_os = "linux")]
     {
+        let capabilities = PlatformCapabilityResolver::current().resolve();
+        if capabilities.global_shortcut != capabilities::CapabilityState::Supported {
+            return Ok(Arc::new(UnsupportedKeySimulator::new(
+                capabilities.reasons.join(", "),
+            )));
+        }
+
         return Ok(Arc::new(linux::LinuxKeySimulator));
     }
 
@@ -67,6 +88,12 @@ pub trait PlatformKeySimulator: Send + Sync {
     fn simulate_paste(&self) -> Result<(), AppError>;
 }
 
+impl PlatformKeySimulator for UnsupportedKeySimulator {
+    fn simulate_paste(&self) -> Result<(), AppError> {
+        Err(AppError::UnsupportedPlatformFeature(self.message.clone()))
+    }
+}
+
 #[cfg(target_os = "macos")]
 pub mod macos;
 
@@ -78,6 +105,20 @@ pub mod macos {
     use std::{path::PathBuf, sync::Mutex};
 
     use crate::{clipboard::payload::ClipboardImageData, error::AppError};
+
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    pub struct UnsupportedKeySimulator {
+        message: String,
+    }
+
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    impl UnsupportedKeySimulator {
+        pub fn new(message: impl Into<String>) -> Self {
+            Self {
+                message: message.into(),
+            }
+        }
+    }
 
     use super::{PlatformClipboard, PlatformKeySimulator};
 

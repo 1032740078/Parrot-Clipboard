@@ -93,11 +93,16 @@ pub fn run() {
                 image_storage.clone(),
             ));
 
-            register_toggle_shortcut(
+            match register_toggle_shortcut(
                 &app_handle,
                 config.toggle_shortcut(),
                 window_manager.clone(),
-            )?;
+            )? {
+                shortcut::ShortcutRegistrationOutcome::Registered => {}
+                shortcut::ShortcutRegistrationOutcome::SkippedUnsupported { reasons } => {
+                    tracing::warn!(?reasons, "toggle shortcut registration skipped");
+                }
+            }
 
             app.manage(AppState {
                 config_store,

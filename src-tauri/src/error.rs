@@ -21,6 +21,7 @@ pub enum AppError {
     MonitorControl(String),
     Autostart(String),
     Tray(String),
+    UnsupportedPlatformFeature(String),
     Internal(String),
 }
 
@@ -81,6 +82,10 @@ impl AppError {
             },
             Self::Tray(message) => ErrorPayload {
                 code: "TRAY_ERROR",
+                message: message.clone(),
+            },
+            Self::UnsupportedPlatformFeature(message) => ErrorPayload {
+                code: "UNSUPPORTED_PLATFORM_FEATURE",
                 message: message.clone(),
             },
             Self::Internal(message) => ErrorPayload {
