@@ -18,15 +18,16 @@ pub fn map_summary_row(row: &Row<'_>) -> Result<ClipboardRecordSummary, AppError
     let source_app: Option<String> = row_optional_value(row, 3, "source_app")?;
     let created_at: i64 = row_value(row, 4, "created_at")?;
     let last_used_at: i64 = row_value(row, 5, "last_used_at")?;
-    let text_content: Option<String> = row_optional_value(row, 6, "text_content")?;
-    let thumbnail_path: Option<String> = row_optional_value(row, 7, "thumbnail_path")?;
-    let mime_type: Option<String> = row_optional_value(row, 8, "mime_type")?;
-    let pixel_width: Option<i64> = row_optional_value(row, 9, "pixel_width")?;
-    let pixel_height: Option<i64> = row_optional_value(row, 10, "pixel_height")?;
-    let thumbnail_state: Option<String> = row_optional_value(row, 11, "thumbnail_state")?;
-    let file_count: i64 = row_value(row, 12, "file_count")?;
-    let primary_name: Option<String> = row_optional_value(row, 13, "primary_name")?;
-    let contains_directory: i64 = row_value(row, 14, "contains_directory")?;
+    let text_char_count: Option<i64> = row_optional_value(row, 6, "text_char_count")?;
+    let text_line_count: Option<i64> = row_optional_value(row, 7, "text_line_count")?;
+    let thumbnail_path: Option<String> = row_optional_value(row, 8, "thumbnail_path")?;
+    let mime_type: Option<String> = row_optional_value(row, 9, "mime_type")?;
+    let pixel_width: Option<i64> = row_optional_value(row, 10, "pixel_width")?;
+    let pixel_height: Option<i64> = row_optional_value(row, 11, "pixel_height")?;
+    let thumbnail_state: Option<String> = row_optional_value(row, 12, "thumbnail_state")?;
+    let file_count: i64 = row_value(row, 13, "file_count")?;
+    let primary_name: Option<String> = row_optional_value(row, 14, "primary_name")?;
+    let contains_directory: i64 = row_value(row, 15, "contains_directory")?;
 
     Ok(ClipboardRecordSummary {
         id,
@@ -35,7 +36,7 @@ pub fn map_summary_row(row: &Row<'_>) -> Result<ClipboardRecordSummary, AppError
         source_app,
         created_at,
         last_used_at,
-        text_meta: build_text_meta(text_content.as_deref()),
+        text_meta: build_text_meta_from_counts(text_char_count, text_line_count)?,
         image_meta: build_image_meta(
             mime_type,
             pixel_width,
@@ -133,6 +134,25 @@ fn build_text_meta(text_content: Option<&str>) -> Option<TextMeta> {
         char_count: text.chars().count(),
         line_count: line_count(text),
     })
+}
+
+fn build_text_meta_from_counts(
+    text_char_count: Option<i64>,
+    text_line_count: Option<i64>,
+) -> Result<Option<TextMeta>, AppError> {
+    let Some(text_char_count) = text_char_count else {
+        return Ok(None);
+    };
+    let Some(text_line_count) = text_line_count else {
+        return Err(AppError::Db(
+            "missing text_line_count for sqlite summary row".to_string(),
+        ));
+    };
+
+    Ok(Some(TextMeta {
+        char_count: non_negative_count(text_char_count, "text_char_count")?,
+        line_count: non_negative_count(text_line_count, "text_line_count")?,
+    }))
 }
 
 fn build_image_meta(
@@ -242,6 +262,11 @@ fn line_count(text: &str) -> usize {
     } else {
         text.chars().filter(|ch| *ch == '\n').count() + 1
     }
+}
+
+fn non_negative_count(value: i64, field: &str) -> Result<usize, AppError> {
+    usize::try_from(value)
+        .map_err(|_| AppError::Db(format!("invalid sqlite field `{field}` value `{value}`")))
 }
 
 fn row_id(row: &Row<'_>, index: usize) -> Result<u64, AppError> {

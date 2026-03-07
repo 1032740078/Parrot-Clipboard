@@ -30,7 +30,15 @@ const SUMMARY_SELECT_SQL: &str = r#"
       ci.source_app,
       ci.created_at,
       ci.last_used_at,
-      ci.text_content,
+      CASE
+        WHEN ci.text_content IS NULL THEN NULL
+        ELSE length(ci.text_content)
+      END AS text_char_count,
+      CASE
+        WHEN ci.text_content IS NULL THEN NULL
+        WHEN ci.text_content = '' THEN 0
+        ELSE length(ci.text_content) - length(replace(ci.text_content, char(10), '')) + 1
+      END AS text_line_count,
       ia.thumbnail_path,
       ia.mime_type,
       ia.pixel_width,
@@ -766,6 +774,62 @@ mod tests {
                 .expect("text meta")
                 .line_count,
             2
+        );
+
+        cleanup_test_dir(&database_path);
+    }
+
+    #[test]
+    fn list_record_summaries_preserves_empty_text_meta() {
+        let database_path = unique_test_dir().join("clipboard.db");
+        let manager = SqliteConnectionManager::initialize_at(&database_path)
+            .expect("sqlite database should initialize");
+
+        manager
+            .with_connection(|connection| {
+                connection
+                    .execute(
+                        "INSERT INTO clipboard_items (id, content_type, content_hash, text_content, rich_content, preview_text, search_text, source_app, file_count, payload_bytes, created_at, last_used_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                        rusqlite::params![
+                            1_i64,
+                            "text",
+                            "empty-text-hash",
+                            "",
+                            Option::<String>::None,
+                            "空文本",
+                            "空文本",
+                            "Notes",
+                            0_i64,
+                            0_i64,
+                            1_000_i64,
+                            1_000_i64,
+                        ],
+                    )
+                    .map_err(|error| AppError::Db(format!("seed sqlite empty text record failed: {error}")))?;
+                Ok(())
+            })
+            .expect("empty text record should be inserted");
+
+        let summaries = manager
+            .list_record_summaries(10)
+            .expect("summaries should load");
+
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(
+            summaries[0]
+                .text_meta
+                .as_ref()
+                .expect("text meta should exist")
+                .char_count,
+            0
+        );
+        assert_eq!(
+            summaries[0]
+                .text_meta
+                .as_ref()
+                .expect("text meta should exist")
+                .line_count,
+            0
         );
 
         cleanup_test_dir(&database_path);
