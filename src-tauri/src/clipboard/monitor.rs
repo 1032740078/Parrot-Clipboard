@@ -8,9 +8,14 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use crate::{error::AppError, platform::PlatformClipboard};
+use crate::{
+    config::ConfigStore,
+    error::AppError,
+    platform::{PlatformActiveAppDetector, PlatformClipboard},
+};
 
 use super::{
+    filter::match_blacklist_rule,
     payload::{ClipboardFileItem, ClipboardSnapshot},
     query::ClipboardRecordSummary,
     runtime_repository::{
@@ -53,10 +58,16 @@ pub trait ClipboardMonitorControl: Send + Sync {
     fn is_monitoring(&self) -> bool;
 }
 
+struct PrivacyFilterContext {
+    config_store: Arc<ConfigStore>,
+    active_app_detector: Arc<dyn PlatformActiveAppDetector>,
+}
+
 pub struct ClipboardMonitorService {
     repository: Arc<dyn ClipboardRuntimeRepository>,
     clipboard: Arc<dyn PlatformClipboard>,
     emitter: Arc<dyn DomainEventEmitter>,
+    privacy_filter: Option<PrivacyFilterContext>,
     poll_interval: Duration,
     is_running: AtomicBool,
     is_paused: AtomicBool,
@@ -75,6 +86,31 @@ impl ClipboardMonitorService {
             repository,
             clipboard,
             emitter,
+            privacy_filter: None,
+            poll_interval,
+            is_running: AtomicBool::new(false),
+            is_paused: AtomicBool::new(false),
+            last_change_count: AtomicU64::new(0),
+            last_signature: RwLock::new(None),
+        }
+    }
+
+    pub fn new_with_privacy(
+        repository: Arc<dyn ClipboardRuntimeRepository>,
+        clipboard: Arc<dyn PlatformClipboard>,
+        emitter: Arc<dyn DomainEventEmitter>,
+        config_store: Arc<ConfigStore>,
+        active_app_detector: Arc<dyn PlatformActiveAppDetector>,
+        poll_interval: Duration,
+    ) -> Self {
+        Self {
+            repository,
+            clipboard,
+            emitter,
+            privacy_filter: Some(PrivacyFilterContext {
+                config_store,
+                active_app_detector,
+            }),
             poll_interval,
             is_running: AtomicBool::new(false),
             is_paused: AtomicBool::new(false),
@@ -145,6 +181,10 @@ impl ClipboardMonitorService {
 
         self.capture_snapshot(change_count, Some(signature));
 
+        if self.should_skip_capture_by_blacklist() {
+            return Ok(());
+        }
+
         let now = now_ms();
         let capture = match snapshot {
             ClipboardSnapshot::Empty => return Ok(()),
@@ -178,6 +218,39 @@ impl ClipboardMonitorService {
         }
 
         Ok(())
+    }
+
+    fn should_skip_capture_by_blacklist(&self) -> bool {
+        let Some(privacy_filter) = &self.privacy_filter else {
+            return false;
+        };
+
+        let rules = privacy_filter.config_store.current().privacy.blacklist_rules;
+        if rules.iter().all(|rule| !rule.enabled) {
+            return false;
+        }
+
+        let active_application = match privacy_filter.active_app_detector.detect_active_application() {
+            Ok(Some(active_application)) => active_application,
+            Ok(None) => return false,
+            Err(error) => {
+                tracing::warn!(error = %error, "read active application failed, blacklist filter skipped");
+                return false;
+            }
+        };
+
+        let Some(rule) = match_blacklist_rule(&rules, &active_application) else {
+            return false;
+        };
+
+        tracing::info!(
+            app_name = active_application.display_name().unwrap_or("unknown"),
+            platform = ?rule.platform,
+            match_type = ?rule.match_type,
+            app_identifier = %rule.app_identifier,
+            "clipboard capture skipped by blacklist"
+        );
+        true
     }
 
     fn spawn_image_thumbnail_processing(&self, id: RecordId) {
@@ -292,8 +365,9 @@ mod tests {
             },
             types::{ContentType, RecordId},
         },
+        config::{schema::{BlacklistMatchType, BlacklistRule, PlatformKind}, AppConfig, ConfigStore},
         error::AppError,
-        platform::PlatformClipboard,
+        platform::{ActiveApplication, PlatformActiveAppDetector, PlatformClipboard},
     };
 
     use super::{ClipboardMonitorService, DomainEventEmitter};
@@ -466,6 +540,123 @@ mod tests {
             .lock()
             .expect("new_records lock poisoned")
             .is_empty());
+    }
+
+    #[test]
+    fn poll_once_skips_capture_when_active_application_hits_blacklist() {
+        let repository = Arc::new(MockRepository::new(CaptureResult {
+            action: CaptureAction::Added,
+            record: image_summary_pending(31, 1_000),
+            evicted_ids: Vec::new(),
+        }));
+        let clipboard = Arc::new(MockClipboard {
+            text: Some("敏感文本".to_string()),
+            html: None,
+            image: None,
+            files: None,
+            change_count: 1,
+        });
+        let emitter = Arc::new(MockEmitter::default());
+        let config_store = config_store_with_rules(vec![BlacklistRule {
+            id: "blr_windows_app_id_wechat".to_string(),
+            app_name: "微信".to_string(),
+            platform: PlatformKind::Windows,
+            match_type: BlacklistMatchType::AppId,
+            app_identifier: "wechat.exe".to_string(),
+            enabled: true,
+            created_at: 1,
+            updated_at: 1,
+        }]);
+        let active_app_detector = Arc::new(MockActiveAppDetector {
+            active_application: Some(ActiveApplication {
+                platform: PlatformKind::Windows,
+                app_name: Some("WeChat".to_string()),
+                bundle_id: None,
+                process_name: Some("wechat.exe".to_string()),
+                app_id: Some("wechat.exe".to_string()),
+                wm_class: None,
+            }),
+            error_message: None,
+        });
+        let service = ClipboardMonitorService::new_with_privacy(
+            repository.clone(),
+            clipboard,
+            emitter.clone(),
+            config_store,
+            active_app_detector,
+            Duration::from_millis(10),
+        );
+
+        service.poll_once().expect("blacklist filter should succeed");
+
+        assert_eq!(repository.capture_text_calls(), 0);
+        assert_eq!(repository.capture_image_calls(), 0);
+        assert_eq!(repository.capture_files_calls(), 0);
+        assert!(emitter
+            .new_records
+            .lock()
+            .expect("new_records lock poisoned")
+            .is_empty());
+        assert!(emitter
+            .updated_records
+            .lock()
+            .expect("updated_records lock poisoned")
+            .is_empty());
+    }
+
+    #[test]
+    fn poll_once_continues_capture_when_blacklist_rule_is_disabled() {
+        let repository = Arc::new(MockRepository::new(CaptureResult {
+            action: CaptureAction::Added,
+            record: image_summary_pending(41, 1_000),
+            evicted_ids: Vec::new(),
+        }));
+        let clipboard = Arc::new(MockClipboard {
+            text: Some("普通文本".to_string()),
+            html: None,
+            image: None,
+            files: None,
+            change_count: 1,
+        });
+        let emitter = Arc::new(MockEmitter::default());
+        let config_store = config_store_with_rules(vec![BlacklistRule {
+            id: "blr_windows_app_id_disabled".to_string(),
+            app_name: "微信".to_string(),
+            platform: PlatformKind::Windows,
+            match_type: BlacklistMatchType::AppId,
+            app_identifier: "wechat.exe".to_string(),
+            enabled: false,
+            created_at: 1,
+            updated_at: 1,
+        }]);
+        let active_app_detector = Arc::new(MockActiveAppDetector {
+            active_application: Some(ActiveApplication {
+                platform: PlatformKind::Windows,
+                app_name: Some("WeChat".to_string()),
+                bundle_id: None,
+                process_name: Some("wechat.exe".to_string()),
+                app_id: Some("wechat.exe".to_string()),
+                wm_class: None,
+            }),
+            error_message: None,
+        });
+        let service = ClipboardMonitorService::new_with_privacy(
+            repository.clone(),
+            clipboard,
+            emitter.clone(),
+            config_store,
+            active_app_detector,
+            Duration::from_millis(10),
+        );
+
+        service.poll_once().expect("disabled blacklist rule should not block capture");
+
+        assert_eq!(repository.capture_text_calls(), 1);
+        assert_eq!(emitter
+            .new_records
+            .lock()
+            .expect("new_records lock poisoned")
+            .len(), 1);
     }
 
     #[test]
@@ -685,6 +876,21 @@ mod tests {
         }
     }
 
+    struct MockActiveAppDetector {
+        active_application: Option<ActiveApplication>,
+        error_message: Option<String>,
+    }
+
+    impl PlatformActiveAppDetector for MockActiveAppDetector {
+        fn detect_active_application(&self) -> Result<Option<ActiveApplication>, AppError> {
+            if let Some(message) = &self.error_message {
+                return Err(AppError::MonitorControl(message.clone()));
+            }
+
+            Ok(self.active_application.clone())
+        }
+    }
+
     struct MockClipboard {
         text: Option<String>,
         html: Option<String>,
@@ -859,6 +1065,21 @@ mod tests {
                 seed, 0, 0, 255, 0, seed, 0, 255, 0, 0, seed, 255, 255, 255, 255, 255,
             ],
         }
+    }
+
+    fn config_store_with_rules(rules: Vec<BlacklistRule>) -> Arc<ConfigStore> {
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time should be after unix epoch")
+            .as_nanos();
+        let config_path = std::env::temp_dir()
+            .join(format!("clipboard-manager-monitor-config-{suffix}"))
+            .join("config.json");
+        let store = ConfigStore::initialize_at_path(config_path).expect("config store should initialize");
+        let mut config = AppConfig::default();
+        config.privacy.blacklist_rules = rules;
+        store.replace(config).expect("config should persist");
+        store
     }
 
     struct TestPathContext {

@@ -1,6 +1,10 @@
 use std::{path::PathBuf, sync::Arc};
 
-use crate::{clipboard::payload::ClipboardImageData, error::AppError};
+use crate::{
+    clipboard::payload::ClipboardImageData,
+    config::schema::{BlacklistMatchType, PlatformKind},
+    error::AppError,
+};
 
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub struct UnsupportedKeySimulator {
@@ -69,6 +73,73 @@ pub fn create_platform_key_simulator() -> Result<Arc<dyn PlatformKeySimulator>, 
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
         Ok(Arc::new(MacosKeySimulator))
+    }
+}
+
+
+pub fn create_platform_active_app_detector() -> Arc<dyn PlatformActiveAppDetector> {
+    #[cfg(target_os = "macos")]
+    {
+        return Arc::new(macos::MacosActiveAppDetector);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        return Arc::new(windows::WindowsActiveAppDetector);
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        return Arc::new(linux::LinuxActiveAppDetector);
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    {
+        Arc::new(NoopActiveAppDetector)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActiveApplication {
+    pub platform: PlatformKind,
+    pub app_name: Option<String>,
+    pub bundle_id: Option<String>,
+    pub process_name: Option<String>,
+    pub app_id: Option<String>,
+    pub wm_class: Option<String>,
+}
+
+impl ActiveApplication {
+    pub fn identifier_for(&self, match_type: BlacklistMatchType) -> Option<&str> {
+        match match_type {
+            BlacklistMatchType::BundleId => self.bundle_id.as_deref(),
+            BlacklistMatchType::ProcessName => self.process_name.as_deref(),
+            BlacklistMatchType::AppId => self.app_id.as_deref(),
+            BlacklistMatchType::WmClass => self.wm_class.as_deref(),
+        }
+    }
+
+    pub fn display_name(&self) -> Option<&str> {
+        self.app_name
+            .as_deref()
+            .or(self.bundle_id.as_deref())
+            .or(self.process_name.as_deref())
+            .or(self.app_id.as_deref())
+            .or(self.wm_class.as_deref())
+    }
+}
+
+pub trait PlatformActiveAppDetector: Send + Sync {
+    fn detect_active_application(&self) -> Result<Option<ActiveApplication>, AppError>;
+}
+
+#[cfg_attr(any(target_os = "macos", target_os = "windows", target_os = "linux"), allow(dead_code))]
+#[derive(Default)]
+pub struct NoopActiveAppDetector;
+
+impl PlatformActiveAppDetector for NoopActiveAppDetector {
+    fn detect_active_application(&self) -> Result<Option<ActiveApplication>, AppError> {
+        Ok(None)
     }
 }
 

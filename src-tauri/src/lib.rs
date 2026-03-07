@@ -27,8 +27,8 @@ use image::ImageStorageService;
 use ipc::events::TauriEventEmitter;
 use paste::PasteService;
 use platform::{
-    create_platform_clipboard, create_platform_key_simulator, PlatformClipboard,
-    PlatformKeySimulator,
+    create_platform_active_app_detector, create_platform_clipboard, create_platform_key_simulator,
+    PlatformClipboard, PlatformKeySimulator,
 };
 use shortcut::register_toggle_shortcut;
 use state::AppState;
@@ -74,11 +74,14 @@ pub fn run() {
 
             let platform_clipboard: Arc<dyn PlatformClipboard> = create_platform_clipboard()?;
             let platform_key_sim: Arc<dyn PlatformKeySimulator> = create_platform_key_simulator()?;
+            let active_app_detector = create_platform_active_app_detector();
 
-            let monitor_service = Arc::new(ClipboardMonitorService::new(
+            let monitor_service = Arc::new(ClipboardMonitorService::new_with_privacy(
                 repository.clone(),
                 platform_clipboard.clone(),
                 event_emitter.clone(),
+                config_store.clone(),
+                active_app_detector,
                 Duration::from_millis(200),
             ));
             monitor_service.clone().start();

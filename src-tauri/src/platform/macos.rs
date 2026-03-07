@@ -1,6 +1,6 @@
 #![allow(unexpected_cfgs)]
 
-use std::{path::PathBuf, sync::Mutex, thread, time::Duration};
+use std::{path::PathBuf, process::Command, sync::Mutex, thread, time::Duration};
 
 use arboard::{Clipboard, ImageData};
 use core_graphics::{
@@ -9,11 +9,22 @@ use core_graphics::{
 };
 use objc::{class, msg_send, sel, sel_impl};
 
-use crate::{clipboard::payload::ClipboardImageData, error::AppError};
+use crate::{
+    clipboard::payload::ClipboardImageData,
+    config::schema::PlatformKind,
+    error::AppError,
+};
 
-use super::{PlatformClipboard, PlatformKeySimulator};
+use super::{
+    ActiveApplication, PlatformActiveAppDetector, PlatformClipboard, PlatformKeySimulator,
+};
 
 const KEY_V: u16 = 0x09;
+const OSASCRIPT_EXECUTABLE: &str = "osascript";
+const FRONTMOST_BUNDLE_ID_SCRIPT: &str =
+    "tell application \"System Events\" to get bundle identifier of first application process whose frontmost is true";
+const FRONTMOST_NAME_SCRIPT: &str =
+    "tell application \"System Events\" to get name of first application process whose frontmost is true";
 
 pub struct MacosPlatformClipboard {
     clipboard: Mutex<Clipboard>,
@@ -152,4 +163,43 @@ impl PlatformKeySimulator for MacosKeySimulator {
 
         Ok(())
     }
+}
+
+#[derive(Default)]
+pub struct MacosActiveAppDetector;
+
+impl PlatformActiveAppDetector for MacosActiveAppDetector {
+    fn detect_active_application(&self) -> Result<Option<ActiveApplication>, AppError> {
+        let bundle_id = run_osascript(FRONTMOST_BUNDLE_ID_SCRIPT)?;
+        if bundle_id.is_empty() {
+            return Ok(None);
+        }
+
+        let app_name = run_osascript(FRONTMOST_NAME_SCRIPT).ok().filter(|value| !value.is_empty());
+
+        Ok(Some(ActiveApplication {
+            platform: PlatformKind::Macos,
+            app_name,
+            bundle_id: Some(bundle_id.to_ascii_lowercase()),
+            process_name: None,
+            app_id: None,
+            wm_class: None,
+        }))
+    }
+}
+
+fn run_osascript(script: &str) -> Result<String, AppError> {
+    let output = Command::new(OSASCRIPT_EXECUTABLE)
+        .args(["-e", script])
+        .output()
+        .map_err(|error| AppError::MonitorControl(format!("launch osascript failed: {error}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(AppError::MonitorControl(format!(
+            "read frontmost application failed: {stderr}"
+        )));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
