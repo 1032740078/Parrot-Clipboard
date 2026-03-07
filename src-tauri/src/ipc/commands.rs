@@ -11,6 +11,7 @@ use crate::{
     platform::PlatformCapabilities,
     state::AppState,
     tray,
+    window::settings_window::show_or_focus_settings_window,
 };
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -220,6 +221,13 @@ pub fn write_client_log(
 #[tauri::command]
 pub fn get_log_directory(state: State<'_, AppState>) -> String {
     state.logging_state.log_directory.clone()
+}
+
+#[tauri::command]
+pub fn show_settings_window(app_handle: tauri::AppHandle) -> Result<(), AppError> {
+    let action = show_or_focus_settings_window(&app_handle)?;
+    tracing::info!(?action, "ipc show_settings_window completed");
+    Ok(())
 }
 
 #[tauri::command]

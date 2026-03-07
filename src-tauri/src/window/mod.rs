@@ -20,6 +20,7 @@ use objc::{
 };
 
 pub mod position;
+pub mod settings_window;
 
 pub trait WindowManager: Send + Sync {
     fn show(&self) -> Result<(), AppError>;

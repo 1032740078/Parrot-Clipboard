@@ -137,6 +137,7 @@ pub fn run() {
             ipc::commands::clear_history,
             ipc::commands::write_client_log,
             ipc::commands::get_log_directory,
+            ipc::commands::show_settings_window,
             ipc::commands::get_platform_capabilities,
         ])
         .run(tauri::generate_context!())

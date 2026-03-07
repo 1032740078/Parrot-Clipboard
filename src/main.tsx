@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { logger, normalizeError } from "./api/logger";
+import { SettingsWindowPlaceholder } from "./components/SettingsWindowPlaceholder";
 import "./index.css";
 
 declare global {
@@ -34,11 +35,18 @@ const bindGlobalErrorHandlers = (): void => {
   });
 };
 
+const resolveRootApp = () => {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("window") === "settings") {
+    return <SettingsWindowPlaceholder />;
+  }
+
+  return <App />;
+};
+
 bindGlobalErrorHandlers();
 logger.info("前端应用启动");
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
+  <React.StrictMode>{resolveRootApp()}</React.StrictMode>
 );
