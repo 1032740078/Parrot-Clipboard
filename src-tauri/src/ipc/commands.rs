@@ -8,15 +8,15 @@ use crate::{
     },
     config::{
         schema::{
-            platform_default_toggle_shortcut, GeneralConfig, HistoryConfig, PrivacyConfig,
-            ThemeMode,
+            platform_default_toggle_shortcut, BlacklistMatchType, GeneralConfig, HistoryConfig,
+            PlatformKind, PrivacyConfig, ThemeMode,
         },
         AppConfig,
     },
     error::AppError,
     logging::{self, ClientLogLevel},
     platform::PlatformCapabilities,
-    settings::{SettingsError, SettingsProfile},
+    settings::{BlacklistRuleDraft, SettingsError, SettingsProfile},
     shortcut::{self, ShortcutValidationResult},
     state::AppState,
     tray,
@@ -291,6 +291,14 @@ pub fn update_general_settings(
     tray::refresh(&app_handle)?;
 
     let snapshot = build_settings_snapshot(&persisted);
+    if current.launch_at_login() != launch_at_login {
+        crate::ipc::events::emit_launch_at_login_changed(
+            &app_handle,
+            snapshot.general.launch_at_login,
+            now_ms(),
+        )?;
+    }
+    crate::ipc::events::emit_settings_updated(&app_handle, snapshot.clone())?;
     tracing::info!(
         launch_at_login = snapshot.general.launch_at_login,
         "ipc update_general_settings completed"
@@ -306,6 +314,7 @@ pub fn update_history_settings(
     max_image_storage_mb: usize,
     capture_images: bool,
     capture_files: bool,
+    app_handle: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<SettingsSnapshot, AppError> {
     tracing::info!(
@@ -335,6 +344,7 @@ pub fn update_history_settings(
         .replace(profile.snapshot())
         .map_err(AppError::FileAccess)?;
     let snapshot = build_settings_snapshot(&persisted);
+    crate::ipc::events::emit_settings_updated(&app_handle, snapshot.clone())?;
     tracing::info!(
         max_text_records = snapshot.history.max_text_records,
         max_image_records = snapshot.history.max_image_records,
@@ -393,7 +403,107 @@ pub fn update_toggle_shortcut(
         .replace(profile.snapshot())
         .map_err(AppError::FileAccess)?;
     let snapshot = build_settings_snapshot(&persisted);
+    crate::ipc::events::emit_settings_updated(&app_handle, snapshot.clone())?;
     tracing::info!(shortcut = %snapshot.shortcut.toggle_panel, "ipc update_toggle_shortcut completed");
+    Ok(snapshot)
+}
+
+#[tauri::command]
+pub fn create_blacklist_rule(
+    app_name: String,
+    platform: PlatformKind,
+    match_type: BlacklistMatchType,
+    app_identifier: String,
+    app_handle: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<SettingsSnapshot, AppError> {
+    tracing::info!(platform = ?platform, ?match_type, app_identifier = %app_identifier, "ipc create_blacklist_rule requested");
+    let current = state.config_store.current();
+    let mut profile = SettingsProfile::new(current).map_err(map_settings_error)?;
+    profile
+        .create_blacklist_rule(
+            BlacklistRuleDraft {
+                app_name,
+                platform,
+                match_type,
+                app_identifier,
+                enabled: true,
+            },
+            now_ms(),
+        )
+        .map_err(map_settings_error)?;
+
+    let persisted = state
+        .config_store
+        .replace(profile.snapshot())
+        .map_err(AppError::FileAccess)?;
+    let snapshot = build_settings_snapshot(&persisted);
+    crate::ipc::events::emit_settings_updated(&app_handle, snapshot.clone())?;
+    tracing::info!(
+        rules = snapshot.privacy.blacklist_rules.len(),
+        "ipc create_blacklist_rule completed"
+    );
+    Ok(snapshot)
+}
+
+#[tauri::command]
+pub fn update_blacklist_rule(
+    id: String,
+    app_name: String,
+    platform: PlatformKind,
+    match_type: BlacklistMatchType,
+    app_identifier: String,
+    enabled: bool,
+    app_handle: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<SettingsSnapshot, AppError> {
+    tracing::info!(rule_id = %id, platform = ?platform, ?match_type, enabled, "ipc update_blacklist_rule requested");
+    let current = state.config_store.current();
+    let mut profile = SettingsProfile::new(current).map_err(map_settings_error)?;
+    profile
+        .update_blacklist_rule(
+            &id,
+            BlacklistRuleDraft {
+                app_name,
+                platform,
+                match_type,
+                app_identifier,
+                enabled,
+            },
+            now_ms(),
+        )
+        .map_err(map_settings_error)?;
+
+    let persisted = state
+        .config_store
+        .replace(profile.snapshot())
+        .map_err(AppError::FileAccess)?;
+    let snapshot = build_settings_snapshot(&persisted);
+    crate::ipc::events::emit_settings_updated(&app_handle, snapshot.clone())?;
+    tracing::info!(rule_id = %id, rules = snapshot.privacy.blacklist_rules.len(), "ipc update_blacklist_rule completed");
+    Ok(snapshot)
+}
+
+#[tauri::command]
+pub fn delete_blacklist_rule(
+    id: String,
+    app_handle: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<SettingsSnapshot, AppError> {
+    tracing::info!(rule_id = %id, "ipc delete_blacklist_rule requested");
+    let current = state.config_store.current();
+    let mut profile = SettingsProfile::new(current).map_err(map_settings_error)?;
+    profile
+        .delete_blacklist_rule(&id)
+        .map_err(map_settings_error)?;
+
+    let persisted = state
+        .config_store
+        .replace(profile.snapshot())
+        .map_err(AppError::FileAccess)?;
+    let snapshot = build_settings_snapshot(&persisted);
+    crate::ipc::events::emit_settings_updated(&app_handle, snapshot.clone())?;
+    tracing::info!(rule_id = %id, rules = snapshot.privacy.blacklist_rules.len(), "ipc delete_blacklist_rule completed");
     Ok(snapshot)
 }
 

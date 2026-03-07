@@ -5,11 +5,13 @@ import { toNewRecordPayload, toNewRecordPayloadV2, toRecordUpdatedPayload } from
 import type {
   ClearHistoryRequestPayload,
   HistoryClearedPayload,
+  LaunchAtLoginChangedPayload,
   NewRecordPayload,
   NewRecordPayloadV2,
   MonitoringChangedPayload,
   RecordDeletedPayload,
   RecordUpdatedPayload,
+  SettingsUpdatedPayload,
 } from "./types";
 
 export const onNewRecord = async (
@@ -127,6 +129,40 @@ export const onClearHistoryRequested = async (
     });
   } catch (error) {
     logger.error("订阅清空历史确认请求事件失败", { error: normalizeError(error) });
+    throw error;
+  }
+};
+
+export const onLaunchAtLoginChanged = async (
+  handler: (payload: LaunchAtLoginChangedPayload) => void
+): Promise<() => void> => {
+  try {
+    return await listen<LaunchAtLoginChangedPayload>("system:launch-at-login-changed", (event) => {
+      try {
+        handler(event.payload);
+      } catch (error) {
+        logger.error("处理自启动状态变更事件失败", { error: normalizeError(error) });
+      }
+    });
+  } catch (error) {
+    logger.error("订阅自启动状态变更事件失败", { error: normalizeError(error) });
+    throw error;
+  }
+};
+
+export const onSettingsUpdated = async (
+  handler: (payload: SettingsUpdatedPayload) => void
+): Promise<() => void> => {
+  try {
+    return await listen<SettingsUpdatedPayload>("system:settings-updated", (event) => {
+      try {
+        handler(event.payload);
+      } catch (error) {
+        logger.error("处理设置更新事件失败", { error: normalizeError(error) });
+      }
+    });
+  } catch (error) {
+    logger.error("订阅设置更新事件失败", { error: normalizeError(error) });
     throw error;
   }
 };

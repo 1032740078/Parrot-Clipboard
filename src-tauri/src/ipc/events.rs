@@ -15,6 +15,8 @@ pub const EVENT_RECORD_UPDATED: &str = "clipboard:record-updated";
 pub const EVENT_RECORD_DELETED: &str = "clipboard:record-deleted";
 pub const EVENT_HISTORY_CLEARED: &str = "clipboard:history-cleared";
 pub const EVENT_MONITORING_CHANGED: &str = "system:monitoring-changed";
+pub const EVENT_LAUNCH_AT_LOGIN_CHANGED: &str = "system:launch-at-login-changed";
+pub const EVENT_SETTINGS_UPDATED: &str = "system:settings-updated";
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct NewRecordPayload {
@@ -54,6 +56,46 @@ pub struct HistoryClearedPayload {
     pub deleted_records: usize,
     pub deleted_image_assets: usize,
     pub executed_at: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct LaunchAtLoginChangedPayload {
+    pub launch_at_login: bool,
+    pub changed_at: i64,
+}
+
+pub fn emit_launch_at_login_changed(
+    app_handle: &AppHandle,
+    launch_at_login: bool,
+    changed_at: i64,
+) -> Result<(), AppError> {
+    let payload = LaunchAtLoginChangedPayload {
+        launch_at_login,
+        changed_at,
+    };
+
+    app_handle
+        .emit(EVENT_LAUNCH_AT_LOGIN_CHANGED, payload)
+        .map_err(|error| {
+            AppError::Window(format!("emit launch_at_login changed failed: {error}"))
+        })?;
+    tracing::debug!(
+        launch_at_login,
+        changed_at,
+        "ipc launch_at_login changed event emitted"
+    );
+    Ok(())
+}
+
+pub fn emit_settings_updated<T>(app_handle: &AppHandle, snapshot: T) -> Result<(), AppError>
+where
+    T: serde::Serialize + Clone,
+{
+    app_handle
+        .emit(EVENT_SETTINGS_UPDATED, snapshot)
+        .map_err(|error| AppError::Window(format!("emit settings updated failed: {error}")))?;
+    tracing::debug!("ipc settings updated event emitted");
+    Ok(())
 }
 
 pub struct TauriEventEmitter {

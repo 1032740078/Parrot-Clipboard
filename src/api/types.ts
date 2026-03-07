@@ -9,6 +9,7 @@ export type PlatformKind = "macos" | "windows" | "linux";
 export type ThemeMode = "light" | "dark" | "system";
 export type CapabilityState = "supported" | "degraded" | "unsupported";
 export type SessionType = "native" | "x11" | "wayland";
+export type BlacklistMatchType = "bundle_id" | "process_name" | "app_id" | "wm_class";
 
 export interface LegacyClipboardRecord {
   id: number;
@@ -92,6 +93,11 @@ export interface MonitoringChangedPayload {
   changed_at: number;
 }
 
+export interface LaunchAtLoginChangedPayload {
+  launch_at_login: boolean;
+  changed_at: number;
+}
+
 export interface GeneralSettingsPayload {
   theme: ThemeMode;
   language: string;
@@ -119,8 +125,35 @@ export interface ShortcutValidationResult {
   reason?: string | null;
 }
 
+export interface BlacklistRule {
+  id: string;
+  app_name: string;
+  platform: PlatformKind;
+  match_type: BlacklistMatchType;
+  app_identifier: string;
+  enabled: boolean;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface CreateBlacklistRulePayload {
+  app_name: string;
+  platform: PlatformKind;
+  match_type: BlacklistMatchType;
+  app_identifier: string;
+}
+
+export interface UpdateBlacklistRulePayload extends CreateBlacklistRulePayload {
+  id: string;
+  enabled: boolean;
+}
+
+export interface DeleteBlacklistRulePayload {
+  id: string;
+}
+
 export interface PrivacySettingsSnapshot {
-  blacklist_rules: Array<Record<string, unknown>>;
+  blacklist_rules: BlacklistRule[];
 }
 
 export interface SettingsSnapshot {
@@ -155,6 +188,7 @@ export interface ClearHistoryResult {
 }
 
 export type HistoryClearedPayload = ClearHistoryResult;
+export type SettingsUpdatedPayload = SettingsSnapshot;
 
 export interface ClearHistoryRequestPayload {
   confirm_token: string;

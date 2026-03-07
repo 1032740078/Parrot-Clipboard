@@ -2,10 +2,13 @@ import { invoke } from "@tauri-apps/api/core";
 
 import { logger, normalizeError } from "./logger";
 import type {
+  CreateBlacklistRulePayload,
+  DeleteBlacklistRulePayload,
   GeneralSettingsPayload,
   HistorySettingsPayload,
   SettingsSnapshot,
   ShortcutValidationResult,
+  UpdateBlacklistRulePayload,
 } from "./types";
 
 export const getSettingsSnapshot = async (): Promise<SettingsSnapshot> => {
@@ -55,6 +58,39 @@ export const updateToggleShortcut = async (shortcut: string): Promise<SettingsSn
     return await invoke<SettingsSnapshot>("update_toggle_shortcut", { shortcut });
   } catch (error) {
     logger.error("保存快捷键失败", { shortcut, error: normalizeError(error) });
+    throw error;
+  }
+};
+
+export const createBlacklistRule = async (
+  payload: CreateBlacklistRulePayload
+): Promise<SettingsSnapshot> => {
+  try {
+    return await invoke<SettingsSnapshot>("create_blacklist_rule", { ...payload });
+  } catch (error) {
+    logger.error("新增黑名单规则失败", { payload, error: normalizeError(error) });
+    throw error;
+  }
+};
+
+export const updateBlacklistRule = async (
+  payload: UpdateBlacklistRulePayload
+): Promise<SettingsSnapshot> => {
+  try {
+    return await invoke<SettingsSnapshot>("update_blacklist_rule", { ...payload });
+  } catch (error) {
+    logger.error("更新黑名单规则失败", { payload, error: normalizeError(error) });
+    throw error;
+  }
+};
+
+export const deleteBlacklistRule = async (
+  payload: DeleteBlacklistRulePayload
+): Promise<SettingsSnapshot> => {
+  try {
+    return await invoke<SettingsSnapshot>("delete_blacklist_rule", { ...payload });
+  } catch (error) {
+    logger.error("删除黑名单规则失败", { payload, error: normalizeError(error) });
     throw error;
   }
 };

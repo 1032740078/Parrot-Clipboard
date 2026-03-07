@@ -6,12 +6,26 @@ import {
   invokeCalls,
 } from "../../__mocks__/@tauri-apps/api/core";
 import {
+  createBlacklistRule,
+  deleteBlacklistRule,
   getSettingsSnapshot,
+  updateBlacklistRule,
   updateGeneralSettings,
   updateHistorySettings,
   updateToggleShortcut,
   validateToggleShortcut,
 } from "../../api/settings";
+
+const blacklistRule = {
+  id: "blr_windows_app_id_wechat_1",
+  app_name: "微信",
+  platform: "windows" as const,
+  match_type: "app_id" as const,
+  app_identifier: "wechat.exe",
+  enabled: true,
+  created_at: 1700000000000,
+  updated_at: 1700000000000,
+};
 
 const settingsSnapshot = {
   config_version: 2 as const,
@@ -33,7 +47,7 @@ const settingsSnapshot = {
     platform_default: "shift+control+v",
   },
   privacy: {
-    blacklist_rules: [],
+    blacklist_rules: [blacklistRule],
   },
 };
 
@@ -78,6 +92,25 @@ describe("api/settings", () => {
       })
     ).resolves.toEqual(settingsSnapshot);
     await expect(updateToggleShortcut("shift+alt+v")).resolves.toEqual(settingsSnapshot);
+    await expect(
+      createBlacklistRule({
+        app_name: "微信",
+        platform: "windows",
+        match_type: "app_id",
+        app_identifier: "wechat.exe",
+      })
+    ).resolves.toEqual(settingsSnapshot);
+    await expect(
+      updateBlacklistRule({
+        id: blacklistRule.id,
+        app_name: "企业微信",
+        platform: "windows",
+        match_type: "app_id",
+        app_identifier: "wxwork.exe",
+        enabled: false,
+      })
+    ).resolves.toEqual(settingsSnapshot);
+    await expect(deleteBlacklistRule({ id: blacklistRule.id })).resolves.toEqual(settingsSnapshot);
 
     expect(invokeCalls).toEqual([
       { command: "get_settings_snapshot", args: undefined },
@@ -102,6 +135,27 @@ describe("api/settings", () => {
         },
       },
       { command: "update_toggle_shortcut", args: { shortcut: "shift+alt+v" } },
+      {
+        command: "create_blacklist_rule",
+        args: {
+          app_name: "微信",
+          platform: "windows",
+          match_type: "app_id",
+          app_identifier: "wechat.exe",
+        },
+      },
+      {
+        command: "update_blacklist_rule",
+        args: {
+          id: blacklistRule.id,
+          app_name: "企业微信",
+          platform: "windows",
+          match_type: "app_id",
+          app_identifier: "wxwork.exe",
+          enabled: false,
+        },
+      },
+      { command: "delete_blacklist_rule", args: { id: blacklistRule.id } },
     ]);
   });
 
@@ -130,5 +184,24 @@ describe("api/settings", () => {
       })
     ).rejects.toThrow("boom");
     await expect(updateToggleShortcut("shift+alt+v")).rejects.toThrow("boom");
+    await expect(
+      createBlacklistRule({
+        app_name: "微信",
+        platform: "windows",
+        match_type: "app_id",
+        app_identifier: "wechat.exe",
+      })
+    ).rejects.toThrow("boom");
+    await expect(
+      updateBlacklistRule({
+        id: blacklistRule.id,
+        app_name: "企业微信",
+        platform: "windows",
+        match_type: "app_id",
+        app_identifier: "wxwork.exe",
+        enabled: false,
+      })
+    ).rejects.toThrow("boom");
+    await expect(deleteBlacklistRule({ id: blacklistRule.id })).rejects.toThrow("boom");
   });
 });

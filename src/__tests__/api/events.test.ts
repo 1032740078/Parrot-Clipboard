@@ -13,11 +13,13 @@ import {
 import {
   onClearHistoryRequested,
   onHistoryCleared,
+  onLaunchAtLoginChanged,
   onMonitoringChanged,
   onNewRecord,
   onNewRecordSummary,
   onRecordDeleted,
   onRecordUpdated,
+  onSettingsUpdated,
 } from "../../api/events";
 
 const summaryRecord = {
@@ -44,6 +46,30 @@ const legacySummaryRecord = {
   source_app: null,
 };
 
+const settingsSnapshot = {
+  config_version: 2 as const,
+  general: {
+    theme: "dark" as const,
+    language: "zh-CN",
+    launch_at_login: false,
+  },
+  history: {
+    max_text_records: 120,
+    max_image_records: 20,
+    max_file_records: 30,
+    max_image_storage_mb: 256,
+    capture_images: true,
+    capture_files: false,
+  },
+  shortcut: {
+    toggle_panel: "shift+control+k",
+    platform_default: "shift+control+v",
+  },
+  privacy: {
+    blacklist_rules: [],
+  },
+};
+
 describe("api/events", () => {
   beforeEach(() => {
     __resetEventMock();
@@ -56,26 +82,37 @@ describe("api/events", () => {
     const summaryHandler = vi.fn();
     const updatedHandler = vi.fn();
     const monitoringHandler = vi.fn();
+    const launchAtLoginHandler = vi.fn();
+    const settingsUpdatedHandler = vi.fn();
     const unlistenLegacy = await onNewRecord(legacyHandler);
     const unlistenSummary = await onNewRecordSummary(summaryHandler);
     const unlistenUpdated = await onRecordUpdated(updatedHandler);
     const unlistenMonitoring = await onMonitoringChanged(monitoringHandler);
+    const unlistenLaunchAtLogin = await onLaunchAtLoginChanged(launchAtLoginHandler);
+    const unlistenSettingsUpdated = await onSettingsUpdated(settingsUpdatedHandler);
     const newPayload = { record: summaryRecord, evicted_ids: [9] };
     const updatedPayload = { reason: "promoted" as const, record: summaryRecord };
     const monitoringPayload = { monitoring: false, state: "paused" as const, changed_at: 1234 };
+    const launchAtLoginPayload = { launch_at_login: false, changed_at: 2345 };
 
     __emitMockEvent("clipboard:new-record", newPayload);
     __emitMockEvent("clipboard:record-updated", updatedPayload);
     __emitMockEvent("system:monitoring-changed", monitoringPayload);
+    __emitMockEvent("system:launch-at-login-changed", launchAtLoginPayload);
+    __emitMockEvent("system:settings-updated", settingsSnapshot);
 
     expect(legacyHandler).toHaveBeenCalledWith({ record: legacyRecord, evicted_id: 9 });
     expect(summaryHandler).toHaveBeenCalledWith(newPayload);
     expect(updatedHandler).toHaveBeenCalledWith(updatedPayload);
     expect(monitoringHandler).toHaveBeenCalledWith(monitoringPayload);
+    expect(launchAtLoginHandler).toHaveBeenCalledWith(launchAtLoginPayload);
+    expect(settingsUpdatedHandler).toHaveBeenCalledWith(settingsSnapshot);
     unlistenLegacy();
     unlistenSummary();
     unlistenUpdated();
     unlistenMonitoring();
+    unlistenLaunchAtLogin();
+    unlistenSettingsUpdated();
   });
 
   it("old new-record payload 也会被兼容转换", async () => {
@@ -124,18 +161,18 @@ describe("api/events", () => {
     __setInvokeHandler(async () => undefined);
     (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
 
-    const unlisten = await onRecordDeleted(() => {
+    const unlisten = await onSettingsUpdated(() => {
       throw new Error("handler failed");
     });
 
-    __emitMockEvent("clipboard:record-deleted", { id: 1, reason: "manual" });
+    __emitMockEvent("system:settings-updated", settingsSnapshot);
     await Promise.resolve();
 
     expect(invokeCalls[0]).toMatchObject({
       command: "write_client_log",
       args: {
         level: "error",
-        message: "处理记录删除事件失败",
+        message: "处理设置更新事件失败",
       },
     });
     unlisten();
@@ -147,7 +184,40 @@ describe("api/events", () => {
     await expect(onNewRecord(() => undefined)).rejects.toThrow("subscribe failed");
     await expect(onRecordUpdated(() => undefined)).rejects.toThrow("subscribe failed");
     await expect(onMonitoringChanged(() => undefined)).rejects.toThrow("subscribe failed");
+    await expect(onLaunchAtLoginChanged(() => undefined)).rejects.toThrow("subscribe failed");
+    await expect(onSettingsUpdated(() => undefined)).rejects.toThrow("subscribe failed");
     await expect(onHistoryCleared(() => undefined)).rejects.toThrow("subscribe failed");
     await expect(onClearHistoryRequested(() => undefined)).rejects.toThrow("subscribe failed");
+  });
+
+  it("不同事件处理器抛错时都能记录对应日志", async () => {
+    __setInvokeHandler(async () => undefined);
+    (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
+
+    const unlistenLaunchAtLogin = await onLaunchAtLoginChanged(() => {
+      throw new Error("launch failed");
+    });
+    const unlistenRecordDeleted = await onRecordDeleted(() => {
+      throw new Error("delete failed");
+    });
+
+    __emitMockEvent("system:launch-at-login-changed", { launch_at_login: true, changed_at: 3456 });
+    __emitMockEvent("clipboard:record-deleted", { id: 1, reason: "manual" });
+    await Promise.resolve();
+
+    expect(invokeCalls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          command: "write_client_log",
+          args: expect.objectContaining({ message: "处理自启动状态变更事件失败" }),
+        }),
+        expect.objectContaining({
+          command: "write_client_log",
+          args: expect.objectContaining({ message: "处理记录删除事件失败" }),
+        }),
+      ])
+    );
+    unlistenLaunchAtLogin();
+    unlistenRecordDeleted();
   });
 });

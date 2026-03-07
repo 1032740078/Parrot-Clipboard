@@ -149,6 +149,9 @@ pub fn run() {
             ipc::commands::update_history_settings,
             ipc::commands::validate_toggle_shortcut,
             ipc::commands::update_toggle_shortcut,
+            ipc::commands::create_blacklist_rule,
+            ipc::commands::update_blacklist_rule,
+            ipc::commands::delete_blacklist_rule,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

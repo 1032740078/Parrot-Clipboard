@@ -37,10 +37,10 @@ impl fmt::Display for SettingsError {
                 app_identifier,
             } => write!(
                 f,
-                "blacklist rule already exists: platform={platform:?}, match_type={match_type:?}, app_identifier={app_identifier}"
+                "同一平台与匹配类型下已存在相同应用标识：platform={platform:?}, match_type={match_type:?}, app_identifier={app_identifier}"
             ),
             Self::BlacklistRuleNotFound(rule_id) => {
-                write!(f, "blacklist rule `{rule_id}` not found")
+                write!(f, "黑名单规则 `{rule_id}` 不存在")
             }
         }
     }
