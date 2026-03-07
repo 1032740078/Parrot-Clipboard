@@ -11,6 +11,7 @@ export type ErrorCode =
   | "DB_ERROR"
   | "FILE_ACCESS_ERROR"
   | "IMAGE_PROCESS_ERROR"
+  | "UNSUPPORTED_PLATFORM_FEATURE"
   | "INTERNAL";
 
 export interface IpcError {

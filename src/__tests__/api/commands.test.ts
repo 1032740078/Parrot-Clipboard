@@ -10,6 +10,7 @@ import {
   deleteRecord,
   getLogDirectory,
   getMonitoringStatus,
+  getPlatformCapabilities,
   getRuntimeStatus,
   getRecordDetail,
   getRecords,
@@ -149,7 +150,7 @@ describe("api/commands", () => {
     });
   });
 
-  it("deleteRecord / hidePanel / getMonitoringStatus / getRuntimeStatus / setMonitoring / clearHistory / getLogDirectory 调用对应命令", async () => {
+  it("deleteRecord / hidePanel / getMonitoringStatus / getRuntimeStatus / getPlatformCapabilities / setMonitoring / clearHistory / getLogDirectory 调用对应命令", async () => {
     __setInvokeHandler(async (command) => {
       if (command === "get_monitoring_status") {
         return { monitoring: true };
@@ -167,6 +168,19 @@ describe("api/commands", () => {
         return { monitoring: false, launch_at_login: true, panel_visible: true };
       }
 
+      if (command === "get_platform_capabilities") {
+        return {
+          platform: "linux",
+          session_type: "x11",
+          clipboard_monitoring: "supported",
+          global_shortcut: "supported",
+          launch_at_login: "supported",
+          tray: "supported",
+          active_app_detection: "supported",
+          reasons: [],
+        };
+      }
+
       if (command === "get_log_directory") {
         return "/tmp/logs";
       }
@@ -182,6 +196,16 @@ describe("api/commands", () => {
       launch_at_login: true,
       panel_visible: true,
     });
+    await expect(getPlatformCapabilities()).resolves.toEqual({
+      platform: "linux",
+      session_type: "x11",
+      clipboard_monitoring: "supported",
+      global_shortcut: "supported",
+      launch_at_login: "supported",
+      tray: "supported",
+      active_app_detection: "supported",
+      reasons: [],
+    });
     await expect(setMonitoring(false)).resolves.toEqual({ monitoring: false });
     await expect(clearHistory("token-1")).resolves.toEqual({
       deleted_records: 3,
@@ -195,6 +219,7 @@ describe("api/commands", () => {
       { command: "hide_panel", args: undefined },
       { command: "get_monitoring_status", args: undefined },
       { command: "get_runtime_status", args: undefined },
+      { command: "get_platform_capabilities", args: undefined },
       { command: "set_monitoring", args: { enabled: false } },
       { command: "clear_history", args: { confirm_token: "token-1" } },
       { command: "get_log_directory", args: undefined },
@@ -210,6 +235,7 @@ describe("api/commands", () => {
     await expect(hidePanel()).rejects.toThrow("boom");
     await expect(getMonitoringStatus()).rejects.toThrow("boom");
     await expect(getRuntimeStatus()).rejects.toThrow("boom");
+    await expect(getPlatformCapabilities()).rejects.toThrow("boom");
     await expect(setMonitoring(true)).rejects.toThrow("boom");
     await expect(clearHistory("token-2")).rejects.toThrow("boom");
     await expect(getLogDirectory()).rejects.toThrow("boom");

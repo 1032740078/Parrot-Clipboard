@@ -13,9 +13,10 @@ import type {
   ClipboardRecordSummary,
   LegacyClipboardRecord,
   MonitoringStatus,
-  RuntimeStatus,
   PasteMode,
   PasteResult,
+  PlatformCapabilities,
+  RuntimeStatus,
 } from "./types";
 
 const readRecordList = async (limit: number): Promise<unknown[]> => {
@@ -127,6 +128,15 @@ export const getRuntimeStatus = async (): Promise<RuntimeStatus> => {
     return await invoke<RuntimeStatus>("get_runtime_status");
   } catch (error) {
     logger.error("读取运行态状态失败", { error: normalizeError(error) });
+    throw error;
+  }
+};
+
+export const getPlatformCapabilities = async (): Promise<PlatformCapabilities> => {
+  try {
+    return await invoke<PlatformCapabilities>("get_platform_capabilities");
+  } catch (error) {
+    logger.error("读取平台能力失败", { error: normalizeError(error) });
     throw error;
   }
 };

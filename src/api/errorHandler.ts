@@ -13,6 +13,7 @@ const KNOWN_CODES: Set<ErrorCode> = new Set([
   "DB_ERROR",
   "FILE_ACCESS_ERROR",
   "IMAGE_PROCESS_ERROR",
+  "UNSUPPORTED_PLATFORM_FEATURE",
   "INTERNAL",
 ]);
 
@@ -63,6 +64,8 @@ export const getErrorMessage = (error: unknown): string => {
       return "文件已移动或无权限访问";
     case "IMAGE_PROCESS_ERROR":
       return "图片预览生成失败";
+    case "UNSUPPORTED_PLATFORM_FEATURE":
+      return "当前平台或桌面会话暂不支持该功能，请改用托盘入口或查看设置说明";
     case "WINDOW_ERROR":
     case "INTERNAL":
     default:

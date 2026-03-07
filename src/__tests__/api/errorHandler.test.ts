@@ -8,6 +8,10 @@ describe("api/errorHandler", () => {
       code: "FILE_ACCESS_ERROR",
       message: "missing",
     });
+    expect(parseIpcError({ code: "UNSUPPORTED_PLATFORM_FEATURE", message: "wayland" })).toEqual({
+      code: "UNSUPPORTED_PLATFORM_FEATURE",
+      message: "wayland",
+    });
   });
 
   it("可将错误码映射为用户可读文案", () => {
@@ -16,6 +20,9 @@ describe("api/errorHandler", () => {
     );
     expect(getErrorMessage({ code: "FILE_ACCESS_ERROR", message: "boom" })).toBe(
       "文件已移动或无权限访问"
+    );
+    expect(getErrorMessage({ code: "UNSUPPORTED_PLATFORM_FEATURE", message: "wayland" })).toBe(
+      "当前平台或桌面会话暂不支持该功能，请改用托盘入口或查看设置说明"
     );
     expect(getErrorMessage({ code: "UNKNOWN", message: "boom" })).toBe(
       "发生未知错误，请稍后重试。"

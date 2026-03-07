@@ -48,7 +48,6 @@ impl ConfigStore {
             .clone()
     }
 
-    #[cfg(test)]
     pub fn set_launch_at_login(&self, launch_at_login: bool) -> Result<AppConfig, String> {
         let mut next = self.current();
         next.set_launch_at_login(launch_at_login);

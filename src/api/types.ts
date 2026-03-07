@@ -5,6 +5,9 @@ export type PasteMode = "original" | "plain_text";
 export type ThumbnailState = "pending" | "ready" | "failed";
 export type RecordUpdatedReason = "promoted" | "thumbnail_ready" | "thumbnail_failed";
 export type RecordDeletedReason = "manual" | "retention";
+export type PlatformKind = "macos" | "windows" | "linux";
+export type CapabilityState = "supported" | "degraded" | "unsupported";
+export type SessionType = "native" | "x11" | "wayland";
 
 export interface LegacyClipboardRecord {
   id: number;
@@ -86,6 +89,17 @@ export interface MonitoringChangedPayload {
   monitoring: boolean;
   state: MonitoringState;
   changed_at: number;
+}
+
+export interface PlatformCapabilities {
+  platform: PlatformKind;
+  session_type?: SessionType | null;
+  clipboard_monitoring: CapabilityState;
+  global_shortcut: CapabilityState;
+  launch_at_login: CapabilityState;
+  tray: CapabilityState;
+  active_app_detection: CapabilityState;
+  reasons: string[];
 }
 
 export interface RuntimeStatus {
