@@ -2,7 +2,7 @@ import { create } from "zustand";
 
 import { getRecordSortTimestamp, type ClipboardRecord } from "../types/clipboard";
 
-const MAX_RECORDS = 20;
+const MAX_RECORDS = 200;
 
 const clampIndex = (index: number, length: number): number => {
   if (length === 0) {

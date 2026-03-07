@@ -15,6 +15,8 @@ import { getPanelMotionVariants, prefersReducedMotion } from "./motion";
 import { PauseHint } from "./PauseHint";
 import { SkeletonCard } from "./SkeletonCard";
 
+const INITIAL_RECORD_LIMIT = 200;
+
 export const MainPanel = () => {
   const records = useClipboardStore((state) => state.records);
   const selectedIndex = useClipboardStore((state) => state.selectedIndex);
@@ -36,7 +38,7 @@ export const MainPanel = () => {
     const bootstrap = async (): Promise<void> => {
       setHydrating(true);
       try {
-        const initialRecords = await getRecordSummaries(20);
+        const initialRecords = await getRecordSummaries(INITIAL_RECORD_LIMIT);
         hydrate(initialRecords.map((record) => toClipboardRecord(record)));
         logger.info("主面板初始化完成", { record_count: initialRecords.length });
       } catch (error) {

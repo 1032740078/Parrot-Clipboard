@@ -50,17 +50,17 @@ describe("useClipboardStore", () => {
     expect(state.selectedIndex).toBe(0);
   });
 
-  it("超过 20 条时移除最旧记录", () => {
+  it("超过 200 条时移除最旧记录", () => {
     const store = useClipboardStore.getState();
 
-    for (let i = 1; i <= 21; i += 1) {
+    for (let i = 1; i <= 201; i += 1) {
       store.upsertRecord(buildRecord(i, `item-${i}`, i * 1000));
     }
 
     const ids = useClipboardStore.getState().records.map((record) => record.id);
-    expect(ids).toHaveLength(20);
+    expect(ids).toHaveLength(200);
     expect(ids.includes(1)).toBe(false);
-    expect(ids[0]).toBe(21);
+    expect(ids[0]).toBe(201);
   });
 
   it("新增记录时保持原先选中记录的身份", () => {
