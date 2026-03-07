@@ -8,6 +8,7 @@ use crate::{
         types::RecordId,
     },
     error::AppError,
+    updater::UpdateCheckResult,
 };
 
 pub const EVENT_NEW_RECORD: &str = "clipboard:new-record";
@@ -17,6 +18,7 @@ pub const EVENT_HISTORY_CLEARED: &str = "clipboard:history-cleared";
 pub const EVENT_MONITORING_CHANGED: &str = "system:monitoring-changed";
 pub const EVENT_LAUNCH_AT_LOGIN_CHANGED: &str = "system:launch-at-login-changed";
 pub const EVENT_SETTINGS_UPDATED: &str = "system:settings-updated";
+pub const EVENT_UPDATE_CHECK_FINISHED: &str = "system:update-check-finished";
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct NewRecordPayload {
@@ -95,6 +97,18 @@ where
         .emit(EVENT_SETTINGS_UPDATED, snapshot)
         .map_err(|error| AppError::Window(format!("emit settings updated failed: {error}")))?;
     tracing::debug!("ipc settings updated event emitted");
+    Ok(())
+}
+
+pub fn emit_update_check_finished(
+    app_handle: &AppHandle,
+    result: UpdateCheckResult,
+) -> Result<(), AppError> {
+    let status = result.status;
+    app_handle
+        .emit(EVENT_UPDATE_CHECK_FINISHED, result)
+        .map_err(|error| AppError::Window(format!("emit update check finished failed: {error}")))?;
+    tracing::debug!(?status, "ipc update check finished event emitted");
     Ok(())
 }
 

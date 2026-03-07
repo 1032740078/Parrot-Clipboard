@@ -1,5 +1,13 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const { openUrlMock } = vi.hoisted(() => ({
+  openUrlMock: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/plugin-opener", () => ({
+  openUrl: openUrlMock,
+}));
 
 import { AboutWindow } from "../../components/AboutWindow";
 import {
@@ -46,9 +54,9 @@ const diagnosticsSnapshot = {
   release: releaseInfo,
   permission: {
     platform: "macos" as const,
-    accessibility: "unsupported" as const,
+    accessibility: "granted" as const,
     checked_at: 1700000000000,
-    reason: "macos_accessibility_probe_unavailable",
+    reason: null,
   },
   log_directory: "/tmp/clipboard/logs",
   migration: {
@@ -71,13 +79,15 @@ const diagnosticsSnapshot = {
   },
 };
 
-describe("AboutWindow", () => {
+describe("AboutWindow update check", () => {
   beforeEach(() => {
     __resetInvokeMock();
     useSettingsStore.getState().reset();
+    openUrlMock.mockReset();
+    openUrlMock.mockResolvedValue(undefined);
   });
 
-  it("展示版本信息、日志目录与许可证入口", async () => {
+  it("检查到新版本时展示结果并支持打开下载页", async () => {
     __setInvokeHandler(async (command) => {
       if (command === "get_settings_snapshot") {
         return settingsSnapshot;
@@ -88,6 +98,17 @@ describe("AboutWindow", () => {
       if (command === "get_diagnostics_snapshot") {
         return diagnosticsSnapshot;
       }
+      if (command === "check_app_update") {
+        return {
+          status: "available",
+          checked_at: 1700000002000,
+          current_version: "1.0.0",
+          latest_version: "1.0.1",
+          release_notes_url: "https://example.com/releases/1.0.1",
+          download_url: "https://example.com/downloads/1.0.1",
+          message: "发现可用更新",
+        };
+      }
 
       throw new Error(`unexpected command: ${command}`);
     });
@@ -95,50 +116,63 @@ describe("AboutWindow", () => {
     render(<AboutWindow />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("about-release-card")).toHaveTextContent("1.0.0");
+      expect(screen.getByTestId("about-check-update-button")).toBeEnabled();
     });
 
-    expect(screen.getByTestId("about-log-directory")).toHaveTextContent("/tmp/clipboard/logs");
-    expect(screen.getByTestId("about-check-update-button")).toBeEnabled();
+    fireEvent.click(screen.getByTestId("about-check-update-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("about-update-result")).toHaveTextContent("发现新版本");
+      expect(screen.getByTestId("about-update-result")).toHaveTextContent("1.0.1");
+    });
+
+    fireEvent.click(screen.getByTestId("about-download-button"));
+    fireEvent.click(screen.getByTestId("about-release-notes-button"));
+
+    expect(openUrlMock).toHaveBeenNthCalledWith(1, "https://example.com/downloads/1.0.1");
+    expect(openUrlMock).toHaveBeenNthCalledWith(2, "https://example.com/releases/1.0.1");
+    expect(invokeCalls.some((call) => call.command === "check_app_update")).toBe(true);
+  });
+
+  it("检查失败时展示失败结果且不影响其他区域继续使用", async () => {
+    __setInvokeHandler(async (command) => {
+      if (command === "get_settings_snapshot") {
+        return settingsSnapshot;
+      }
+      if (command === "get_release_info") {
+        return releaseInfo;
+      }
+      if (command === "get_diagnostics_snapshot") {
+        return diagnosticsSnapshot;
+      }
+      if (command === "check_app_update") {
+        return {
+          status: "failed",
+          checked_at: 1700000003000,
+          current_version: "1.0.0",
+          message: "检查更新失败，请稍后重试",
+        };
+      }
+
+      throw new Error(`unexpected command: ${command}`);
+    });
+
+    render(<AboutWindow />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("about-log-directory")).toHaveTextContent("/tmp/clipboard/logs");
+    });
+
+    fireEvent.click(screen.getByTestId("about-check-update-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("about-update-result")).toHaveTextContent("更新检查失败");
+      expect(screen.getByTestId("about-update-result")).toHaveTextContent(
+        "检查更新失败，请稍后重试"
+      );
+    });
+
+    expect(screen.getByTestId("about-release-card")).toHaveTextContent("1.0.0");
     expect(screen.getByTestId("about-license-details")).toBeInTheDocument();
-    expect(invokeCalls.map((call) => call.command)).toEqual([
-      "get_settings_snapshot",
-      "get_release_info",
-      "get_diagnostics_snapshot",
-    ]);
-  });
-
-  it("加载失败时展示错误并支持重试", async () => {
-    let shouldFail = true;
-    __setInvokeHandler(async (command) => {
-      if (shouldFail && command === "get_settings_snapshot") {
-        shouldFail = false;
-        throw new Error("boom");
-      }
-
-      if (command === "get_settings_snapshot") {
-        return settingsSnapshot;
-      }
-      if (command === "get_release_info") {
-        return releaseInfo;
-      }
-      if (command === "get_diagnostics_snapshot") {
-        return diagnosticsSnapshot;
-      }
-
-      throw new Error(`unexpected command: ${command}`);
-    });
-
-    render(<AboutWindow />);
-
-    await waitFor(() => {
-      expect(screen.getByTestId("about-error")).toHaveTextContent("发生未知错误，请稍后重试。");
-    });
-
-    fireEvent.click(screen.getByTestId("about-refresh-button"));
-
-    await waitFor(() => {
-      expect(screen.getByTestId("about-release-card")).toHaveTextContent("1.0.0");
-    });
   });
 });

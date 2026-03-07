@@ -15,6 +15,7 @@ pub mod settings;
 mod shortcut;
 mod state;
 mod tray;
+mod updater;
 mod window;
 
 use std::{error::Error, sync::Arc, time::Duration};
@@ -151,6 +152,7 @@ pub fn run() {
             ipc::commands::get_release_info,
             ipc::commands::get_permission_status,
             ipc::commands::open_accessibility_settings,
+            ipc::commands::check_app_update,
             ipc::commands::get_diagnostics_snapshot,
             ipc::commands::show_settings_window,
             ipc::commands::show_about_window,

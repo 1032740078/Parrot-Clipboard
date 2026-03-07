@@ -21,6 +21,7 @@ use crate::{
     shortcut::{self, ShortcutValidationResult},
     state::AppState,
     tray,
+    updater::UpdateCheckResult,
     window::{
         about_window::show_or_focus_about_window, settings_window::show_or_focus_settings_window,
     },
@@ -286,6 +287,19 @@ pub fn open_accessibility_settings() -> Result<(), AppError> {
     crate::platform::open_accessibility_settings()?;
     tracing::info!("ipc open_accessibility_settings completed");
     Ok(())
+}
+
+#[tauri::command]
+pub async fn check_app_update(app_handle: tauri::AppHandle) -> Result<UpdateCheckResult, AppError> {
+    tracing::info!("ipc check_app_update requested");
+    let result = crate::updater::check_for_updates(env!("CARGO_PKG_VERSION").to_string()).await;
+    crate::ipc::events::emit_update_check_finished(&app_handle, result.clone())?;
+    tracing::info!(
+        status = ?result.status,
+        latest_version = result.latest_version.as_deref().unwrap_or_default(),
+        "ipc check_app_update completed"
+    );
+    Ok(result)
 }
 
 #[tauri::command]

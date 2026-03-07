@@ -12,6 +12,7 @@ import type {
   RecordDeletedPayload,
   RecordUpdatedPayload,
   SettingsUpdatedPayload,
+  UpdateCheckResult,
 } from "./types";
 
 export const onNewRecord = async (
@@ -163,6 +164,23 @@ export const onSettingsUpdated = async (
     });
   } catch (error) {
     logger.error("订阅设置更新事件失败", { error: normalizeError(error) });
+    throw error;
+  }
+};
+
+export const onUpdateCheckFinished = async (
+  handler: (payload: UpdateCheckResult) => void
+): Promise<() => void> => {
+  try {
+    return await listen<UpdateCheckResult>("system:update-check-finished", (event) => {
+      try {
+        handler(event.payload);
+      } catch (error) {
+        logger.error("处理更新检查完成事件失败", { error: normalizeError(error) });
+      }
+    });
+  } catch (error) {
+    logger.error("订阅更新检查完成事件失败", { error: normalizeError(error) });
     throw error;
   }
 };

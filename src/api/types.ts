@@ -12,6 +12,7 @@ export type SessionType = "native" | "x11" | "wayland";
 export type BlacklistMatchType = "bundle_id" | "process_name" | "app_id" | "wm_class";
 export type PermissionAccessibilityState = "granted" | "missing" | "unsupported";
 export type BuildProfile = "debug" | "release";
+export type UpdateCheckStatus = "available" | "latest" | "failed";
 
 export interface LegacyClipboardRecord {
   id: number;
@@ -191,6 +192,16 @@ export interface ReleaseInfo {
   schema_version: number;
   config_version: number;
   build_profile: BuildProfile;
+}
+
+export interface UpdateCheckResult {
+  status: UpdateCheckStatus;
+  checked_at: number;
+  current_version: string;
+  latest_version?: string | null;
+  release_notes_url?: string | null;
+  download_url?: string | null;
+  message?: string | null;
 }
 
 export interface MigrationStatus {
