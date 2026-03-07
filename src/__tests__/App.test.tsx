@@ -9,6 +9,7 @@ import {
   invokeCalls,
 } from "../__mocks__/@tauri-apps/api/core";
 import { useClipboardStore } from "../stores/useClipboardStore";
+import { useSettingsStore } from "../stores/useSettingsStore";
 import { useSystemStore } from "../stores/useSystemStore";
 import { useUIStore } from "../stores/useUIStore";
 import { mixedFixtureRecords } from "./fixtures/clipboardRecords";
@@ -16,6 +17,7 @@ import { mixedFixtureRecords } from "./fixtures/clipboardRecords";
 describe("App", () => {
   beforeEach(() => {
     useClipboardStore.getState().reset();
+    useSettingsStore.getState().reset();
     useSystemStore.getState().reset();
     useUIStore.getState().reset();
     __resetInvokeMock();
@@ -28,6 +30,26 @@ describe("App", () => {
 
       if (command === "get_runtime_status") {
         return { monitoring: false, launch_at_login: true, panel_visible: true };
+      }
+
+      if (command === "get_settings_snapshot") {
+        return {
+          config_version: 2,
+          general: { theme: "light", language: "zh-CN", launch_at_login: true },
+          history: {
+            max_text_records: 200,
+            max_image_records: 50,
+            max_file_records: 100,
+            max_image_storage_mb: 512,
+            capture_images: true,
+            capture_files: true,
+          },
+          shortcut: {
+            toggle_panel: "shift+control+v",
+            platform_default: "shift+control+v",
+          },
+          privacy: { blacklist_rules: [] },
+        };
       }
 
       if (command === "clear_history") {
@@ -43,10 +65,13 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(invokeCalls.some((call) => call.command === "get_runtime_status")).toBe(true);
+      expect(invokeCalls.some((call) => call.command === "get_settings_snapshot")).toBe(true);
       expect(useSystemStore.getState().monitoring).toBe(false);
       expect(useSystemStore.getState().launchAtLogin).toBe(true);
       expect(useSystemStore.getState().panelVisible).toBe(true);
       expect(useSystemStore.getState().trayAvailable).toBe(true);
+      expect(useSettingsStore.getState().themeMode).toBe("light");
+      expect(document.documentElement.dataset.theme).toBe("light");
     });
   });
 
@@ -63,6 +88,43 @@ describe("App", () => {
     );
   });
 
+  it("收到 settings-updated 事件后主面板主题会同步切换", async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(document.documentElement.dataset.theme).toBe("light");
+    });
+
+    await act(async () => {
+      __emitMockEvent("system:settings-updated", {
+        config_version: 2,
+        general: {
+          theme: "dark",
+          language: "zh-CN",
+          launch_at_login: true,
+        },
+        history: {
+          max_text_records: 200,
+          max_image_records: 50,
+          max_file_records: 100,
+          max_image_storage_mb: 512,
+          capture_images: true,
+          capture_files: true,
+        },
+        shortcut: {
+          toggle_panel: "shift+control+v",
+          platform_default: "shift+control+v",
+        },
+        privacy: { blacklist_rules: [] },
+      });
+    });
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().themeMode).toBe("dark");
+      expect(document.documentElement.dataset.theme).toBe("dark");
+    });
+  });
+
   it("UT-FE-STATE-001 收到 monitoring 变更事件后同步暂停提示 UI", async () => {
     __setInvokeHandler(async (command: string, args?: Record<string, unknown>) => {
       if (command === "get_records") {
@@ -72,6 +134,26 @@ describe("App", () => {
 
       if (command === "get_runtime_status") {
         return { monitoring: true, launch_at_login: true, panel_visible: true };
+      }
+
+      if (command === "get_settings_snapshot") {
+        return {
+          config_version: 2,
+          general: { theme: "light", language: "zh-CN", launch_at_login: true },
+          history: {
+            max_text_records: 200,
+            max_image_records: 50,
+            max_file_records: 100,
+            max_image_storage_mb: 512,
+            capture_images: true,
+            capture_files: true,
+          },
+          shortcut: {
+            toggle_panel: "shift+control+v",
+            platform_default: "shift+control+v",
+          },
+          privacy: { blacklist_rules: [] },
+        };
       }
 
       if (command === "clear_history") {
@@ -230,6 +312,26 @@ describe("App", () => {
 
       if (command === "get_runtime_status") {
         return { monitoring: false, launch_at_login: true, panel_visible: true };
+      }
+
+      if (command === "get_settings_snapshot") {
+        return {
+          config_version: 2,
+          general: { theme: "light", language: "zh-CN", launch_at_login: true },
+          history: {
+            max_text_records: 200,
+            max_image_records: 50,
+            max_file_records: 100,
+            max_image_storage_mb: 512,
+            capture_images: true,
+            capture_files: true,
+          },
+          shortcut: {
+            toggle_panel: "shift+control+v",
+            platform_default: "shift+control+v",
+          },
+          privacy: { blacklist_rules: [] },
+        };
       }
 
       if (command === "clear_history") {

@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
 
 import { clearHistory, getRuntimeStatus } from "./api/commands";
+import { getSettingsSnapshot } from "./api/settings";
 import { getErrorMessage } from "./api/errorHandler";
 import { logger, normalizeError } from "./api/logger";
 import { MainPanel } from "./components/MainPanel";
 import { ConfirmDialog } from "./components/common/ConfirmDialog";
 import { Toast } from "./components/common/Toast";
 import { useSystemEvents } from "./hooks/useSystemEvents";
-import { useSystemStore, useUIStore } from "./stores";
+import { useThemeSync } from "./hooks/useThemeSync";
+import { useSettingsStore, useSystemStore, useUIStore } from "./stores";
 
 function App() {
   const showPanel = useUIStore((state) => state.showPanel);
@@ -20,10 +22,13 @@ function App() {
   const hydrateRuntimeStatus = useSystemStore((state) => state.hydrateRuntimeStatus);
   const setPanelVisible = useSystemStore((state) => state.setPanelVisible);
   const setTrayAvailable = useSystemStore((state) => state.setTrayAvailable);
+  const hydrateSettings = useSettingsStore((state) => state.hydrateSettings);
+  const themeMode = useSettingsStore((state) => state.themeMode);
 
   const [isClearingHistory, setIsClearingHistory] = useState(false);
 
   useSystemEvents();
+  useThemeSync(themeMode);
 
   useEffect(() => {
     let isMounted = true;
@@ -46,6 +51,19 @@ function App() {
       }
     };
 
+    const syncSettings = async (): Promise<void> => {
+      try {
+        const snapshot = await getSettingsSnapshot();
+        if (!isMounted) {
+          return;
+        }
+
+        hydrateSettings(snapshot);
+      } catch (error) {
+        logger.error("读取设置快照失败", { error: normalizeError(error) });
+      }
+    };
+
     const restorePanelVisibility = (): void => {
       showPanel();
       setPanelVisible(true);
@@ -59,6 +77,7 @@ function App() {
     };
 
     restorePanelVisibility();
+    void syncSettings();
     window.addEventListener("focus", restorePanelVisibility);
     window.addEventListener("pageshow", restorePanelVisibility);
     document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -69,7 +88,7 @@ function App() {
       window.removeEventListener("pageshow", restorePanelVisibility);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [hydrateRuntimeStatus, setPanelVisible, setTrayAvailable, showPanel]);
+  }, [hydrateRuntimeStatus, hydrateSettings, setPanelVisible, setTrayAvailable, showPanel]);
 
   const handleConfirmClearHistory = async (): Promise<void> => {
     if (!clearHistoryDialog) {
@@ -91,7 +110,7 @@ function App() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-950 text-white">
+    <main className="min-h-screen bg-[var(--app-bg)] text-[var(--app-fg)] transition-colors">
       <MainPanel />
       <ConfirmDialog
         cancelLabel="取消"

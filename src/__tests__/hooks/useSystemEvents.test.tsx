@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { __emitMockEvent, __resetEventMock } from "../../__mocks__/@tauri-apps/api/event";
 import { useSystemEvents } from "../../hooks/useSystemEvents";
 import { useClipboardStore } from "../../stores/useClipboardStore";
+import { useSettingsStore } from "../../stores/useSettingsStore";
 import { useSystemStore } from "../../stores/useSystemStore";
 import { useUIStore } from "../../stores/useUIStore";
 import { buildImageRecord, buildRecord } from "../fixtures/clipboardRecords";
@@ -17,6 +18,7 @@ describe("useSystemEvents", () => {
   beforeEach(() => {
     __resetEventMock();
     useClipboardStore.getState().reset();
+    useSettingsStore.getState().reset();
     useSystemStore.getState().reset();
     useUIStore.getState().reset();
   });
@@ -83,6 +85,49 @@ describe("useSystemEvents", () => {
 
     await waitFor(() => {
       expect(useSystemStore.getState().monitoring).toBe(false);
+    });
+  });
+
+  it("收到设置更新与自启动事件后同步主题和运行态", async () => {
+    render(<HookConsumer />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      __emitMockEvent("system:settings-updated", {
+        config_version: 2,
+        general: {
+          theme: "dark",
+          language: "zh-CN",
+          launch_at_login: false,
+        },
+        history: {
+          max_text_records: 120,
+          max_image_records: 20,
+          max_file_records: 30,
+          max_image_storage_mb: 256,
+          capture_images: true,
+          capture_files: false,
+        },
+        shortcut: {
+          toggle_panel: "shift+control+k",
+          platform_default: "shift+control+v",
+        },
+        privacy: {
+          blacklist_rules: [],
+        },
+      });
+      __emitMockEvent("system:launch-at-login-changed", {
+        launch_at_login: true,
+        changed_at: 2234,
+      });
+    });
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().themeMode).toBe("dark");
+      expect(useSystemStore.getState().launchAtLogin).toBe(true);
     });
   });
 });

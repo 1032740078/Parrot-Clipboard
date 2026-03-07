@@ -24,6 +24,7 @@ import type {
   ShortcutValidationResult,
   ThemeMode,
 } from "../api/types";
+import { useThemeSync } from "../hooks/useThemeSync";
 import { ConfirmDialog } from "./common/ConfirmDialog";
 import { Toast } from "./common/Toast";
 
@@ -566,6 +567,8 @@ export const SettingsWindowPlaceholder = () => {
     canSaveShortcut ||
     canSavePrivacy;
 
+  useThemeSync(savedDrafts.general.theme);
+
   useEffect(() => {
     hasUnsavedChangesRef.current = hasUnsavedChanges;
   }, [hasUnsavedChanges]);
@@ -956,7 +959,7 @@ export const SettingsWindowPlaceholder = () => {
               <article className="rounded-2xl border border-white/10 bg-slate-950/60 p-5">
                 <p className="text-sm font-medium text-white">主题模式</p>
                 <p className="mt-2 text-sm leading-6 text-slate-300">
-                  保存后会写入 `config.json v2`；后续任务会继续打通主面板与设置窗口的主题同步。
+                  保存后会写入 `config.json v2`，并同步到主面板与设置窗口的主题状态。
                 </p>
                 <div className="mt-4 flex flex-wrap gap-3" role="radiogroup" aria-label="主题模式">
                   {[
@@ -1477,7 +1480,7 @@ export const SettingsWindowPlaceholder = () => {
   };
 
   return (
-    <main className="min-h-screen bg-slate-950 px-8 py-10 text-white">
+    <main className="min-h-screen bg-[var(--app-bg)] px-8 py-10 text-[var(--app-fg)] transition-colors">
       <section className="mx-auto flex max-w-6xl flex-col gap-6 rounded-3xl border border-white/10 bg-slate-900/80 p-8 shadow-2xl shadow-slate-950/50">
         <div className="flex items-start justify-between gap-6 border-b border-white/10 pb-6">
           <div>

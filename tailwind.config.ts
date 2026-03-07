@@ -10,8 +10,8 @@ const config: Config = {
           foreground: "#FFFFFF",
         },
         panel: {
-          bg: "rgba(28, 28, 30, 0.72)",
-          border: "rgba(255, 255, 255, 0.18)",
+          bg: "var(--panel-bg)",
+          border: "var(--panel-border)",
         },
       },
       spacing: {
@@ -22,7 +22,7 @@ const config: Config = {
         panel: "16px",
       },
       boxShadow: {
-        panel: "0 14px 40px rgba(0, 0, 0, 0.35)",
+        panel: "var(--panel-shadow)",
       },
     },
   },

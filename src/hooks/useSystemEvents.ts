@@ -1,14 +1,22 @@
 import { useEffect } from "react";
 
-import { onClearHistoryRequested, onHistoryCleared, onMonitoringChanged } from "../api/events";
+import {
+  onClearHistoryRequested,
+  onHistoryCleared,
+  onLaunchAtLoginChanged,
+  onMonitoringChanged,
+  onSettingsUpdated,
+} from "../api/events";
 import { logger, normalizeError } from "../api/logger";
-import { useClipboardStore, useSystemStore, useUIStore } from "../stores";
+import { useClipboardStore, useSettingsStore, useSystemStore, useUIStore } from "../stores";
 
 export const useSystemEvents = (): void => {
   const resetClipboard = useClipboardStore((state) => state.reset);
 
   const setMonitoring = useSystemStore((state) => state.setMonitoring);
+  const setLaunchAtLogin = useSystemStore((state) => state.setLaunchAtLogin);
   const setPanelVisible = useSystemStore((state) => state.setPanelVisible);
+  const hydrateSettings = useSettingsStore((state) => state.hydrateSettings);
 
   const showPanel = useUIStore((state) => state.showPanel);
   const openClearHistoryDialog = useUIStore((state) => state.openClearHistoryDialog);
@@ -59,6 +67,32 @@ export const useSystemEvents = (): void => {
             logger.info("监听状态已同步到前端", { ...payload });
           })
         );
+
+        cleanups.push(
+          await onLaunchAtLoginChanged((payload) => {
+            if (!isMounted) {
+              return;
+            }
+
+            setLaunchAtLogin(payload.launch_at_login);
+            logger.info("自启动状态已同步到前端", { ...payload });
+          })
+        );
+
+        cleanups.push(
+          await onSettingsUpdated((payload) => {
+            if (!isMounted) {
+              return;
+            }
+
+            hydrateSettings(payload);
+            setLaunchAtLogin(payload.general.launch_at_login);
+            logger.info("设置快照已同步到前端", {
+              theme: payload.general.theme,
+              launch_at_login: payload.general.launch_at_login,
+            });
+          })
+        );
       } catch (error) {
         logger.error("订阅系统事件失败", { error: normalizeError(error) });
       }
@@ -80,6 +114,8 @@ export const useSystemEvents = (): void => {
     closeClearHistoryDialog,
     openClearHistoryDialog,
     resetClipboard,
+    hydrateSettings,
+    setLaunchAtLogin,
     setMonitoring,
     setPanelVisible,
     showPanel,
