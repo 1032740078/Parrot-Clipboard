@@ -292,6 +292,28 @@ describe("components/SettingsWindowPlaceholder", () => {
     expect(invokeCalls.some((call) => call.command === "update_general_settings")).toBe(true);
   });
 
+  it("保存通用设置时会同步主题到 DOM 并传递自启动状态", async () => {
+    setupComponent();
+    await screen.findByText("设置中心");
+
+    fireEvent.click(screen.getByLabelText("浅色"));
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "保存本页" }));
+
+    expect(await screen.findByText("通用设置已保存")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(document.documentElement.dataset.theme).toBe("light");
+    });
+    expect(
+      invokeCalls.some(
+        (call) =>
+          call.command === "update_general_settings" &&
+          call.args?.theme === "light" &&
+          call.args?.launch_at_login === false
+      )
+    ).toBe(true);
+  });
+
   it("保存记录与存储设置后调用对应命令", async () => {
     setupComponent();
     await screen.findByText("设置中心");
@@ -571,6 +593,25 @@ describe("components/SettingsWindowPlaceholder", () => {
       (await screen.findAllByText("同一平台与匹配类型下已存在相同应用标识")).length
     ).toBeGreaterThan(0);
     expect(getCurrentSnapshot().privacy.blacklist_rules).toHaveLength(1);
+  });
+
+  it("活动应用识别受限时会在隐私页提示黑名单能力降级", async () => {
+    setupComponent({
+      capabilities: createCapabilities({
+        platform: "linux",
+        session_type: "wayland",
+        active_app_detection: "unsupported",
+        reasons: ["wayland_active_app_detection_unavailable"],
+      }),
+    });
+    await screen.findByText("设置中心");
+
+    fireEvent.click(screen.getByRole("tab", { name: /隐私/ }));
+    await screen.findByRole("heading", { name: "隐私设置" });
+
+    expect(
+      screen.getByText("当前会话不支持活动应用识别，隐私黑名单过滤会受到限制。")
+    ).toBeInTheDocument();
   });
 
   it("Wayland 下禁用快捷键录制与保存并提示替代路径", async () => {
