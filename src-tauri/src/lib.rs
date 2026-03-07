@@ -151,6 +151,7 @@ pub fn run() {
             ipc::commands::get_release_info,
             ipc::commands::get_diagnostics_snapshot,
             ipc::commands::show_settings_window,
+            ipc::commands::show_about_window,
             ipc::commands::get_platform_capabilities,
             ipc::commands::get_settings_snapshot,
             ipc::commands::update_general_settings,

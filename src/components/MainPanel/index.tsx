@@ -2,7 +2,9 @@ import { useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
 import { getRecordSummaries } from "../../api/commands";
+import { showAboutWindow } from "../../api/diagnostics";
 import { logger, normalizeError } from "../../api/logger";
+import { getErrorMessage } from "../../api/errorHandler";
 import { isTextRecord, toClipboardRecord } from "../../types/clipboard";
 import { useClipboardEvents } from "../../hooks/useClipboardEvents";
 import { useKeyboard } from "../../hooks/useKeyboard";
@@ -22,6 +24,7 @@ export const MainPanel = () => {
   const setHydrating = useClipboardStore((state) => state.setHydrating);
 
   const isPanelVisible = useUIStore((state) => state.isPanelVisible);
+  const showToast = useUIStore((state) => state.showToast);
   const monitoring = useSystemStore((state) => state.monitoring);
 
   useClipboardEvents();
@@ -47,6 +50,19 @@ export const MainPanel = () => {
   const plainTextEnabled = selectedRecord ? isTextRecord(selectedRecord) : false;
   const panelMotionVariants = getPanelMotionVariants(prefersReducedMotion());
 
+  const handleOpenAbout = async (): Promise<void> => {
+    try {
+      await showAboutWindow();
+      logger.info("用户从主面板打开关于页");
+    } catch (error) {
+      showToast({
+        level: "error",
+        message: getErrorMessage(error),
+        duration: 2200,
+      });
+    }
+  };
+
   return (
     <AnimatePresence>
       {isPanelVisible ? (
@@ -61,6 +77,23 @@ export const MainPanel = () => {
           variants={panelMotionVariants}
         >
           <div className="flex h-full flex-col">
+            <header className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <h1 className="text-base font-semibold text-white">最近记录</h1>
+                <p className="text-xs text-slate-400">支持托盘、设置与关于页的发布版基础能力</p>
+              </div>
+              <button
+                className="rounded-lg border border-white/15 px-3 py-2 text-sm text-slate-100 transition hover:border-sky-400 hover:text-sky-200"
+                data-testid="open-about-button"
+                onClick={() => {
+                  void handleOpenAbout();
+                }}
+                type="button"
+              >
+                关于
+              </button>
+            </header>
+
             {monitoring ? null : <PauseHint />}
 
             <div className="flex-1 overflow-hidden">

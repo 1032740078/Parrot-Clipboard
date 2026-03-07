@@ -20,3 +20,12 @@ export const getDiagnosticsSnapshot = async (): Promise<DiagnosticsSnapshot> => 
     throw error;
   }
 };
+
+export const showAboutWindow = async (): Promise<void> => {
+  try {
+    await invoke<void>("show_about_window");
+  } catch (error) {
+    logger.error("打开关于页失败", { error: normalizeError(error) });
+    throw error;
+  }
+};

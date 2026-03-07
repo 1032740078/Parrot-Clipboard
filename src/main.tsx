@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { AboutWindow } from "./components/AboutWindow";
 import { logger, normalizeError } from "./api/logger";
 import { SettingsWindowPlaceholder } from "./components/SettingsWindowPlaceholder";
 import "./index.css";
@@ -37,6 +38,10 @@ const bindGlobalErrorHandlers = (): void => {
 
 const resolveRootApp = () => {
   const params = new URLSearchParams(window.location.search);
+  if (params.get("window") === "about") {
+    return <AboutWindow />;
+  }
+
   if (params.get("window") === "settings") {
     return <SettingsWindowPlaceholder />;
   }

@@ -29,6 +29,10 @@ const setInvokeForRecords = (records = mixedFixtureRecords) => {
       };
     }
 
+    if (command === "show_about_window") {
+      return undefined;
+    }
+
     return undefined;
   });
 };
@@ -191,5 +195,20 @@ describe("MainPanel", () => {
     expect(screen.getByTestId("pause-hint")).toHaveTextContent(
       "监听已暂停，新复制的内容不会被记录，可从托盘恢复"
     );
+  });
+
+  it("UT-PANEL-008 主面板可打开关于页", async () => {
+    setInvokeForRecords(mixedFixtureRecords);
+    render(<MainPanel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("open-about-button")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("open-about-button"));
+
+    await waitFor(() => {
+      expect(invokeCalls.some((call) => call.command === "show_about_window")).toBe(true);
+    });
   });
 });

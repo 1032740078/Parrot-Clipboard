@@ -15,12 +15,15 @@ use crate::{
         PlatformCapabilityResolver,
     },
     state::AppState,
-    window::settings_window::show_or_focus_settings_window,
+    window::{
+        about_window::show_or_focus_about_window, settings_window::show_or_focus_settings_window,
+    },
 };
 
 pub const TRAY_ID: &str = "main-tray";
 pub const MENU_TOGGLE_PANEL: &str = "tray.toggle_panel";
 pub const MENU_OPEN_SETTINGS: &str = "tray.open_settings";
+pub const MENU_OPEN_ABOUT: &str = "tray.open_about";
 pub const MENU_TOGGLE_MONITORING: &str = "tray.toggle_monitoring";
 pub const MENU_TOGGLE_LAUNCH_AT_LOGIN: &str = "tray.toggle_launch_at_login";
 pub const MENU_CLEAR_HISTORY: &str = "tray.clear_history";
@@ -149,6 +152,10 @@ impl TrayController {
         .map_err(|error| {
             AppError::Tray(format!("create tray open_settings item failed: {error}"))
         })?;
+        let open_about = MenuItem::with_id(app_handle, MENU_OPEN_ABOUT, "关于", true, None::<&str>)
+            .map_err(|error| {
+                AppError::Tray(format!("create tray open_about item failed: {error}"))
+            })?;
         let toggle_monitoring = MenuItem::with_id(
             app_handle,
             MENU_TOGGLE_MONITORING,
@@ -212,6 +219,7 @@ impl TrayController {
         let mut menu_items: Vec<&dyn IsMenuItem<Wry>> = vec![
             &toggle_panel,
             &open_settings,
+            &open_about,
             &toggle_monitoring,
             &toggle_launch_at_login,
         ];
@@ -307,6 +315,11 @@ fn handle_menu_event(app_handle: &AppHandle, event: &MenuEvent) -> Result<(), Ap
         MENU_OPEN_SETTINGS => {
             let action = show_or_focus_settings_window(app_handle)?;
             tracing::info!(?action, "tray opened settings window");
+            Ok(())
+        }
+        MENU_OPEN_ABOUT => {
+            let action = show_or_focus_about_window(app_handle)?;
+            tracing::info!(?action, "tray opened about window");
             Ok(())
         }
         MENU_TOGGLE_MONITORING => toggle_monitoring_from_tray(app_handle),

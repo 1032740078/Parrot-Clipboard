@@ -5,7 +5,7 @@ import {
   __setInvokeHandler,
   invokeCalls,
 } from "../../__mocks__/@tauri-apps/api/core";
-import { getDiagnosticsSnapshot, getReleaseInfo } from "../../api/diagnostics";
+import { getDiagnosticsSnapshot, getReleaseInfo, showAboutWindow } from "../../api/diagnostics";
 
 const releaseInfo = {
   app_version: "1.0.0",
@@ -74,6 +74,19 @@ describe("api/diagnostics", () => {
 
     await expect(getDiagnosticsSnapshot()).resolves.toEqual(diagnosticsSnapshot);
     expect(invokeCalls).toEqual([{ command: "get_diagnostics_snapshot", args: undefined }]);
+  });
+
+  it("showAboutWindow 调用对应命令", async () => {
+    __setInvokeHandler(async (command) => {
+      if (command === "show_about_window") {
+        return undefined;
+      }
+
+      throw new Error(`unexpected command: ${command}`);
+    });
+
+    await expect(showAboutWindow()).resolves.toBeUndefined();
+    expect(invokeCalls).toEqual([{ command: "show_about_window", args: undefined }]);
   });
 
   it("命令失败时会记录日志并继续抛错", async () => {

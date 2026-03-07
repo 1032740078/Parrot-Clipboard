@@ -19,6 +19,7 @@ use objc::{
     sel, sel_impl,
 };
 
+pub mod about_window;
 pub mod position;
 pub mod settings_window;
 
