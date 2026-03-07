@@ -13,6 +13,9 @@ export default defineConfig({
       "@tauri-apps/api/event": fileURLToPath(
         new URL("./src/__mocks__/@tauri-apps/api/event.ts", import.meta.url)
       ),
+      "@tauri-apps/api/window": fileURLToPath(
+        new URL("./src/__mocks__/@tauri-apps/api/window.ts", import.meta.url)
+      ),
     },
   },
   test: {

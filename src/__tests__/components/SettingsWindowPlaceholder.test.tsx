@@ -1,57 +1,18 @@
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { __resetInvokeMock, __setInvokeHandler } from "../../__mocks__/@tauri-apps/api/core";
 import {
-  __resetInvokeMock,
-  __setInvokeHandler,
-  invokeCalls,
-} from "../../__mocks__/@tauri-apps/api/core";
+  __emitMockCloseRequested,
+  __getMockCloseCallCount,
+  __resetWindowMock,
+} from "../../__mocks__/@tauri-apps/api/window";
 import { SettingsWindowPlaceholder } from "../../components/SettingsWindowPlaceholder";
 
 describe("components/SettingsWindowPlaceholder", () => {
   beforeEach(() => {
     __resetInvokeMock();
-  });
-
-  it("展示 Wayland 平台能力降级提示", async () => {
-    __setInvokeHandler(async (command) => {
-      if (command === "get_platform_capabilities") {
-        return {
-          platform: "linux",
-          session_type: "wayland",
-          clipboard_monitoring: "degraded",
-          global_shortcut: "unsupported",
-          launch_at_login: "supported",
-          tray: "supported",
-          active_app_detection: "unsupported",
-          reasons: [
-            "wayland_global_shortcut_unavailable",
-            "wayland_clipboard_monitoring_limited",
-            "wayland_active_app_detection_unavailable",
-          ],
-        };
-      }
-
-      return undefined;
-    });
-
-    render(<SettingsWindowPlaceholder />);
-
-    expect(await screen.findByText("当前会话能力受限")).toBeInTheDocument();
-    expect(screen.getByText("设置中心准备中")).toBeInTheDocument();
-    expect(screen.getByText("当前会话")).toBeInTheDocument();
-    expect(
-      screen.getByText("当前会话不支持全局快捷键，请改用托盘菜单打开主面板。")
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("当前会话不支持活动应用识别，隐私黑名单过滤会受到限制。")
-    ).toBeInTheDocument();
-    expect(screen.getByText("全局快捷键")).toBeInTheDocument();
-    expect(screen.getAllByText("不支持").length).toBeGreaterThan(0);
-    expect(invokeCalls[0]).toEqual({ command: "get_platform_capabilities", args: undefined });
-  });
-
-  it("展示完整支持的平台提示", async () => {
+    __resetWindowMock();
     __setInvokeHandler(async (command) => {
       if (command === "get_platform_capabilities") {
         return {
@@ -68,11 +29,64 @@ describe("components/SettingsWindowPlaceholder", () => {
 
       return undefined;
     });
+  });
 
+  it("展示设置窗口导航与默认通用页", async () => {
     render(<SettingsWindowPlaceholder />);
 
-    expect(await screen.findByText("当前会话能力完整支持")).toBeInTheDocument();
-    expect(screen.getByText("Windows / Native")).toBeInTheDocument();
-    expect(screen.getAllByText("已支持").length).toBeGreaterThan(0);
+    expect(await screen.findByText("设置中心")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /通用/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: /记录与存储/ })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /快捷键/ })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /隐私/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "通用设置" })).toBeInTheDocument();
+    expect(screen.getByText("当前会话能力完整支持")).toBeInTheDocument();
+  });
+
+  it("存在未保存改动时切换分组会弹出确认，取消后保留输入", async () => {
+    render(<SettingsWindowPlaceholder />);
+    await screen.findByText("设置中心");
+
+    fireEvent.click(screen.getByLabelText("深色"));
+    fireEvent.click(screen.getByRole("tab", { name: /快捷键/ }));
+
+    expect(screen.getByText("切换前放弃未保存修改？")).toBeInTheDocument();
+    expect(screen.getByTestId("confirm-dialog-cancel")).toHaveFocus();
+
+    fireEvent.click(screen.getByTestId("confirm-dialog-cancel"));
+
+    expect(screen.getByRole("heading", { name: "通用设置" })).toBeInTheDocument();
+    expect(screen.getByLabelText("深色")).toBeChecked();
+  });
+
+  it("确认放弃后切换到目标分组", async () => {
+    render(<SettingsWindowPlaceholder />);
+    await screen.findByText("设置中心");
+
+    fireEvent.click(screen.getByLabelText("深色"));
+    fireEvent.click(screen.getByRole("tab", { name: /快捷键/ }));
+    fireEvent.click(screen.getByTestId("confirm-dialog-confirm"));
+
+    await screen.findByRole("heading", { name: "快捷键设置" });
+    expect(screen.getByRole("tab", { name: /快捷键/ })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("存在未保存改动时会拦截窗口关闭请求", async () => {
+    render(<SettingsWindowPlaceholder />);
+    await screen.findByText("设置中心");
+
+    fireEvent.click(screen.getByLabelText("深色"));
+
+    await act(async () => {
+      await expect(__emitMockCloseRequested()).resolves.toBe(true);
+    });
+    expect(await screen.findByText("关闭前放弃未保存修改？")).toBeInTheDocument();
+    expect(__getMockCloseCallCount()).toBe(0);
+
+    fireEvent.click(screen.getByTestId("confirm-dialog-confirm"));
+
+    await waitFor(() => {
+      expect(__getMockCloseCallCount()).toBe(1);
+    });
   });
 });
