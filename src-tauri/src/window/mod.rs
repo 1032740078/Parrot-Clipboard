@@ -8,12 +8,16 @@ use core_graphics::{display::CGDisplayBounds, geometry::CGPoint};
 use crate::error::AppError;
 
 use self::position::{
-    calculate_macos_display_point_from_mouse_location, calculate_macos_work_area,
-    calculate_panel_frame_for_work_area, select_target_work_area, WorkArea,
+    calculate_macos_display_point_from_mouse_location, calculate_panel_frame_for_work_area,
+    select_target_work_area, WorkArea,
 };
 
 #[cfg(target_os = "macos")]
-use objc::{class, msg_send, runtime::Object, sel, sel_impl};
+use objc::{
+    class, msg_send,
+    runtime::{Object, NO},
+    sel, sel_impl,
+};
 
 pub mod position;
 
@@ -64,11 +68,6 @@ impl TauriWindowManager {
             .ok_or_else(|| AppError::Window("primary monitor not available".to_string()))?;
         let fallback = to_work_area(&primary_monitor);
 
-        #[cfg(target_os = "macos")]
-        if let Some(work_area) = self.resolve_target_work_area_macos()? {
-            return Ok(work_area);
-        }
-
         let available_monitors = self.app_handle.available_monitors().map_err(|error| {
             AppError::Window(format!("read available monitors failed: {error}"))
         })?;
@@ -93,7 +92,9 @@ impl TauriWindowManager {
     }
 
     #[cfg(target_os = "macos")]
-    fn resolve_target_work_area_macos(&self) -> Result<Option<WorkArea>, AppError> {
+    fn resolve_target_visible_frame_macos(
+        &self,
+    ) -> Result<Option<(CGDirectDisplayID, NSRect)>, AppError> {
         let display_id = match active_display_id_under_cursor() {
             Ok(Some(display_id)) => display_id,
             Ok(None) => return Ok(None),
@@ -103,19 +104,24 @@ impl TauriWindowManager {
             }
         };
 
-        let work_area = macos_work_area_for_display(display_id)?;
+        let visible_frame = macos_visible_frame_for_display(display_id)?;
         tracing::debug!(
             display_id,
-            x = work_area.x,
-            y = work_area.y,
-            width = work_area.width,
-            height = work_area.height,
-            "resolved active work area from macOS display services"
+            x = visible_frame.origin.x,
+            y = visible_frame.origin.y,
+            width = visible_frame.size.width,
+            height = visible_frame.size.height,
+            "resolved active visible frame from macOS display services"
         );
-        Ok(Some(work_area))
+        Ok(Some((display_id, visible_frame)))
     }
 
     fn resize_and_position(&self, window: &tauri::WebviewWindow) -> Result<(), AppError> {
+        #[cfg(target_os = "macos")]
+        if self.resize_and_position_macos(window)? {
+            return Ok(());
+        }
+
         let work_area = self.resolve_target_work_area()?;
         let panel_frame = calculate_panel_frame_for_work_area(work_area, self.panel_height);
 
@@ -127,6 +133,41 @@ impl TauriWindowManager {
             .map_err(|error| AppError::Window(format!("set position failed: {error}")))?;
 
         Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn resize_and_position_macos(&self, window: &tauri::WebviewWindow) -> Result<bool, AppError> {
+        let Some((display_id, visible_frame)) = self.resolve_target_visible_frame_macos()? else {
+            return Ok(false);
+        };
+
+        let panel_height = self
+            .panel_height
+            .clamp(0.0, visible_frame.size.height)
+            .round();
+        let panel_frame = NSRect {
+            origin: visible_frame.origin,
+            size: NSSize {
+                width: visible_frame.size.width,
+                height: panel_height,
+            },
+        };
+        let actual_frame = set_macos_window_frame(window, panel_frame)?;
+
+        tracing::debug!(
+            display_id,
+            target_x = panel_frame.origin.x,
+            target_y = panel_frame.origin.y,
+            target_width = panel_frame.size.width,
+            target_height = panel_frame.size.height,
+            actual_x = actual_frame.origin.x,
+            actual_y = actual_frame.origin.y,
+            actual_width = actual_frame.size.width,
+            actual_height = actual_frame.size.height,
+            "applied macOS panel frame"
+        );
+
+        Ok(true)
     }
 
     fn configure_panel_window(&self, window: &tauri::WebviewWindow) -> Result<(), AppError> {
@@ -326,22 +367,33 @@ fn active_display_id_under_cursor() -> Result<Option<CGDirectDisplayID>, AppErro
 }
 
 #[cfg(target_os = "macos")]
-fn macos_work_area_for_display(display_id: CGDirectDisplayID) -> Result<WorkArea, AppError> {
+fn macos_visible_frame_for_display(display_id: CGDirectDisplayID) -> Result<NSRect, AppError> {
     let screen = find_ns_screen_for_display(display_id)?;
-    let scale_factor: f64 = unsafe { msg_send![screen, backingScaleFactor] };
-    let frame: NSRect = unsafe { msg_send![screen, frame] };
     let visible_frame: NSRect = unsafe { msg_send![screen, visibleFrame] };
-    let display_bounds = unsafe { CGDisplayBounds(display_id) };
 
-    Ok(calculate_macos_work_area(
-        display_bounds.origin.x,
-        display_bounds.origin.y,
-        frame.origin.x,
-        visible_frame.origin.x,
-        visible_frame.size.width,
-        visible_frame.size.height,
-        scale_factor,
-    ))
+    Ok(visible_frame)
+}
+
+#[cfg(target_os = "macos")]
+fn set_macos_window_frame(
+    window: &tauri::WebviewWindow,
+    panel_frame: NSRect,
+) -> Result<NSRect, AppError> {
+    let native_window = window
+        .ns_window()
+        .map_err(|error| AppError::Window(format!("get native window failed: {error}")))?
+        as *mut Object;
+
+    if native_window.is_null() {
+        return Err(AppError::Window("native window is null".to_string()));
+    }
+
+    let actual_frame = unsafe {
+        let _: () = msg_send![native_window, setFrame: panel_frame display: NO animate: NO];
+        msg_send![native_window, frame]
+    };
+
+    Ok(actual_frame)
 }
 
 #[cfg(target_os = "macos")]
