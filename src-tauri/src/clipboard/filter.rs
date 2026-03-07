@@ -1,6 +1,5 @@
 use crate::{
-    config::schema::BlacklistRule,
-    platform::ActiveApplication,
+    config::schema::BlacklistRule, platform::ActiveApplication,
     settings::blacklist::normalize_identifier,
 };
 
@@ -74,7 +73,38 @@ mod tests {
         let rules = vec![build_rule(BlacklistMatchType::AppId, "WECHAT.EXE")];
         let matched = match_blacklist_rule(&rules, &active_application());
 
-        assert_eq!(matched.map(|rule| rule.id.as_str()), Some("rule-WECHAT.EXE"));
+        assert_eq!(
+            matched.map(|rule| rule.id.as_str()),
+            Some("rule-WECHAT.EXE")
+        );
+    }
+
+    #[test]
+    fn matches_linux_wm_class_rule() {
+        let rules = vec![BlacklistRule {
+            id: "rule-linux-wezterm".to_string(),
+            app_name: "WezTerm".to_string(),
+            platform: PlatformKind::Linux,
+            match_type: BlacklistMatchType::WmClass,
+            app_identifier: "Org.Wezfurlong.Wezterm".to_string(),
+            enabled: true,
+            created_at: 1,
+            updated_at: 1,
+        }];
+        let active_application = ActiveApplication {
+            platform: PlatformKind::Linux,
+            app_name: Some("WezTerm".to_string()),
+            bundle_id: None,
+            process_name: Some("wezterm".to_string()),
+            app_id: None,
+            wm_class: Some("org.wezfurlong.wezterm".to_string()),
+        };
+
+        let matched = match_blacklist_rule(&rules, &active_application);
+        assert_eq!(
+            matched.map(|rule| rule.id.as_str()),
+            Some("rule-linux-wezterm")
+        );
     }
 
     #[test]

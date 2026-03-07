@@ -7,18 +7,13 @@ const DEFAULT_MAX_FILE_RECORDS: usize = 100;
 const DEFAULT_MAX_IMAGE_STORAGE_MB: usize = 512;
 const DEFAULT_LANGUAGE: &str = "zh-CN";
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ThemeMode {
     Light,
     Dark,
+    #[default]
     System,
-}
-
-impl Default for ThemeMode {
-    fn default() -> Self {
-        Self::System
-    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -281,7 +276,7 @@ pub fn platform_default_toggle_shortcut() -> String {
 fn default_toggle_shortcut() -> String {
     #[cfg(target_os = "macos")]
     {
-        return "Shift+Command+V".to_string();
+        "Shift+Command+V".to_string()
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -310,7 +305,7 @@ fn default_platform_kind() -> PlatformKind {
 fn default_blacklist_match_type() -> BlacklistMatchType {
     #[cfg(target_os = "macos")]
     {
-        return BlacklistMatchType::BundleId;
+        BlacklistMatchType::BundleId
     }
 
     #[cfg(target_os = "windows")]

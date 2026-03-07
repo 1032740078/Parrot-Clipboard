@@ -114,7 +114,7 @@ impl AutostartControl for LinuxAutostartService {
 mod tests {
     use std::{
         env, fs,
-        path::PathBuf,
+        path::{Path, PathBuf},
         time::{SystemTime, UNIX_EPOCH},
     };
 
@@ -165,7 +165,7 @@ mod tests {
         env::temp_dir().join(format!("clipboard-manager-linux-autostart-test-{suffix}"))
     }
 
-    fn cleanup_test_dir(desktop_path: &PathBuf) {
+    fn cleanup_test_dir(desktop_path: &Path) {
         if let Some(parent) = desktop_path.parent().and_then(|path| path.parent()) {
             let _ = fs::remove_dir_all(parent);
         }

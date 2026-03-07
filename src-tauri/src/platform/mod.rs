@@ -28,17 +28,17 @@ pub use capabilities::{PlatformCapabilities, PlatformCapabilityResolver};
 pub fn create_platform_clipboard() -> Result<Arc<dyn PlatformClipboard>, AppError> {
     #[cfg(target_os = "macos")]
     {
-        return Ok(Arc::new(MacosPlatformClipboard::new()?));
+        Ok(Arc::new(MacosPlatformClipboard::new()?))
     }
 
     #[cfg(target_os = "windows")]
     {
-        return Ok(Arc::new(WindowsPlatformClipboard::new()?));
+        Ok(Arc::new(WindowsPlatformClipboard::new()?))
     }
 
     #[cfg(target_os = "linux")]
     {
-        return Ok(Arc::new(linux::LinuxPlatformClipboard::new()?));
+        Ok(Arc::new(linux::LinuxPlatformClipboard::new()?))
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
@@ -50,12 +50,12 @@ pub fn create_platform_clipboard() -> Result<Arc<dyn PlatformClipboard>, AppErro
 pub fn create_platform_key_simulator() -> Result<Arc<dyn PlatformKeySimulator>, AppError> {
     #[cfg(target_os = "macos")]
     {
-        return Ok(Arc::new(MacosKeySimulator));
+        Ok(Arc::new(MacosKeySimulator))
     }
 
     #[cfg(target_os = "windows")]
     {
-        return Ok(Arc::new(WindowsKeySimulator));
+        Ok(Arc::new(WindowsKeySimulator))
     }
 
     #[cfg(target_os = "linux")]
@@ -67,7 +67,7 @@ pub fn create_platform_key_simulator() -> Result<Arc<dyn PlatformKeySimulator>, 
             )));
         }
 
-        return Ok(Arc::new(linux::LinuxKeySimulator));
+        Ok(Arc::new(linux::LinuxKeySimulator))
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
@@ -76,21 +76,20 @@ pub fn create_platform_key_simulator() -> Result<Arc<dyn PlatformKeySimulator>, 
     }
 }
 
-
 pub fn create_platform_active_app_detector() -> Arc<dyn PlatformActiveAppDetector> {
     #[cfg(target_os = "macos")]
     {
-        return Arc::new(macos::MacosActiveAppDetector);
+        Arc::new(macos::MacosActiveAppDetector)
     }
 
     #[cfg(target_os = "windows")]
     {
-        return Arc::new(windows::WindowsActiveAppDetector);
+        Arc::new(windows::WindowsActiveAppDetector)
     }
 
     #[cfg(target_os = "linux")]
     {
-        return Arc::new(linux::LinuxActiveAppDetector);
+        Arc::new(linux::LinuxActiveAppDetector)
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
@@ -133,7 +132,10 @@ pub trait PlatformActiveAppDetector: Send + Sync {
     fn detect_active_application(&self) -> Result<Option<ActiveApplication>, AppError>;
 }
 
-#[cfg_attr(any(target_os = "macos", target_os = "windows", target_os = "linux"), allow(dead_code))]
+#[cfg_attr(
+    any(target_os = "macos", target_os = "windows", target_os = "linux"),
+    allow(dead_code)
+)]
 #[derive(Default)]
 pub struct NoopActiveAppDetector;
 

@@ -225,12 +225,19 @@ impl ClipboardMonitorService {
             return false;
         };
 
-        let rules = privacy_filter.config_store.current().privacy.blacklist_rules;
+        let rules = privacy_filter
+            .config_store
+            .current()
+            .privacy
+            .blacklist_rules;
         if rules.iter().all(|rule| !rule.enabled) {
             return false;
         }
 
-        let active_application = match privacy_filter.active_app_detector.detect_active_application() {
+        let active_application = match privacy_filter
+            .active_app_detector
+            .detect_active_application()
+        {
             Ok(Some(active_application)) => active_application,
             Ok(None) => return false,
             Err(error) => {
@@ -365,7 +372,10 @@ mod tests {
             },
             types::{ContentType, RecordId},
         },
-        config::{schema::{BlacklistMatchType, BlacklistRule, PlatformKind}, AppConfig, ConfigStore},
+        config::{
+            schema::{BlacklistMatchType, BlacklistRule, PlatformKind},
+            AppConfig, ConfigStore,
+        },
         error::AppError,
         platform::{ActiveApplication, PlatformActiveAppDetector, PlatformClipboard},
     };
@@ -587,7 +597,9 @@ mod tests {
             Duration::from_millis(10),
         );
 
-        service.poll_once().expect("blacklist filter should succeed");
+        service
+            .poll_once()
+            .expect("blacklist filter should succeed");
 
         assert_eq!(repository.capture_text_calls(), 0);
         assert_eq!(repository.capture_image_calls(), 0);
@@ -602,6 +614,59 @@ mod tests {
             .lock()
             .expect("updated_records lock poisoned")
             .is_empty());
+    }
+
+    #[test]
+    fn poll_once_continues_capture_when_detector_returns_error() {
+        let repository = Arc::new(MockRepository::new(CaptureResult {
+            action: CaptureAction::Added,
+            record: image_summary_pending(35, 1_000),
+            evicted_ids: Vec::new(),
+        }));
+        let clipboard = Arc::new(MockClipboard {
+            text: Some("放行文本".to_string()),
+            html: None,
+            image: None,
+            files: None,
+            change_count: 1,
+        });
+        let emitter = Arc::new(MockEmitter::default());
+        let config_store = config_store_with_rules(vec![BlacklistRule {
+            id: "blr_windows_app_id_wechat".to_string(),
+            app_name: "微信".to_string(),
+            platform: PlatformKind::Windows,
+            match_type: BlacklistMatchType::AppId,
+            app_identifier: "wechat.exe".to_string(),
+            enabled: true,
+            created_at: 1,
+            updated_at: 1,
+        }]);
+        let active_app_detector = Arc::new(MockActiveAppDetector {
+            active_application: None,
+            error_message: Some("foreground lookup failed".to_string()),
+        });
+        let service = ClipboardMonitorService::new_with_privacy(
+            repository.clone(),
+            clipboard,
+            emitter.clone(),
+            config_store,
+            active_app_detector,
+            Duration::from_millis(10),
+        );
+
+        service
+            .poll_once()
+            .expect("detector error should not block capture");
+
+        assert_eq!(repository.capture_text_calls(), 1);
+        assert_eq!(
+            emitter
+                .new_records
+                .lock()
+                .expect("new_records lock poisoned")
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -649,14 +714,19 @@ mod tests {
             Duration::from_millis(10),
         );
 
-        service.poll_once().expect("disabled blacklist rule should not block capture");
+        service
+            .poll_once()
+            .expect("disabled blacklist rule should not block capture");
 
         assert_eq!(repository.capture_text_calls(), 1);
-        assert_eq!(emitter
-            .new_records
-            .lock()
-            .expect("new_records lock poisoned")
-            .len(), 1);
+        assert_eq!(
+            emitter
+                .new_records
+                .lock()
+                .expect("new_records lock poisoned")
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -1075,7 +1145,8 @@ mod tests {
         let config_path = std::env::temp_dir()
             .join(format!("clipboard-manager-monitor-config-{suffix}"))
             .join("config.json");
-        let store = ConfigStore::initialize_at_path(config_path).expect("config store should initialize");
+        let store =
+            ConfigStore::initialize_at_path(config_path).expect("config store should initialize");
         let mut config = AppConfig::default();
         config.privacy.blacklist_rules = rules;
         store.replace(config).expect("config should persist");

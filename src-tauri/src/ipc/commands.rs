@@ -306,6 +306,7 @@ pub fn update_general_settings(
     Ok(snapshot)
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub fn update_history_settings(
     max_text_records: usize,
@@ -446,6 +447,7 @@ pub fn create_blacklist_rule(
     Ok(snapshot)
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub fn update_blacklist_rule(
     id: String,

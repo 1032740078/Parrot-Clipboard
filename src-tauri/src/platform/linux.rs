@@ -5,9 +5,7 @@ use std::{path::PathBuf, process::Command, sync::Mutex};
 use arboard::{Clipboard, ImageData};
 
 use crate::{
-    clipboard::payload::ClipboardImageData,
-    config::schema::PlatformKind,
-    error::AppError,
+    clipboard::payload::ClipboardImageData, config::schema::PlatformKind, error::AppError,
 };
 
 use super::{
@@ -164,10 +162,7 @@ impl PlatformActiveAppDetector for LinuxActiveAppDetector {
         let process_name = metadata
             .pid
             .and_then(|pid| read_process_name(pid).ok().flatten());
-        let app_name = metadata
-            .wm_class
-            .clone()
-            .or_else(|| process_name.clone());
+        let app_name = metadata.wm_class.clone().or_else(|| process_name.clone());
 
         Ok(Some(ActiveApplication {
             platform: PlatformKind::Linux,
@@ -199,7 +194,9 @@ fn read_active_window_id() -> Result<Option<String>, AppError> {
         )));
     }
 
-    Ok(parse_active_window_id(&String::from_utf8_lossy(&output.stdout)))
+    Ok(parse_active_window_id(&String::from_utf8_lossy(
+        &output.stdout,
+    )))
 }
 
 fn read_window_metadata(window_id: &str) -> Result<LinuxWindowMetadata, AppError> {
@@ -215,7 +212,9 @@ fn read_window_metadata(window_id: &str) -> Result<LinuxWindowMetadata, AppError
         )));
     }
 
-    Ok(parse_window_metadata(&String::from_utf8_lossy(&output.stdout)))
+    Ok(parse_window_metadata(&String::from_utf8_lossy(
+        &output.stdout,
+    )))
 }
 
 fn read_process_name(pid: u32) -> Result<Option<String>, AppError> {
@@ -295,12 +294,16 @@ mod tests {
         let output = "_NET_ACTIVE_WINDOW(WINDOW): window id # 0x3e00007\n";
 
         assert_eq!(parse_active_window_id(output).as_deref(), Some("0x3e00007"));
-        assert_eq!(parse_active_window_id("_NET_ACTIVE_WINDOW(WINDOW): window id # 0x0\n"), None);
+        assert_eq!(
+            parse_active_window_id("_NET_ACTIVE_WINDOW(WINDOW): window id # 0x0\n"),
+            None
+        );
     }
 
     #[test]
     fn parses_wm_class_and_pid_from_xprop_output() {
-        let output = "WM_CLASS(STRING) = \"Navigator\", \"firefox\"\n_NET_WM_PID(CARDINAL) = 4321\n";
+        let output =
+            "WM_CLASS(STRING) = \"Navigator\", \"firefox\"\n_NET_WM_PID(CARDINAL) = 4321\n";
         let metadata = parse_window_metadata(output);
 
         assert_eq!(metadata.wm_class.as_deref(), Some("firefox"));

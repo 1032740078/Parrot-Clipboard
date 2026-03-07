@@ -7,17 +7,9 @@ use super::{
     SettingsError, SettingsValidationService,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SettingsProfile {
     config: AppConfig,
-}
-
-impl Default for SettingsProfile {
-    fn default() -> Self {
-        Self {
-            config: AppConfig::default(),
-        }
-    }
 }
 
 impl SettingsProfile {

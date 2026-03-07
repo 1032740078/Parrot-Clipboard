@@ -5,9 +5,7 @@ use std::{path::PathBuf, process::Command, sync::Mutex};
 use arboard::{Clipboard, ImageData};
 
 use crate::{
-    clipboard::payload::ClipboardImageData,
-    config::schema::PlatformKind,
-    error::AppError,
+    clipboard::payload::ClipboardImageData, config::schema::PlatformKind, error::AppError,
 };
 
 use super::{

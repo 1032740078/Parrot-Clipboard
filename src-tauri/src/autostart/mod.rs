@@ -54,7 +54,7 @@ pub fn create_autostart_service(
 ) -> Result<Arc<dyn AutostartControl>, AppError> {
     #[cfg(target_os = "macos")]
     {
-        return Ok(LaunchAgentService::initialize(app_handle)?);
+        Ok(LaunchAgentService::initialize(app_handle)?)
     }
 
     #[cfg(target_os = "windows")]

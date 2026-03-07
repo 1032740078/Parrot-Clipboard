@@ -10,9 +10,7 @@ use core_graphics::{
 use objc::{class, msg_send, sel, sel_impl};
 
 use crate::{
-    clipboard::payload::ClipboardImageData,
-    config::schema::PlatformKind,
-    error::AppError,
+    clipboard::payload::ClipboardImageData, config::schema::PlatformKind, error::AppError,
 };
 
 use super::{
@@ -175,7 +173,9 @@ impl PlatformActiveAppDetector for MacosActiveAppDetector {
             return Ok(None);
         }
 
-        let app_name = run_osascript(FRONTMOST_NAME_SCRIPT).ok().filter(|value| !value.is_empty());
+        let app_name = run_osascript(FRONTMOST_NAME_SCRIPT)
+            .ok()
+            .filter(|value| !value.is_empty());
 
         Ok(Some(ActiveApplication {
             platform: PlatformKind::Macos,

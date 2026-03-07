@@ -301,6 +301,29 @@ mod tests {
     }
 
     #[test]
+    fn shortcut_validation_detects_macos_reserved_shortcut_conflict() {
+        let capabilities = PlatformCapabilities {
+            platform: PlatformKind::Macos,
+            session_type: Some(SessionType::Native),
+            clipboard_monitoring: crate::platform::capabilities::CapabilityState::Supported,
+            global_shortcut: crate::platform::capabilities::CapabilityState::Supported,
+            launch_at_login: crate::platform::capabilities::CapabilityState::Supported,
+            tray: crate::platform::capabilities::CapabilityState::Supported,
+            active_app_detection: crate::platform::capabilities::CapabilityState::Supported,
+            reasons: Vec::new(),
+        };
+
+        let result = validate_toggle_shortcut("Command+Space", &capabilities);
+
+        assert!(result.valid);
+        assert!(result.conflict);
+        assert_eq!(
+            result.reason,
+            Some("当前组合键与系统保留快捷键冲突，请改用其他组合".to_string())
+        );
+    }
+
+    #[test]
     fn shortcut_validation_returns_unsupported_for_wayland() {
         let capabilities = PlatformCapabilities {
             platform: PlatformKind::Linux,
