@@ -47,9 +47,11 @@ export const useKeyboard = ({ enabled }: UseKeyboardOptions): void => {
 
   const clearHistoryDialog = useUIStore((state) => state.clearHistoryDialog);
   const hidePanelState = useUIStore((state) => state.hidePanel);
+  const openPermissionGuide = useUIStore((state) => state.openPermissionGuide);
   const showToast = useUIStore((state) => state.showToast);
 
   const setPanelVisible = useSystemStore((state) => state.setPanelVisible);
+  const permissionStatus = useSystemStore((state) => state.permissionStatus);
 
   useEffect(() => {
     if (!enabled) {
@@ -92,6 +94,24 @@ export const useKeyboard = ({ enabled }: UseKeyboardOptions): void => {
 
       if (event.key === "Enter") {
         if (!selected) {
+          return;
+        }
+
+        if (
+          permissionStatus?.platform === "macos" &&
+          permissionStatus.accessibility === "missing"
+        ) {
+          event.preventDefault();
+          openPermissionGuide();
+          showToast({
+            level: "info",
+            message: "请先完成辅助功能授权后再执行粘贴",
+            duration: 2200,
+          });
+          logger.warn("辅助功能权限缺失，阻止粘贴快捷键", {
+            record_id: selected.id,
+            paste_mode: event.shiftKey ? "plain_text" : "original",
+          });
           return;
         }
 
@@ -197,6 +217,8 @@ export const useKeyboard = ({ enabled }: UseKeyboardOptions): void => {
     selectPrev,
     selectedIndex,
     setPanelVisible,
+    permissionStatus,
+    openPermissionGuide,
     showToast,
     upsertRecord,
   ]);

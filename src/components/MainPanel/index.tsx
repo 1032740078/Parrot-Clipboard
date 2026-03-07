@@ -24,8 +24,10 @@ export const MainPanel = () => {
   const setHydrating = useClipboardStore((state) => state.setHydrating);
 
   const isPanelVisible = useUIStore((state) => state.isPanelVisible);
+  const openPermissionGuide = useUIStore((state) => state.openPermissionGuide);
   const showToast = useUIStore((state) => state.showToast);
   const monitoring = useSystemStore((state) => state.monitoring);
+  const permissionStatus = useSystemStore((state) => state.permissionStatus);
 
   useClipboardEvents();
   useKeyboard({ enabled: isPanelVisible });
@@ -49,6 +51,8 @@ export const MainPanel = () => {
 
   const plainTextEnabled = selectedRecord ? isTextRecord(selectedRecord) : false;
   const panelMotionVariants = getPanelMotionVariants(prefersReducedMotion());
+  const pasteBlockedByPermission =
+    permissionStatus?.platform === "macos" && permissionStatus.accessibility === "missing";
 
   const handleOpenAbout = async (): Promise<void> => {
     try {
@@ -94,6 +98,27 @@ export const MainPanel = () => {
               </button>
             </header>
 
+            {pasteBlockedByPermission ? (
+              <div
+                className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-50"
+                data-testid="permission-status-bar"
+              >
+                <div>
+                  <p className="font-medium">辅助功能权限缺失</p>
+                  <p className="mt-1 text-xs text-amber-100/90">
+                    当前仍可浏览、选择和删除历史，但 Enter / Shift+Enter 粘贴操作暂不可用。
+                  </p>
+                </div>
+                <button
+                  className="rounded-lg border border-amber-300/40 px-3 py-2 text-xs font-medium text-amber-50 transition hover:border-amber-200"
+                  onClick={openPermissionGuide}
+                  type="button"
+                >
+                  查看引导
+                </button>
+              </div>
+            ) : null}
+
             {monitoring ? null : <PauseHint />}
 
             <div className="flex-1 overflow-hidden">
@@ -114,8 +139,13 @@ export const MainPanel = () => {
               className="mt-3 flex items-center justify-between text-[11px] text-slate-300"
               data-testid="shortcut-bar"
             >
-              <span>Enter 粘贴</span>
-              <span className={plainTextEnabled ? "" : "opacity-40"} data-testid="plain-text-hint">
+              <span className={pasteBlockedByPermission ? "opacity-40" : ""} data-testid="paste-hint">
+                Enter 粘贴
+              </span>
+              <span
+                className={plainTextEnabled && !pasteBlockedByPermission ? "" : "opacity-40"}
+                data-testid="plain-text-hint"
+              >
                 Shift+Enter 纯文本
               </span>
               <span>Delete 删除</span>
