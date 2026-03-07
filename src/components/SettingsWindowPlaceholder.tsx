@@ -2,9 +2,17 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { getPlatformCapabilities } from "../api/commands";
+import { getErrorMessage } from "../api/errorHandler";
 import { logger, normalizeError } from "../api/logger";
-import type { CapabilityState, PlatformCapabilities } from "../api/types";
+import { getSettingsSnapshot, updateGeneralSettings, updateHistorySettings } from "../api/settings";
+import type {
+  CapabilityState,
+  PlatformCapabilities,
+  SettingsSnapshot,
+  ThemeMode,
+} from "../api/types";
 import { ConfirmDialog } from "./common/ConfirmDialog";
+import { Toast } from "./common/Toast";
 
 type CapabilityField =
   | "clipboard_monitoring"
@@ -14,14 +22,14 @@ type CapabilityField =
   | "active_app_detection";
 
 type SettingsSectionKey = "general" | "history" | "shortcut" | "privacy";
-type ThemeMode = "light" | "dark" | "system";
 
 interface SettingsGeneralDraft {
   theme: ThemeMode;
+  language: string;
   launchAtLogin: boolean;
 }
 
-interface SettingsHistoryPreview {
+interface SettingsHistoryDraft {
   maxTextRecords: number;
   maxImageRecords: number;
   maxFileRecords: number;
@@ -32,6 +40,7 @@ interface SettingsHistoryPreview {
 
 interface SettingsShortcutPreview {
   togglePanel: string;
+  platformDefault: string;
 }
 
 interface SettingsPrivacyPreview {
@@ -40,7 +49,7 @@ interface SettingsPrivacyPreview {
 
 interface SettingsDrafts {
   general: SettingsGeneralDraft;
-  history: SettingsHistoryPreview;
+  history: SettingsHistoryDraft;
   shortcut: SettingsShortcutPreview;
   privacy: SettingsPrivacyPreview;
 }
@@ -48,6 +57,12 @@ interface SettingsDrafts {
 interface PendingAction {
   type: "switch-section" | "close-window";
   targetSection?: SettingsSectionKey;
+}
+
+interface ToastState {
+  level: "info" | "error";
+  message: string;
+  duration?: number;
 }
 
 const CAPABILITY_ITEMS: Array<{
@@ -98,7 +113,7 @@ const SETTINGS_SECTIONS: Array<{
     key: "history",
     label: "记录与存储",
     title: "记录与存储",
-    description: "查看历史保留策略的布局与字段容器。",
+    description: "编辑历史保留策略与采集范围。",
   },
   {
     key: "shortcut",
@@ -134,9 +149,10 @@ const REASON_MESSAGES: Record<string, string> = {
   linux_session_type_unknown: "当前 Linux 会话类型未识别，快捷键、监听与黑名单能力可能受限。",
 };
 
-const buildInitialDrafts = (): SettingsDrafts => ({
+const buildFallbackDrafts = (): SettingsDrafts => ({
   general: {
     theme: "system",
+    language: "zh-CN",
     launchAtLogin: true,
   },
   history: {
@@ -149,9 +165,33 @@ const buildInitialDrafts = (): SettingsDrafts => ({
   },
   shortcut: {
     togglePanel: "Shift+Ctrl+V",
+    platformDefault: "Shift+Ctrl+V",
   },
   privacy: {
     blacklistRuleCount: 0,
+  },
+});
+
+const buildDraftsFromSnapshot = (snapshot: SettingsSnapshot): SettingsDrafts => ({
+  general: {
+    theme: snapshot.general.theme,
+    language: snapshot.general.language,
+    launchAtLogin: snapshot.general.launch_at_login,
+  },
+  history: {
+    maxTextRecords: snapshot.history.max_text_records,
+    maxImageRecords: snapshot.history.max_image_records,
+    maxFileRecords: snapshot.history.max_file_records,
+    maxImageStorageMb: snapshot.history.max_image_storage_mb,
+    captureImages: snapshot.history.capture_images,
+    captureFiles: snapshot.history.capture_files,
+  },
+  shortcut: {
+    togglePanel: snapshot.shortcut.toggle_panel,
+    platformDefault: snapshot.shortcut.platform_default,
+  },
+  privacy: {
+    blacklistRuleCount: snapshot.privacy.blacklist_rules.length,
   },
 });
 
@@ -192,14 +232,6 @@ const isSectionDirty = (
   section: SettingsSectionKey
 ): boolean => {
   return JSON.stringify(currentDrafts[section]) !== JSON.stringify(savedDrafts[section]);
-};
-
-const getPlatformDefaultShortcut = (capabilities: PlatformCapabilities | null): string => {
-  if (capabilities?.platform === "macos") {
-    return "Shift+Command+V";
-  }
-
-  return "Shift+Ctrl+V";
 };
 
 const CapabilitySummaryGrid = ({ capabilities }: { capabilities: PlatformCapabilities | null }) => {
@@ -278,13 +310,40 @@ const CapabilityNotice = ({
   );
 };
 
+const NumberField = ({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (nextValue: number) => void;
+}) => {
+  return (
+    <label className="block rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4">
+      <span className="text-sm font-medium text-white">{label}</span>
+      <input
+        className="mt-3 w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white outline-none transition focus:border-sky-400/60"
+        min={0}
+        onChange={(event) => {
+          onChange(Number(event.target.value));
+        }}
+        type="number"
+        value={value}
+      />
+    </label>
+  );
+};
+
 export const SettingsWindowPlaceholder = () => {
   const [capabilities, setCapabilities] = useState<PlatformCapabilities | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<SettingsSectionKey>("general");
-  const [drafts, setDrafts] = useState<SettingsDrafts>(() => buildInitialDrafts());
-  const [savedDrafts, setSavedDrafts] = useState<SettingsDrafts>(() => buildInitialDrafts());
+  const [drafts, setDrafts] = useState<SettingsDrafts>(() => buildFallbackDrafts());
+  const [savedDrafts, setSavedDrafts] = useState<SettingsDrafts>(() => buildFallbackDrafts());
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [toast, setToast] = useState<ToastState | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const hasUnsavedChanges = useMemo(
     () => SETTINGS_SECTIONS.some((section) => isSectionDirty(drafts, savedDrafts, section.key)),
@@ -298,6 +357,8 @@ export const SettingsWindowPlaceholder = () => {
   );
   const hasUnsavedChangesRef = useRef(hasUnsavedChanges);
   const forceCloseRef = useRef(false);
+  const canSaveCurrentSection =
+    (activeSection === "general" || activeSection === "history") && currentSectionDirty;
 
   useEffect(() => {
     hasUnsavedChangesRef.current = hasUnsavedChanges;
@@ -306,36 +367,31 @@ export const SettingsWindowPlaceholder = () => {
   useEffect(() => {
     let active = true;
 
-    const loadCapabilities = async (): Promise<void> => {
+    const loadSettingsWindowData = async (): Promise<void> => {
       try {
-        const snapshot = await getPlatformCapabilities();
+        const [capabilitySnapshot, settingsSnapshot] = await Promise.all([
+          getPlatformCapabilities(),
+          getSettingsSnapshot(),
+        ]);
         if (!active) {
           return;
         }
 
-        setCapabilities(snapshot);
-        const nextShortcutDraft = {
-          togglePanel: getPlatformDefaultShortcut(snapshot),
-        };
-        setDrafts((currentDrafts) => ({
-          ...currentDrafts,
-          shortcut: nextShortcutDraft,
-        }));
-        setSavedDrafts((currentDrafts) => ({
-          ...currentDrafts,
-          shortcut: nextShortcutDraft,
-        }));
+        const nextDrafts = buildDraftsFromSnapshot(settingsSnapshot);
+        setCapabilities(capabilitySnapshot);
+        setDrafts(nextDrafts);
+        setSavedDrafts(nextDrafts);
       } catch (error) {
-        logger.error("读取设置窗口平台能力失败", { error: normalizeError(error) });
+        logger.error("读取设置窗口初始化数据失败", { error: normalizeError(error) });
         if (!active) {
           return;
         }
 
-        setLoadError("平台能力读取失败，请稍后重试或查看日志。");
+        setLoadError("设置快照读取失败，请稍后重试或查看日志。");
       }
     };
 
-    void loadCapabilities();
+    void loadSettingsWindowData();
 
     return () => {
       active = false;
@@ -372,6 +428,12 @@ export const SettingsWindowPlaceholder = () => {
       unlistenWindow?.();
     };
   }, []);
+
+  const applySettingsSnapshot = (snapshot: SettingsSnapshot): void => {
+    const nextDrafts = buildDraftsFromSnapshot(snapshot);
+    setDrafts(nextDrafts);
+    setSavedDrafts(nextDrafts);
+  };
 
   const handleSectionClick = (section: SettingsSectionKey): void => {
     if (section === activeSection) {
@@ -421,6 +483,46 @@ export const SettingsWindowPlaceholder = () => {
     }
   };
 
+  const saveCurrentSection = async (): Promise<void> => {
+    if (!canSaveCurrentSection) {
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      if (activeSection === "general") {
+        const snapshot = await updateGeneralSettings({
+          theme: drafts.general.theme,
+          language: drafts.general.language,
+          launch_at_login: drafts.general.launchAtLogin,
+        });
+        applySettingsSnapshot(snapshot);
+        setToast({ level: "info", message: "通用设置已保存", duration: 2500 });
+      }
+
+      if (activeSection === "history") {
+        const snapshot = await updateHistorySettings({
+          max_text_records: drafts.history.maxTextRecords,
+          max_image_records: drafts.history.maxImageRecords,
+          max_file_records: drafts.history.maxFileRecords,
+          max_image_storage_mb: drafts.history.maxImageStorageMb,
+          capture_images: drafts.history.captureImages,
+          capture_files: drafts.history.captureFiles,
+        });
+        applySettingsSnapshot(snapshot);
+        setToast({ level: "info", message: "记录与存储设置已保存", duration: 2500 });
+      }
+    } catch (error) {
+      setToast({
+        level: "error",
+        message: getErrorMessage(error),
+        duration: 2600,
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const renderSectionContent = () => {
     switch (activeSection) {
       case "general":
@@ -430,7 +532,7 @@ export const SettingsWindowPlaceholder = () => {
               <article className="rounded-2xl border border-white/10 bg-slate-950/60 p-5">
                 <p className="text-sm font-medium text-white">主题模式</p>
                 <p className="mt-2 text-sm leading-6 text-slate-300">
-                  当前任务先打通导航壳层与未保存确认，主题字段先以本地草稿方式承载交互。
+                  保存后会写入 `config.json v2`；后续任务会继续打通主面板与设置窗口的主题同步。
                 </p>
                 <div className="mt-4 flex flex-wrap gap-3" role="radiogroup" aria-label="主题模式">
                   {[
@@ -470,6 +572,7 @@ export const SettingsWindowPlaceholder = () => {
                   <input
                     checked={drafts.general.launchAtLogin}
                     className="mt-1 h-4 w-4 rounded border-white/20 bg-slate-950 text-sky-400"
+                    disabled={capabilities?.launch_at_login === "unsupported"}
                     onChange={(event) => {
                       setDrafts((currentDrafts) => ({
                         ...currentDrafts,
@@ -484,14 +587,14 @@ export const SettingsWindowPlaceholder = () => {
                   <span>
                     <span className="font-medium text-white">开机自启动</span>
                     <span className="mt-1 block leading-6 text-slate-300">
-                      保存链路将在下一任务接入；当前先验证表单壳层、草稿状态与关闭拦截。
+                      该开关会同步系统级启动项，并在保存成功后刷新托盘勾选状态。
                     </span>
                   </span>
                 </label>
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
                   <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
                     <p className="text-xs uppercase tracking-[0.18em] text-slate-400">语言</p>
-                    <p className="mt-2 text-sm text-slate-100">简体中文（当前版本固定）</p>
+                    <p className="mt-2 text-sm text-slate-100">{drafts.general.language}</p>
                   </div>
                   <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
                     <p className="text-xs uppercase tracking-[0.18em] text-slate-400">当前会话</p>
@@ -513,31 +616,108 @@ export const SettingsWindowPlaceholder = () => {
         );
       case "history":
         return (
-          <div className="flex flex-col gap-4">
-            <article className="rounded-2xl border border-white/10 bg-slate-950/60 p-5">
-              <p className="text-sm font-medium text-white">记录与存储字段壳层</p>
-              <p className="mt-2 text-sm leading-6 text-slate-300">
-                本任务先提供容器与排版，下一任务会接入真实表单保存、字段校验与补偿清理说明。
-              </p>
-              <div className="mt-4 grid gap-3 md:grid-cols-2">
-                {[
-                  ["文本记录上限", `${drafts.history.maxTextRecords}`],
-                  ["图片记录上限", `${drafts.history.maxImageRecords}`],
-                  ["文件记录上限", `${drafts.history.maxFileRecords}`],
-                  ["图片存储上限", `${drafts.history.maxImageStorageMb} MB`],
-                  ["记录图片", drafts.history.captureImages ? "开启" : "关闭"],
-                  ["记录文件", drafts.history.captureFiles ? "开启" : "关闭"],
-                ].map(([label, value]) => (
-                  <div
-                    className="rounded-xl border border-white/10 bg-white/5 px-4 py-3"
-                    key={label}
-                  >
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-400">{label}</p>
-                    <p className="mt-2 text-sm text-slate-100">{value}</p>
-                  </div>
-                ))}
-              </div>
-            </article>
+          <div className="flex flex-col gap-6">
+            <div className="grid gap-4 md:grid-cols-2">
+              <NumberField
+                label="文本记录上限"
+                onChange={(nextValue) => {
+                  setDrafts((currentDrafts) => ({
+                    ...currentDrafts,
+                    history: {
+                      ...currentDrafts.history,
+                      maxTextRecords: nextValue,
+                    },
+                  }));
+                }}
+                value={drafts.history.maxTextRecords}
+              />
+              <NumberField
+                label="图片记录上限"
+                onChange={(nextValue) => {
+                  setDrafts((currentDrafts) => ({
+                    ...currentDrafts,
+                    history: {
+                      ...currentDrafts.history,
+                      maxImageRecords: nextValue,
+                    },
+                  }));
+                }}
+                value={drafts.history.maxImageRecords}
+              />
+              <NumberField
+                label="文件记录上限"
+                onChange={(nextValue) => {
+                  setDrafts((currentDrafts) => ({
+                    ...currentDrafts,
+                    history: {
+                      ...currentDrafts.history,
+                      maxFileRecords: nextValue,
+                    },
+                  }));
+                }}
+                value={drafts.history.maxFileRecords}
+              />
+              <NumberField
+                label="图片存储上限（MB）"
+                onChange={(nextValue) => {
+                  setDrafts((currentDrafts) => ({
+                    ...currentDrafts,
+                    history: {
+                      ...currentDrafts.history,
+                      maxImageStorageMb: nextValue,
+                    },
+                  }));
+                }}
+                value={drafts.history.maxImageStorageMb}
+              />
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 text-sm text-slate-200">
+                <input
+                  checked={drafts.history.captureImages}
+                  className="mt-1 h-4 w-4 rounded border-white/20 bg-slate-950 text-sky-400"
+                  onChange={(event) => {
+                    setDrafts((currentDrafts) => ({
+                      ...currentDrafts,
+                      history: {
+                        ...currentDrafts.history,
+                        captureImages: event.target.checked,
+                      },
+                    }));
+                  }}
+                  type="checkbox"
+                />
+                <span>
+                  <span className="font-medium text-white">记录图片</span>
+                  <span className="mt-1 block leading-6 text-slate-300">
+                    关闭后仅影响后续采集，不会删除已有图片历史。
+                  </span>
+                </span>
+              </label>
+              <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 text-sm text-slate-200">
+                <input
+                  checked={drafts.history.captureFiles}
+                  className="mt-1 h-4 w-4 rounded border-white/20 bg-slate-950 text-sky-400"
+                  onChange={(event) => {
+                    setDrafts((currentDrafts) => ({
+                      ...currentDrafts,
+                      history: {
+                        ...currentDrafts.history,
+                        captureFiles: event.target.checked,
+                      },
+                    }));
+                  }}
+                  type="checkbox"
+                />
+                <span>
+                  <span className="font-medium text-white">记录文件</span>
+                  <span className="mt-1 block leading-6 text-slate-300">
+                    关闭后仅影响后续采集，不会删除已有文件历史。
+                  </span>
+                </span>
+              </label>
+            </div>
           </div>
         );
       case "shortcut":
@@ -546,13 +726,13 @@ export const SettingsWindowPlaceholder = () => {
             <article className="rounded-2xl border border-white/10 bg-slate-950/60 p-5">
               <p className="text-sm font-medium text-white">快捷键录制器壳层</p>
               <p className="mt-2 text-sm leading-6 text-slate-300">
-                录制、冲突校验与恢复默认将在后续任务接入；当前先确认分组导航、提示区和能力限制位置。
+                录制、冲突校验与恢复默认将在后续任务接入；当前先显示已保存快捷键与平台默认值。
               </p>
               <div className="mt-4 rounded-xl border border-white/10 bg-white/5 px-4 py-4">
                 <p className="text-xs uppercase tracking-[0.18em] text-slate-400">当前快捷键</p>
                 <p className="mt-2 text-lg font-medium text-white">{drafts.shortcut.togglePanel}</p>
                 <p className="mt-2 text-sm text-slate-300">
-                  平台默认值：{getPlatformDefaultShortcut(capabilities)}
+                  平台默认值：{drafts.shortcut.platformDefault}
                 </p>
               </div>
             </article>
@@ -569,7 +749,7 @@ export const SettingsWindowPlaceholder = () => {
             <article className="rounded-2xl border border-white/10 bg-slate-950/60 p-5">
               <p className="text-sm font-medium text-white">隐私规则列表壳层</p>
               <p className="mt-2 text-sm leading-6 text-slate-300">
-                黑名单列表、表单新增与删除流程将在后续任务接入；当前先预留说明区与空态容器。
+                黑名单列表、表单新增与删除流程将在后续任务接入；当前先读取规则数量并预留空态容器。
               </p>
               <div className="mt-4 rounded-xl border border-dashed border-white/15 bg-white/[0.03] px-5 py-8 text-center text-sm text-slate-300">
                 当前未配置黑名单应用
@@ -603,7 +783,7 @@ export const SettingsWindowPlaceholder = () => {
             </p>
             <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white">设置中心</h1>
             <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-300">
-              当前任务已完成左侧导航、分组壳层与未保存确认。接下来会逐步把真实表单、保存链路与系统同步接入到这些容器中。
+              当前任务已完成通用页与记录页表单保存，快捷键和隐私页则继续复用已搭好的壳层与能力提示区域。
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -668,11 +848,18 @@ export const SettingsWindowPlaceholder = () => {
                   放弃本页更改
                 </button>
                 <button
-                  className="rounded-xl bg-sky-500/70 px-4 py-2 text-sm font-medium text-white opacity-60"
-                  disabled
+                  className="rounded-xl bg-sky-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!canSaveCurrentSection || isSaving}
+                  onClick={() => {
+                    void saveCurrentSection();
+                  }}
                   type="button"
                 >
-                  保存本页（下一任务接入）
+                  {isSaving
+                    ? "保存中..."
+                    : activeSection === "general" || activeSection === "history"
+                      ? "保存本页"
+                      : "当前页稍后接入"}
                 </button>
               </div>
             </div>
@@ -696,6 +883,15 @@ export const SettingsWindowPlaceholder = () => {
             : "切换前放弃未保存修改？"
         }
         visible={Boolean(pendingAction)}
+      />
+      <Toast
+        duration={toast?.duration}
+        level={toast?.level}
+        message={toast?.message ?? ""}
+        onClose={() => {
+          setToast(null);
+        }}
+        visible={Boolean(toast)}
       />
     </main>
   );

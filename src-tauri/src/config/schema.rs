@@ -274,6 +274,10 @@ fn looks_like_grouped_config(value: &serde_json::Value) -> bool {
         || object.contains_key("privacy")
 }
 
+pub fn platform_default_toggle_shortcut() -> String {
+    default_toggle_shortcut()
+}
+
 fn default_toggle_shortcut() -> String {
     #[cfg(target_os = "macos")]
     {

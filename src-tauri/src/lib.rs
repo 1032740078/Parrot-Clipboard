@@ -144,6 +144,9 @@ pub fn run() {
             ipc::commands::get_log_directory,
             ipc::commands::show_settings_window,
             ipc::commands::get_platform_capabilities,
+            ipc::commands::get_settings_snapshot,
+            ipc::commands::update_general_settings,
+            ipc::commands::update_history_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

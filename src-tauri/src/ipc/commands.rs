@@ -6,9 +6,17 @@ use crate::{
         runtime_repository::{RecordDeleteReason, RecordUpdateReason},
         types::{PasteMode, RecordId},
     },
+    config::{
+        schema::{
+            platform_default_toggle_shortcut, GeneralConfig, HistoryConfig, PrivacyConfig,
+            ThemeMode,
+        },
+        AppConfig,
+    },
     error::AppError,
     logging::{self, ClientLogLevel},
     platform::PlatformCapabilities,
+    settings::{SettingsError, SettingsProfile},
     state::AppState,
     tray,
     window::settings_window::show_or_focus_settings_window,
@@ -31,6 +39,21 @@ pub struct ClearHistoryResult {
     pub deleted_records: usize,
     pub deleted_image_assets: usize,
     pub executed_at: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ShortcutSettingsSnapshot {
+    pub toggle_panel: String,
+    pub platform_default: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SettingsSnapshot {
+    pub config_version: u8,
+    pub general: GeneralConfig,
+    pub history: HistoryConfig,
+    pub shortcut: ShortcutSettingsSnapshot,
+    pub privacy: PrivacyConfig,
 }
 
 pub const CLEAR_HISTORY_CONFIRM_TOKEN: &str = "confirm-clear-history-v0.3";
@@ -224,6 +247,102 @@ pub fn get_log_directory(state: State<'_, AppState>) -> String {
 }
 
 #[tauri::command]
+pub fn get_settings_snapshot(state: State<'_, AppState>) -> SettingsSnapshot {
+    let snapshot = build_settings_snapshot(&state.config_store.current());
+    tracing::debug!(
+        config_version = snapshot.config_version,
+        "ipc get_settings_snapshot requested"
+    );
+    snapshot
+}
+
+#[tauri::command]
+pub fn update_general_settings(
+    theme: ThemeMode,
+    language: String,
+    launch_at_login: bool,
+    app_handle: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<SettingsSnapshot, AppError> {
+    tracing::info!(
+        ?theme,
+        launch_at_login,
+        "ipc update_general_settings requested"
+    );
+    let current = state.config_store.current();
+    let mut profile = SettingsProfile::new(current.clone()).map_err(map_settings_error)?;
+    profile
+        .update_general(GeneralConfig {
+            theme,
+            language,
+            launch_at_login,
+        })
+        .map_err(map_settings_error)?;
+
+    if current.launch_at_login() != launch_at_login {
+        state.autostart.reconcile(launch_at_login)?;
+    }
+
+    let persisted = state
+        .config_store
+        .replace(profile.snapshot())
+        .map_err(AppError::FileAccess)?;
+    tray::refresh(&app_handle)?;
+
+    let snapshot = build_settings_snapshot(&persisted);
+    tracing::info!(
+        launch_at_login = snapshot.general.launch_at_login,
+        "ipc update_general_settings completed"
+    );
+    Ok(snapshot)
+}
+
+#[tauri::command]
+pub fn update_history_settings(
+    max_text_records: usize,
+    max_image_records: usize,
+    max_file_records: usize,
+    max_image_storage_mb: usize,
+    capture_images: bool,
+    capture_files: bool,
+    state: State<'_, AppState>,
+) -> Result<SettingsSnapshot, AppError> {
+    tracing::info!(
+        max_text_records,
+        max_image_records,
+        max_file_records,
+        max_image_storage_mb,
+        capture_images,
+        capture_files,
+        "ipc update_history_settings requested"
+    );
+    let current = state.config_store.current();
+    let mut profile = SettingsProfile::new(current).map_err(map_settings_error)?;
+    profile
+        .update_history(HistoryConfig {
+            max_text_records,
+            max_image_records,
+            max_file_records,
+            max_image_storage_mb,
+            capture_images,
+            capture_files,
+        })
+        .map_err(map_settings_error)?;
+
+    let persisted = state
+        .config_store
+        .replace(profile.snapshot())
+        .map_err(AppError::FileAccess)?;
+    let snapshot = build_settings_snapshot(&persisted);
+    tracing::info!(
+        max_text_records = snapshot.history.max_text_records,
+        max_image_records = snapshot.history.max_image_records,
+        "ipc update_history_settings completed"
+    );
+    Ok(snapshot)
+}
+
+#[tauri::command]
 pub fn show_settings_window(app_handle: tauri::AppHandle) -> Result<(), AppError> {
     let action = show_or_focus_settings_window(&app_handle)?;
     tracing::info!(?action, "ipc show_settings_window completed");
@@ -237,6 +356,27 @@ pub fn get_platform_capabilities() -> PlatformCapabilities {
     capabilities
 }
 
+fn build_settings_snapshot(config: &AppConfig) -> SettingsSnapshot {
+    SettingsSnapshot {
+        config_version: config.config_version,
+        general: config.general.clone(),
+        history: config.history.clone(),
+        shortcut: ShortcutSettingsSnapshot {
+            toggle_panel: config.shortcut.toggle_panel.clone(),
+            platform_default: platform_default_toggle_shortcut(),
+        },
+        privacy: config.privacy.clone(),
+    }
+}
+
+fn map_settings_error(error: SettingsError) -> AppError {
+    match error {
+        SettingsError::Validation(message) => AppError::InvalidParam(message),
+        SettingsError::BlacklistRuleDuplicate { .. } => AppError::InvalidParam(error.to_string()),
+        SettingsError::BlacklistRuleNotFound(_) => AppError::InvalidParam(error.to_string()),
+    }
+}
+
 fn now_ms() -> i64 {
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -244,4 +384,20 @@ fn now_ms() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis() as i64)
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_settings_snapshot;
+
+    #[test]
+    fn settings_snapshot_uses_platform_default_shortcut() {
+        let snapshot = build_settings_snapshot(&crate::config::AppConfig::default());
+
+        assert_eq!(snapshot.config_version, 2);
+        assert_eq!(
+            snapshot.shortcut.platform_default,
+            crate::config::schema::platform_default_toggle_shortcut()
+        );
+    }
 }

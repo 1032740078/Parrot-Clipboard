@@ -51,7 +51,7 @@ export const getErrorMessage = (error: unknown): string => {
     case "KEY_SIM_ERROR":
       return "已写入粘贴板，请手动粘贴";
     case "INVALID_PARAM":
-      return "当前操作暂不可用";
+      return parsed.message || "当前操作暂不可用";
     case "MONITOR_CONTROL_ERROR":
       return "监听状态切换失败，请重试";
     case "AUTOSTART_ERROR":

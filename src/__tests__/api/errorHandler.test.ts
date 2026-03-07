@@ -24,6 +24,9 @@ describe("api/errorHandler", () => {
     expect(getErrorMessage({ code: "UNSUPPORTED_PLATFORM_FEATURE", message: "wayland" })).toBe(
       "当前平台或桌面会话暂不支持该功能，请改用托盘入口或查看设置说明"
     );
+    expect(
+      getErrorMessage({ code: "INVALID_PARAM", message: "history.max_text_records 必须大于 0" })
+    ).toBe("history.max_text_records 必须大于 0");
     expect(getErrorMessage({ code: "UNKNOWN", message: "boom" })).toBe(
       "发生未知错误，请稍后重试。"
     );

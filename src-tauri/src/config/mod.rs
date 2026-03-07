@@ -51,6 +51,10 @@ impl ConfigStore {
     pub fn set_launch_at_login(&self, launch_at_login: bool) -> Result<AppConfig, String> {
         let mut next = self.current();
         next.set_launch_at_login(launch_at_login);
+        self.replace(next)
+    }
+
+    pub fn replace(&self, next: AppConfig) -> Result<AppConfig, String> {
         persist_config(&self.path, &next)?;
         *self.config.write().expect("config write lock poisoned") = next.clone();
         Ok(next)
@@ -203,7 +207,35 @@ mod tests {
 
         assert!(!updated.general.launch_at_login);
         assert!(!store.current().general.launch_at_login);
-        assert!(saved.contains("\"launch_at_login\": false"));
+        let persisted: AppConfig =
+            serde_json::from_str(&saved).expect("saved config should be valid json");
+        assert!(!persisted.general.launch_at_login);
+
+        cleanup_test_dir(&config_path);
+    }
+
+    #[test]
+    fn replace_persists_grouped_config_updates() {
+        let config_path = unique_test_dir().join("config.json");
+        let store = super::ConfigStore::initialize_at_path(config_path.clone())
+            .expect("config store should initialize");
+        let mut next = store.current();
+        next.general.theme = crate::config::schema::ThemeMode::Dark;
+        next.history.max_text_records = 88;
+        next.history.capture_files = false;
+
+        let updated = store.replace(next).expect("config replace should persist");
+        let saved = fs::read_to_string(&config_path).expect("config file should exist");
+
+        assert_eq!(
+            updated.general.theme,
+            crate::config::schema::ThemeMode::Dark
+        );
+        assert_eq!(updated.history.max_text_records, 88);
+        assert!(!updated.history.capture_files);
+        assert!(saved.contains("\"theme\": \"dark\""));
+        assert!(saved.contains("\"max_text_records\": 88"));
+        assert!(saved.contains("\"capture_files\": false"));
 
         cleanup_test_dir(&config_path);
     }

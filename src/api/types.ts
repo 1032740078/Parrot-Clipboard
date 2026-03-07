@@ -6,6 +6,7 @@ export type ThumbnailState = "pending" | "ready" | "failed";
 export type RecordUpdatedReason = "promoted" | "thumbnail_ready" | "thumbnail_failed";
 export type RecordDeletedReason = "manual" | "retention";
 export type PlatformKind = "macos" | "windows" | "linux";
+export type ThemeMode = "light" | "dark" | "system";
 export type CapabilityState = "supported" | "degraded" | "unsupported";
 export type SessionType = "native" | "x11" | "wayland";
 
@@ -89,6 +90,38 @@ export interface MonitoringChangedPayload {
   monitoring: boolean;
   state: MonitoringState;
   changed_at: number;
+}
+
+export interface GeneralSettingsPayload {
+  theme: ThemeMode;
+  language: string;
+  launch_at_login: boolean;
+}
+
+export interface HistorySettingsPayload {
+  max_text_records: number;
+  max_image_records: number;
+  max_file_records: number;
+  max_image_storage_mb: number;
+  capture_images: boolean;
+  capture_files: boolean;
+}
+
+export interface ShortcutSettingsSnapshot {
+  toggle_panel: string;
+  platform_default: string;
+}
+
+export interface PrivacySettingsSnapshot {
+  blacklist_rules: Array<Record<string, unknown>>;
+}
+
+export interface SettingsSnapshot {
+  config_version: 2;
+  general: GeneralSettingsPayload;
+  history: HistorySettingsPayload;
+  shortcut: ShortcutSettingsSnapshot;
+  privacy: PrivacySettingsSnapshot;
 }
 
 export interface PlatformCapabilities {
