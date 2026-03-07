@@ -3,6 +3,7 @@
 mod autostart;
 mod clipboard;
 mod config;
+mod diagnostics;
 mod error;
 mod image;
 mod ipc;
@@ -147,6 +148,8 @@ pub fn run() {
             ipc::commands::clear_history,
             ipc::commands::write_client_log,
             ipc::commands::get_log_directory,
+            ipc::commands::get_release_info,
+            ipc::commands::get_diagnostics_snapshot,
             ipc::commands::show_settings_window,
             ipc::commands::get_platform_capabilities,
             ipc::commands::get_settings_snapshot,

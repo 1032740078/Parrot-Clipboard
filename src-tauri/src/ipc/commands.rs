@@ -13,6 +13,7 @@ use crate::{
         },
         AppConfig,
     },
+    diagnostics::{self, DiagnosticsSnapshot, ReleaseInfo},
     error::AppError,
     logging::{self, ClientLogLevel},
     platform::PlatformCapabilities,
@@ -245,6 +246,44 @@ pub fn write_client_log(
 #[tauri::command]
 pub fn get_log_directory(state: State<'_, AppState>) -> String {
     state.logging_state.log_directory.clone()
+}
+
+#[tauri::command]
+pub fn get_release_info(state: State<'_, AppState>) -> ReleaseInfo {
+    let capabilities = crate::platform::PlatformCapabilityResolver::current().resolve();
+    let config = state.config_store.current();
+    let release_info =
+        diagnostics::build_release_info(&config, &state.migration_status, &capabilities);
+
+    tracing::debug!(
+        platform = ?release_info.platform,
+        schema_version = release_info.schema_version,
+        config_version = release_info.config_version,
+        "ipc get_release_info requested"
+    );
+
+    release_info
+}
+
+#[tauri::command]
+pub fn get_diagnostics_snapshot(state: State<'_, AppState>) -> DiagnosticsSnapshot {
+    let capabilities = crate::platform::PlatformCapabilityResolver::current().resolve();
+    let config = state.config_store.current();
+    let snapshot = diagnostics::build_diagnostics_snapshot(
+        &config,
+        &state.logging_state.log_directory,
+        &state.migration_status,
+        &capabilities,
+    );
+
+    tracing::debug!(
+        platform = ?snapshot.release.platform,
+        schema_version = snapshot.release.schema_version,
+        recovered_from_corruption = snapshot.migration.recovered_from_corruption,
+        "ipc get_diagnostics_snapshot requested"
+    );
+
+    snapshot
 }
 
 #[tauri::command]

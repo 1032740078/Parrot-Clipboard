@@ -10,6 +10,8 @@ export type ThemeMode = "light" | "dark" | "system";
 export type CapabilityState = "supported" | "degraded" | "unsupported";
 export type SessionType = "native" | "x11" | "wayland";
 export type BlacklistMatchType = "bundle_id" | "process_name" | "app_id" | "wm_class";
+export type PermissionAccessibilityState = "granted" | "missing" | "unsupported";
+export type BuildProfile = "debug" | "release";
 
 export interface LegacyClipboardRecord {
   id: number;
@@ -173,6 +175,45 @@ export interface PlatformCapabilities {
   tray: CapabilityState;
   active_app_detection: CapabilityState;
   reasons: string[];
+}
+
+export interface PermissionStatus {
+  platform: PlatformKind;
+  accessibility: PermissionAccessibilityState;
+  checked_at: number;
+  reason?: string | null;
+}
+
+export interface ReleaseInfo {
+  app_version: string;
+  platform: PlatformKind;
+  session_type?: SessionType | null;
+  schema_version: number;
+  config_version: number;
+  build_profile: BuildProfile;
+}
+
+export interface MigrationStatus {
+  current_schema_version: number;
+  migrated: boolean;
+  recovered_from_corruption: boolean;
+  checked_at: number;
+  backup_paths?: string[];
+}
+
+export interface CleanupSummary {
+  deleted_original_files: number;
+  deleted_thumbnail_files: number;
+  executed_at: number;
+}
+
+export interface DiagnosticsSnapshot {
+  release: ReleaseInfo;
+  permission: PermissionStatus;
+  log_directory: string;
+  migration: MigrationStatus;
+  last_orphan_cleanup?: CleanupSummary | null;
+  capabilities: PlatformCapabilities;
 }
 
 export interface RuntimeStatus {
