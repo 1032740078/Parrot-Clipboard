@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "tauri-app",
-  "version": "0.1.0",
+  "productName": "粘贴板记录管理工具",
+  "version": "../package.json",
   "identifier": "com.robin.clipboard",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -37,6 +37,17 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "publisher": "Robin",
+    "category": "Productivity",
+    "shortDescription": "跨平台粘贴板历史记录管理工具，支持文本、图片与文件历史回溯。",
+    "longDescription": "粘贴板记录管理工具是一个基于 Tauri 的跨平台桌面应用，用于管理文本、图片与文件粘贴历史，提供诊断、权限引导、更新检查与发布级稳定性能力。",
+    "windows": {
+      "digestAlgorithm": "sha256",
+      "signCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File ../scripts/sign-windows.ps1 %1"
+    },
+    "macOS": {
+      "bundleName": "粘贴板记录管理工具"
+    }
   }
 }
