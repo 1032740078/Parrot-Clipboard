@@ -12,7 +12,7 @@ use crate::{
     image::ImageStorageService,
     logging::LoggingState,
     paste::PasteService,
-    persistence::SqliteConnectionManager,
+    persistence::{MigrationStatus, SqliteConnectionManager},
     window::WindowManager,
 };
 
@@ -27,4 +27,5 @@ pub struct AppState {
     pub window_manager: Arc<dyn WindowManager>,
     pub event_emitter: Arc<dyn DomainEventEmitter>,
     pub logging_state: LoggingState,
+    pub migration_status: MigrationStatus,
 }

@@ -15,14 +15,54 @@ use crate::error::AppError;
 
 pub use sqlite::SqliteConnectionManager;
 
-pub fn initialize(app_handle: &AppHandle) -> Result<SqliteConnectionManager, AppError> {
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+pub struct MigrationStatus {
+    pub current_schema_version: u32,
+    pub migrated: bool,
+    pub recovered_from_corruption: bool,
+    pub checked_at: i64,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub backup_paths: Vec<String>,
+}
+
+pub struct PersistenceInitialization {
+    pub manager: SqliteConnectionManager,
+    pub migration_status: MigrationStatus,
+}
+
+pub fn initialize(app_handle: &AppHandle) -> Result<PersistenceInitialization, AppError> {
     let database_path = resolve_database_path(app_handle)?;
     initialize_at_with_recovery(&database_path)
 }
 
-fn initialize_at_with_recovery(database_path: &Path) -> Result<SqliteConnectionManager, AppError> {
-    match SqliteConnectionManager::initialize_at(database_path) {
-        Ok(manager) => Ok(manager),
+fn initialize_at_with_recovery(
+    database_path: &Path,
+) -> Result<PersistenceInitialization, AppError> {
+    let checked_at = current_timestamp_ms()?;
+
+    match sqlite::SqliteConnectionManager::initialize_with_summary_at(database_path) {
+        Ok(initialized) => {
+            let migration_status = MigrationStatus {
+                current_schema_version: migrations::CURRENT_SCHEMA_VERSION,
+                migrated: initialized.migrated,
+                recovered_from_corruption: false,
+                checked_at,
+                backup_paths: Vec::new(),
+            };
+
+            tracing::info!(
+                current_schema_version = migration_status.current_schema_version,
+                migrated = migration_status.migrated,
+                recovered_from_corruption = migration_status.recovered_from_corruption,
+                checked_at = migration_status.checked_at,
+                "sqlite startup summary"
+            );
+
+            Ok(PersistenceInitialization {
+                manager: initialized.manager,
+                migration_status,
+            })
+        }
         Err(error) if should_recover_database(database_path, &error) => {
             tracing::warn!(
                 path = %database_path.display(),
@@ -37,15 +77,51 @@ fn initialize_at_with_recovery(database_path: &Path) -> Result<SqliteConnectionM
                 "corrupted sqlite database backed up before rebuild"
             );
 
-            SqliteConnectionManager::initialize_at(database_path).map_err(|retry_error| {
-                AppError::Db(format!(
-                    "recover sqlite database `{}` failed after `{error}`: {retry_error}",
-                    database_path.display()
-                ))
+            let initialized =
+                sqlite::SqliteConnectionManager::initialize_with_summary_at(database_path)
+                    .map_err(|retry_error| {
+                        AppError::Db(format!(
+                            "recover sqlite database `{}` failed after `{error}`: {retry_error}",
+                            database_path.display()
+                        ))
+                    })?;
+
+            let migration_status = MigrationStatus {
+                current_schema_version: migrations::CURRENT_SCHEMA_VERSION,
+                migrated: initialized.migrated,
+                recovered_from_corruption: true,
+                checked_at,
+                backup_paths: backup_paths
+                    .iter()
+                    .map(|path| path.display().to_string())
+                    .collect(),
+            };
+
+            tracing::info!(
+                current_schema_version = migration_status.current_schema_version,
+                migrated = migration_status.migrated,
+                recovered_from_corruption = migration_status.recovered_from_corruption,
+                backup_paths = ?migration_status.backup_paths,
+                checked_at = migration_status.checked_at,
+                "sqlite startup summary"
+            );
+
+            Ok(PersistenceInitialization {
+                manager: initialized.manager,
+                migration_status,
             })
         }
         Err(error) => Err(error),
     }
+}
+
+fn current_timestamp_ms() -> Result<i64, AppError> {
+    let duration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| AppError::Internal(format!("read system clock failed: {error}")))?;
+
+    i64::try_from(duration.as_millis())
+        .map_err(|error| AppError::Internal(format!("convert system clock failed: {error}")))
 }
 
 fn should_recover_database(database_path: &Path, error: &AppError) -> bool {
@@ -165,6 +241,8 @@ mod tests {
 
     use rusqlite::Connection;
 
+    use crate::persistence::migrations::CURRENT_SCHEMA_VERSION;
+
     use super::{append_path_suffix, initialize_at_with_recovery};
 
     #[test]
@@ -178,13 +256,23 @@ mod tests {
         fs::write(&wal_path, b"wal sidecar").expect("wal sidecar should exist");
         fs::write(&shm_path, b"shm sidecar").expect("shm sidecar should exist");
 
-        let manager = initialize_at_with_recovery(&database_path)
+        let initialized = initialize_at_with_recovery(&database_path)
             .expect("corrupted sqlite database should recover");
+        let manager = initialized.manager;
+        let migration_status = initialized.migration_status;
 
         assert_eq!(manager.database_path(), database_path.as_path());
         assert!(database_path.exists());
         assert!(!wal_path.exists());
         assert!(!shm_path.exists());
+        assert_eq!(
+            migration_status.current_schema_version,
+            CURRENT_SCHEMA_VERSION
+        );
+        assert!(migration_status.migrated);
+        assert!(migration_status.recovered_from_corruption);
+        assert!(!migration_status.backup_paths.is_empty());
+        assert!(migration_status.checked_at > 0);
 
         let connection = Connection::open(&database_path).expect("rebuilt sqlite db should open");
         let clipboard_items_exists = connection
@@ -212,6 +300,32 @@ mod tests {
             fs::read(&backup_db_paths[0]).expect("backup db should be readable"),
             b"not a sqlite database"
         );
+        assert!(migration_status
+            .backup_paths
+            .iter()
+            .any(|path| path.ends_with(".db")));
+
+        cleanup_test_dir(&test_root);
+    }
+
+    #[test]
+    fn initialize_with_recovery_reports_clean_startup_summary() {
+        let test_root = unique_test_dir();
+        let database_path = test_root.join("clipboard.db");
+        fs::create_dir_all(&test_root).expect("test root should be created");
+
+        let initialized = initialize_at_with_recovery(&database_path)
+            .expect("clean sqlite database should initialize");
+
+        assert_eq!(initialized.manager.database_path(), database_path.as_path());
+        assert_eq!(
+            initialized.migration_status.current_schema_version,
+            CURRENT_SCHEMA_VERSION
+        );
+        assert!(initialized.migration_status.migrated);
+        assert!(!initialized.migration_status.recovered_from_corruption);
+        assert!(initialized.migration_status.backup_paths.is_empty());
+        assert!(initialized.migration_status.checked_at > 0);
 
         cleanup_test_dir(&test_root);
     }

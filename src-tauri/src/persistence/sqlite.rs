@@ -149,8 +149,19 @@ pub struct SqliteConnectionManager {
     database_path: PathBuf,
 }
 
+pub(crate) struct SqliteInitialization {
+    pub manager: SqliteConnectionManager,
+    pub migrated: bool,
+}
+
 impl SqliteConnectionManager {
     pub fn initialize_at(database_path: &Path) -> Result<Self, AppError> {
+        Self::initialize_with_summary_at(database_path).map(|initialized| initialized.manager)
+    }
+
+    pub(crate) fn initialize_with_summary_at(
+        database_path: &Path,
+    ) -> Result<SqliteInitialization, AppError> {
         if let Some(parent) = database_path.parent() {
             fs::create_dir_all(parent).map_err(|error| {
                 AppError::Db(format!(
@@ -161,17 +172,21 @@ impl SqliteConnectionManager {
         }
 
         let connection = open_connection(database_path)?;
-        run_migrations(&connection)?;
+        let migrated = run_migrations(&connection)?;
         drop(connection);
 
         tracing::info!(
             path = %database_path.display(),
+            migrated,
             schema_version = CURRENT_SCHEMA_VERSION,
             "sqlite database initialized"
         );
 
-        Ok(Self {
-            database_path: database_path.to_path_buf(),
+        Ok(SqliteInitialization {
+            manager: Self {
+                database_path: database_path.to_path_buf(),
+            },
+            migrated,
         })
     }
 
@@ -573,15 +588,18 @@ fn open_connection(database_path: &Path) -> Result<Connection, AppError> {
     Ok(connection)
 }
 
-fn run_migrations(connection: &Connection) -> Result<(), AppError> {
+fn run_migrations(connection: &Connection) -> Result<bool, AppError> {
     let current_version = connection
         .pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))
         .map_err(|error| AppError::Db(format!("read sqlite user_version failed: {error}")))?;
+    let mut migrated = false;
 
     for (version, sql) in MIGRATIONS {
         if *version <= current_version {
             continue;
         }
+
+        migrated = true;
 
         let transaction = connection.unchecked_transaction().map_err(|error| {
             AppError::Db(format!(
@@ -599,7 +617,7 @@ fn run_migrations(connection: &Connection) -> Result<(), AppError> {
             .map_err(|error| AppError::Db(format!("commit sqlite migration failed: {error}")))?;
     }
 
-    Ok(())
+    Ok(migrated)
 }
 
 #[cfg(test)]

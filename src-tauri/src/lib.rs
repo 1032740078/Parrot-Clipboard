@@ -50,8 +50,9 @@ pub fn run() {
             let config_store =
                 config::ConfigStore::initialize(&app_handle).map_err(std::io::Error::other)?;
             let config = config_store.current();
-            let database =
-                Arc::new(persistence::initialize(&app_handle).map_err(std::io::Error::other)?);
+            let persistence_state =
+                persistence::initialize(&app_handle).map_err(std::io::Error::other)?;
+            let database = Arc::new(persistence_state.manager);
             let image_storage = Arc::new(
                 ImageStorageService::initialize(&app_handle).map_err(std::io::Error::other)?,
             );
@@ -118,6 +119,7 @@ pub fn run() {
                 window_manager,
                 event_emitter,
                 logging_state,
+                migration_status: persistence_state.migration_status,
             });
 
             match TrayController::initialize(&app_handle, tray_runtime_snapshot(&app_handle)?) {
