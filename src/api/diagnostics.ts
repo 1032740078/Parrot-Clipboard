@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import { logger, normalizeError } from "./logger";
-import type { DiagnosticsSnapshot, PermissionStatus, ReleaseInfo } from "./types";
+import type { CleanupSummary, DiagnosticsSnapshot, PermissionStatus, ReleaseInfo } from "./types";
 
 export const getReleaseInfo = async (): Promise<ReleaseInfo> => {
   try {
@@ -44,6 +44,15 @@ export const showAboutWindow = async (): Promise<void> => {
     await invoke<void>("show_about_window");
   } catch (error) {
     logger.error("打开关于页失败", { error: normalizeError(error) });
+    throw error;
+  }
+};
+
+export const runOrphanCleanup = async (): Promise<CleanupSummary> => {
+  try {
+    return await invoke<CleanupSummary>("run_orphan_cleanup");
+  } catch (error) {
+    logger.error("执行孤立图片清理失败", { error: normalizeError(error) });
     throw error;
   }
 };

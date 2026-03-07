@@ -13,7 +13,7 @@ use crate::{
         },
         AppConfig,
     },
-    diagnostics::{self, DiagnosticsSnapshot, PermissionStatus, ReleaseInfo},
+    diagnostics::{self, CleanupSummary, DiagnosticsSnapshot, PermissionStatus, ReleaseInfo},
     error::AppError,
     logging::{self, ClientLogLevel},
     platform::PlatformCapabilities,
@@ -304,23 +304,44 @@ pub async fn check_app_update(app_handle: tauri::AppHandle) -> Result<UpdateChec
 
 #[tauri::command]
 pub fn get_diagnostics_snapshot(state: State<'_, AppState>) -> DiagnosticsSnapshot {
-    let capabilities = crate::platform::PlatformCapabilityResolver::current().resolve();
-    let config = state.config_store.current();
-    let snapshot = diagnostics::build_diagnostics_snapshot(
-        &config,
-        &state.logging_state.log_directory,
-        &state.migration_status,
-        &capabilities,
-    );
+    let snapshot = build_diagnostics_snapshot_from_state(&state);
 
     tracing::debug!(
         platform = ?snapshot.release.platform,
         schema_version = snapshot.release.schema_version,
         recovered_from_corruption = snapshot.migration.recovered_from_corruption,
+        deleted_original_files = snapshot
+            .last_orphan_cleanup
+            .as_ref()
+            .map(|summary| summary.deleted_original_files)
+            .unwrap_or_default(),
+        deleted_thumbnail_files = snapshot
+            .last_orphan_cleanup
+            .as_ref()
+            .map(|summary| summary.deleted_thumbnail_files)
+            .unwrap_or_default(),
         "ipc get_diagnostics_snapshot requested"
     );
 
     snapshot
+}
+
+#[tauri::command]
+pub fn run_orphan_cleanup(
+    app_handle: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<CleanupSummary, AppError> {
+    tracing::info!("ipc run_orphan_cleanup requested");
+    let summary = state.image_cleanup.run_orphan_cleanup()?;
+    let snapshot = build_diagnostics_snapshot_from_state(&state);
+    crate::ipc::events::emit_diagnostics_updated(&app_handle, snapshot)?;
+    tracing::info!(
+        deleted_original_files = summary.deleted_original_files,
+        deleted_thumbnail_files = summary.deleted_thumbnail_files,
+        executed_at = summary.executed_at,
+        "ipc run_orphan_cleanup completed"
+    );
+    Ok(summary)
 }
 
 #[tauri::command]
@@ -604,6 +625,18 @@ pub fn get_platform_capabilities() -> PlatformCapabilities {
     let capabilities = crate::platform::PlatformCapabilityResolver::current().resolve();
     tracing::debug!(platform = ?capabilities.platform, session_type = ?capabilities.session_type, "ipc get_platform_capabilities requested");
     capabilities
+}
+
+fn build_diagnostics_snapshot_from_state(state: &AppState) -> DiagnosticsSnapshot {
+    let capabilities = crate::platform::PlatformCapabilityResolver::current().resolve();
+    let config = state.config_store.current();
+    diagnostics::build_diagnostics_snapshot(
+        &config,
+        &state.logging_state.log_directory,
+        &state.migration_status,
+        state.image_cleanup.last_cleanup_summary(),
+        &capabilities,
+    )
 }
 
 fn build_settings_snapshot(config: &AppConfig) -> SettingsSnapshot {

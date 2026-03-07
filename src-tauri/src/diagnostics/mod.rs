@@ -103,6 +103,7 @@ pub fn build_diagnostics_snapshot(
     config: &AppConfig,
     log_directory: &str,
     migration_status: &MigrationStatus,
+    last_orphan_cleanup: Option<CleanupSummary>,
     capabilities: &PlatformCapabilities,
 ) -> DiagnosticsSnapshot {
     DiagnosticsSnapshot {
@@ -110,7 +111,7 @@ pub fn build_diagnostics_snapshot(
         permission: build_permission_status(capabilities),
         log_directory: log_directory.to_string(),
         migration: migration_status.clone(),
-        last_orphan_cleanup: None,
+        last_orphan_cleanup,
         capabilities: capabilities.clone(),
     }
 }
@@ -234,6 +235,7 @@ mod tests {
             &config,
             "/tmp/clipboard/logs",
             &migration_status,
+            None,
             &capabilities,
         );
 
@@ -242,6 +244,34 @@ mod tests {
         assert_eq!(snapshot.migration, migration_status);
         assert_eq!(snapshot.capabilities, capabilities);
         assert!(snapshot.last_orphan_cleanup.is_none());
+    }
+
+    #[test]
+    fn diagnostics_snapshot_includes_last_orphan_cleanup_summary() {
+        let config = AppConfig::default();
+        let migration_status = MigrationStatus {
+            current_schema_version: 2,
+            migrated: false,
+            recovered_from_corruption: false,
+            checked_at: 1_700_000_000_000,
+            backup_paths: Vec::new(),
+        };
+        let cleanup_summary = super::CleanupSummary {
+            deleted_original_files: 2,
+            deleted_thumbnail_files: 3,
+            executed_at: 1_700_000_000_123,
+        };
+        let capabilities = sample_capabilities(PlatformKind::Macos, Some(SessionType::Native));
+
+        let snapshot = build_diagnostics_snapshot(
+            &config,
+            "/tmp/clipboard/logs",
+            &migration_status,
+            Some(cleanup_summary.clone()),
+            &capabilities,
+        );
+
+        assert_eq!(snapshot.last_orphan_cleanup, Some(cleanup_summary));
     }
 
     fn sample_capabilities(

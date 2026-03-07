@@ -1,7 +1,8 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { AboutWindow } from "../../components/AboutWindow";
+import { __emitMockEvent, __resetEventMock } from "../../__mocks__/@tauri-apps/api/event";
 import {
   __resetInvokeMock,
   __setInvokeHandler,
@@ -74,6 +75,7 @@ const diagnosticsSnapshot = {
 describe("AboutWindow", () => {
   beforeEach(() => {
     __resetInvokeMock();
+    __resetEventMock();
     useSettingsStore.getState().reset();
   });
 
@@ -106,6 +108,127 @@ describe("AboutWindow", () => {
       "get_release_info",
       "get_diagnostics_snapshot",
     ]);
+  });
+
+  it("可手动触发孤立图片清理并回显最近清理摘要", async () => {
+    __setInvokeHandler(async (command) => {
+      if (command === "get_settings_snapshot") {
+        return settingsSnapshot;
+      }
+      if (command === "get_release_info") {
+        return releaseInfo;
+      }
+      if (command === "get_diagnostics_snapshot") {
+        return diagnosticsSnapshot;
+      }
+      if (command === "run_orphan_cleanup") {
+        return {
+          deleted_original_files: 1,
+          deleted_thumbnail_files: 2,
+          executed_at: 1700000002000,
+        };
+      }
+
+      throw new Error(`unexpected command: ${command}`);
+    });
+
+    render(<AboutWindow />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("about-release-card")).toHaveTextContent("1.0.0");
+    });
+
+    fireEvent.click(screen.getByTestId("about-run-orphan-cleanup-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("about-orphan-cleanup-summary")).toHaveTextContent(
+        "已删除原图 1 个、缩略图 2 个"
+      );
+    });
+
+    expect(screen.getByTestId("about-orphan-cleanup-feedback")).toHaveTextContent(
+      "已删除原图 1 个、缩略图 2 个"
+    );
+    expect(invokeCalls.map((call) => call.command)).toEqual([
+      "get_settings_snapshot",
+      "get_release_info",
+      "get_diagnostics_snapshot",
+      "run_orphan_cleanup",
+    ]);
+  });
+
+  it("孤立图片清理失败时展示错误反馈", async () => {
+    __setInvokeHandler(async (command) => {
+      if (command === "get_settings_snapshot") {
+        return settingsSnapshot;
+      }
+      if (command === "get_release_info") {
+        return releaseInfo;
+      }
+      if (command === "get_diagnostics_snapshot") {
+        return diagnosticsSnapshot;
+      }
+      if (command === "run_orphan_cleanup") {
+        throw new Error("cleanup failed");
+      }
+
+      throw new Error(`unexpected command: ${command}`);
+    });
+
+    render(<AboutWindow />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("about-release-card")).toHaveTextContent("1.0.0");
+    });
+
+    fireEvent.click(screen.getByTestId("about-run-orphan-cleanup-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("about-orphan-cleanup-feedback")).toHaveTextContent(
+        "清理失败：发生未知错误，请稍后重试。"
+      );
+    });
+  });
+
+  it("收到诊断更新事件后会刷新最近清理摘要", async () => {
+    __setInvokeHandler(async (command) => {
+      if (command === "get_settings_snapshot") {
+        return settingsSnapshot;
+      }
+      if (command === "get_release_info") {
+        return releaseInfo;
+      }
+      if (command === "get_diagnostics_snapshot") {
+        return diagnosticsSnapshot;
+      }
+
+      throw new Error(`unexpected command: ${command}`);
+    });
+
+    render(<AboutWindow />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("about-orphan-cleanup-summary")).toHaveTextContent(
+        "尚未执行孤立图片清理"
+      );
+    });
+
+    await act(async () => {
+      __emitMockEvent("system:diagnostics-updated", {
+        ...diagnosticsSnapshot,
+        last_orphan_cleanup: {
+          deleted_original_files: 2,
+          deleted_thumbnail_files: 1,
+          executed_at: 1700000003000,
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("about-orphan-cleanup-summary")).toHaveTextContent(
+        "已删除原图 2 个、缩略图 1 个"
+      );
+    });
   });
 
   it("加载失败时展示错误并支持重试", async () => {

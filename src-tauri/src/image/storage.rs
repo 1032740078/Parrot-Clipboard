@@ -173,6 +173,14 @@ impl ImageStorageService {
         })
     }
 
+    pub fn original_dir(&self) -> &Path {
+        &self.original_dir
+    }
+
+    pub fn thumbnail_dir(&self) -> &Path {
+        &self.thumbnail_dir
+    }
+
     pub fn save_original(
         &self,
         hash: &str,

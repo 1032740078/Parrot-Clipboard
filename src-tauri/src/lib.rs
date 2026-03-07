@@ -25,7 +25,7 @@ use clipboard::{
     monitor::{ClipboardMonitorControl, ClipboardMonitorService, DomainEventEmitter},
     runtime_repository::{ClipboardRuntimeRepository, SqliteClipboardRuntimeRepository},
 };
-use image::ImageStorageService;
+use image::{ImageCleanupService, ImageStorageService};
 use ipc::events::TauriEventEmitter;
 use paste::PasteService;
 use platform::{
@@ -70,6 +70,10 @@ pub fn run() {
                     image_storage.clone(),
                     config.clone(),
                 ));
+            let image_cleanup = Arc::new(ImageCleanupService::new(
+                database.clone(),
+                image_storage.clone(),
+            ));
             let window_manager: Arc<dyn WindowManager> =
                 TauriWindowManager::new(app_handle.clone(), "main", 220.0);
             let event_emitter: Arc<dyn DomainEventEmitter> =
@@ -110,11 +114,18 @@ pub fn run() {
                 }
             }
 
+            let orphan_cleanup_app_handle = app_handle.clone();
+            let orphan_cleanup_config_store = config_store.clone();
+            let orphan_cleanup_log_directory = logging_state.log_directory.clone();
+            let orphan_cleanup_migration_status = persistence_state.migration_status.clone();
+            let orphan_cleanup_service = image_cleanup.clone();
+
             app.manage(AppState {
                 config_store,
                 autostart,
                 database,
                 image_storage,
+                image_cleanup,
                 repository,
                 monitor,
                 paste_service,
@@ -122,6 +133,35 @@ pub fn run() {
                 event_emitter,
                 logging_state,
                 migration_status: persistence_state.migration_status,
+            });
+
+            tauri::async_runtime::spawn(async move {
+                let mut interval = tokio::time::interval(Duration::from_secs(6 * 60 * 60));
+                loop {
+                    interval.tick().await;
+                    match orphan_cleanup_service.run_orphan_cleanup() {
+                        Ok(summary) => {
+                            let capabilities =
+                                platform::PlatformCapabilityResolver::current().resolve();
+                            let config = orphan_cleanup_config_store.current();
+                            let snapshot = diagnostics::build_diagnostics_snapshot(
+                                &config,
+                                &orphan_cleanup_log_directory,
+                                &orphan_cleanup_migration_status,
+                                Some(summary.clone()),
+                                &capabilities,
+                            );
+                            if let Err(error) =
+                                ipc::events::emit_diagnostics_updated(&orphan_cleanup_app_handle, snapshot)
+                            {
+                                tracing::warn!(error = %error, "emit diagnostics updated after scheduled orphan cleanup failed");
+                            }
+                        }
+                        Err(error) => {
+                            tracing::warn!(error = %error, "scheduled orphan cleanup failed");
+                        }
+                    }
+                }
             });
 
             match TrayController::initialize(&app_handle, tray_runtime_snapshot(&app_handle)?) {
@@ -154,6 +194,7 @@ pub fn run() {
             ipc::commands::open_accessibility_settings,
             ipc::commands::check_app_update,
             ipc::commands::get_diagnostics_snapshot,
+            ipc::commands::run_orphan_cleanup,
             ipc::commands::show_settings_window,
             ipc::commands::show_about_window,
             ipc::commands::get_platform_capabilities,

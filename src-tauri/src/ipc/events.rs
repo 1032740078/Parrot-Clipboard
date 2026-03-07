@@ -7,6 +7,7 @@ use crate::{
         runtime_repository::{RecordDeleteReason, RecordUpdateReason},
         types::RecordId,
     },
+    diagnostics::DiagnosticsSnapshot,
     error::AppError,
     updater::UpdateCheckResult,
 };
@@ -19,6 +20,7 @@ pub const EVENT_MONITORING_CHANGED: &str = "system:monitoring-changed";
 pub const EVENT_LAUNCH_AT_LOGIN_CHANGED: &str = "system:launch-at-login-changed";
 pub const EVENT_SETTINGS_UPDATED: &str = "system:settings-updated";
 pub const EVENT_UPDATE_CHECK_FINISHED: &str = "system:update-check-finished";
+pub const EVENT_DIAGNOSTICS_UPDATED: &str = "system:diagnostics-updated";
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct NewRecordPayload {
@@ -109,6 +111,34 @@ pub fn emit_update_check_finished(
         .emit(EVENT_UPDATE_CHECK_FINISHED, result)
         .map_err(|error| AppError::Window(format!("emit update check finished failed: {error}")))?;
     tracing::debug!(?status, "ipc update check finished event emitted");
+    Ok(())
+}
+
+pub fn emit_diagnostics_updated(
+    app_handle: &AppHandle,
+    snapshot: DiagnosticsSnapshot,
+) -> Result<(), AppError> {
+    let schema_version = snapshot.release.schema_version;
+    let deleted_original_files = snapshot
+        .last_orphan_cleanup
+        .as_ref()
+        .map(|summary| summary.deleted_original_files)
+        .unwrap_or_default();
+    let deleted_thumbnail_files = snapshot
+        .last_orphan_cleanup
+        .as_ref()
+        .map(|summary| summary.deleted_thumbnail_files)
+        .unwrap_or_default();
+
+    app_handle
+        .emit(EVENT_DIAGNOSTICS_UPDATED, snapshot)
+        .map_err(|error| AppError::Window(format!("emit diagnostics updated failed: {error}")))?;
+    tracing::debug!(
+        schema_version,
+        deleted_original_files,
+        deleted_thumbnail_files,
+        "ipc diagnostics updated event emitted"
+    );
     Ok(())
 }
 

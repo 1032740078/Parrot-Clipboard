@@ -4,6 +4,7 @@ import { logger, normalizeError } from "./logger";
 import { toNewRecordPayload, toNewRecordPayloadV2, toRecordUpdatedPayload } from "./recordAdapters";
 import type {
   ClearHistoryRequestPayload,
+  DiagnosticsSnapshot,
   HistoryClearedPayload,
   LaunchAtLoginChangedPayload,
   NewRecordPayload,
@@ -181,6 +182,23 @@ export const onUpdateCheckFinished = async (
     });
   } catch (error) {
     logger.error("订阅更新检查完成事件失败", { error: normalizeError(error) });
+    throw error;
+  }
+};
+
+export const onDiagnosticsUpdated = async (
+  handler: (payload: DiagnosticsSnapshot) => void
+): Promise<() => void> => {
+  try {
+    return await listen<DiagnosticsSnapshot>("system:diagnostics-updated", (event) => {
+      try {
+        handler(event.payload);
+      } catch (error) {
+        logger.error("处理诊断快照更新事件失败", { error: normalizeError(error) });
+      }
+    });
+  } catch (error) {
+    logger.error("订阅诊断快照更新事件失败", { error: normalizeError(error) });
     throw error;
   }
 };

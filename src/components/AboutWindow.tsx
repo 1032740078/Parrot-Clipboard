@@ -3,11 +3,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import { getErrorMessage } from "../api/errorHandler";
-import { getDiagnosticsSnapshot, getReleaseInfo } from "../api/diagnostics";
+import { getDiagnosticsSnapshot, getReleaseInfo, runOrphanCleanup } from "../api/diagnostics";
+import { onDiagnosticsUpdated } from "../api/events";
 import { logger, normalizeError } from "../api/logger";
 import { getSettingsSnapshot } from "../api/settings";
 import { checkAppUpdate } from "../api/updater";
-import type { DiagnosticsSnapshot, ReleaseInfo, UpdateCheckResult } from "../api/types";
+import type {
+  CleanupSummary,
+  DiagnosticsSnapshot,
+  ReleaseInfo,
+  UpdateCheckResult,
+} from "../api/types";
 import { useThemeSync } from "../hooks/useThemeSync";
 import { useSettingsStore } from "../stores";
 
@@ -61,6 +67,14 @@ const formatCheckedAt = (checkedAt?: number): string => {
   });
 };
 
+const formatCleanupSummary = (summary?: CleanupSummary | null): string => {
+  if (!summary) {
+    return "尚未执行孤立图片清理";
+  }
+
+  return `最近一次于 ${formatCheckedAt(summary.executed_at)} 清理，已删除原图 ${summary.deleted_original_files} 个、缩略图 ${summary.deleted_thumbnail_files} 个`;
+};
+
 const resolveUpdateToneClass = (result: UpdateCheckResult | null): string => {
   if (!result) {
     return "border-white/10 bg-white/5 text-slate-200";
@@ -104,6 +118,8 @@ export const AboutWindow = () => {
   const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [isCleaningOrphans, setIsCleaningOrphans] = useState(false);
+  const [cleanupFeedback, setCleanupFeedback] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useThemeSync(themeMode);
@@ -139,6 +155,43 @@ export const AboutWindow = () => {
     void loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    let isMounted = true;
+    let unlisten: (() => void) | undefined;
+
+    void onDiagnosticsUpdated((snapshot) => {
+      if (!isMounted) {
+        return;
+      }
+
+      setDiagnosticsSnapshot(snapshot);
+      logger.info("关于页已同步诊断快照更新", {
+        deleted_original_files: snapshot.last_orphan_cleanup?.deleted_original_files ?? 0,
+        deleted_thumbnail_files: snapshot.last_orphan_cleanup?.deleted_thumbnail_files ?? 0,
+      });
+    })
+      .then((cleanup) => {
+        if (!isMounted) {
+          cleanup();
+          return;
+        }
+
+        unlisten = cleanup;
+      })
+      .catch((error) => {
+        logger.error("关于页订阅诊断快照更新失败", { error: normalizeError(error) });
+      });
+
+    return () => {
+      isMounted = false;
+      try {
+        unlisten?.();
+      } catch (error) {
+        logger.warn("关于页注销诊断快照事件失败", { error: normalizeError(error) });
+      }
+    };
+  }, []);
+
   const viewModel = useMemo(
     () => diagnosticsSnapshot?.release ?? releaseInfo,
     [diagnosticsSnapshot, releaseInfo]
@@ -171,6 +224,41 @@ export const AboutWindow = () => {
       setIsCheckingUpdate(false);
     }
   }, [viewModel]);
+
+  const handleRunOrphanCleanup = useCallback(async (): Promise<void> => {
+    if (!diagnosticsSnapshot) {
+      return;
+    }
+
+    setIsCleaningOrphans(true);
+    setCleanupFeedback(null);
+
+    try {
+      const summary = await runOrphanCleanup();
+      setDiagnosticsSnapshot((current) =>
+        current
+          ? {
+              ...current,
+              last_orphan_cleanup: summary,
+            }
+          : current
+      );
+      setCleanupFeedback(
+        `已删除原图 ${summary.deleted_original_files} 个、缩略图 ${summary.deleted_thumbnail_files} 个`
+      );
+      logger.info("关于页执行孤立图片清理完成", {
+        deleted_original_files: summary.deleted_original_files,
+        deleted_thumbnail_files: summary.deleted_thumbnail_files,
+        executed_at: summary.executed_at,
+      });
+    } catch (error) {
+      const message = getErrorMessage(error);
+      setCleanupFeedback(`清理失败：${message}`);
+      logger.error("关于页执行孤立图片清理失败", { error: normalizeError(error) });
+    } finally {
+      setIsCleaningOrphans(false);
+    }
+  }, [diagnosticsSnapshot]);
 
   const handleOpenExternalUrl = useCallback(async (url: string, target: string): Promise<void> => {
     try {
@@ -307,17 +395,21 @@ export const AboutWindow = () => {
               )}`}
               data-testid="about-update-result"
             >
-              <p className="font-medium">{isCheckingUpdate ? "正在检查更新" : resolveUpdateTitle(updateResult)}</p>
+              <p className="font-medium">
+                {isCheckingUpdate ? "正在检查更新" : resolveUpdateTitle(updateResult)}
+              </p>
               <p className="mt-1 leading-6">
                 {isCheckingUpdate
                   ? "正在连接更新源，请稍候..."
-                  : updateResult?.message ??
-                    "点击“检查更新”后会在此展示最新版本、失败原因或下载入口。"}
+                  : (updateResult?.message ??
+                    "点击“检查更新”后会在此展示最新版本、失败原因或下载入口。")}
               </p>
               {updateResult ? (
                 <div className="mt-3 space-y-1 text-xs opacity-90">
                   <p>当前版本：{updateResult.current_version}</p>
-                  {updateResult.latest_version ? <p>最新版本：{updateResult.latest_version}</p> : null}
+                  {updateResult.latest_version ? (
+                    <p>最新版本：{updateResult.latest_version}</p>
+                  ) : null}
                   <p>检查时间：{formatCheckedAt(updateResult.checked_at)}</p>
                 </div>
               ) : null}
@@ -361,7 +453,25 @@ export const AboutWindow = () => {
             className="rounded-2xl border border-white/10 bg-slate-900/60 p-5"
             data-testid="about-diagnostics-card"
           >
-            <h2 className="text-lg font-semibold text-white">诊断摘要</h2>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-white">诊断摘要</h2>
+                <p className="mt-2 text-sm text-slate-300">
+                  这里展示日志、迁移、权限与最近一次孤立图片清理结果，并支持手动执行安全清理。
+                </p>
+              </div>
+              <button
+                className="rounded-lg border border-amber-300/30 px-4 py-2 text-sm text-amber-100 transition hover:border-amber-200 disabled:cursor-wait disabled:border-white/10 disabled:text-slate-400"
+                data-testid="about-run-orphan-cleanup-button"
+                disabled={isLoading || isCleaningOrphans || !diagnosticsSnapshot}
+                onClick={() => {
+                  void handleRunOrphanCleanup();
+                }}
+                type="button"
+              >
+                {isCleaningOrphans ? "清理中..." : "清理冗余文件"}
+              </button>
+            </div>
             {isLoading ? (
               <p className="mt-3 text-sm text-slate-300">正在汇总日志与迁移摘要...</p>
             ) : diagnosticsSnapshot ? (
@@ -399,6 +509,23 @@ export const AboutWindow = () => {
                     </p>
                   ) : null}
                 </div>
+                <div
+                  className="rounded-xl border border-amber-300/15 bg-amber-400/5 p-3"
+                  data-testid="about-orphan-cleanup-summary"
+                >
+                  <p className="text-slate-400">最近清理摘要</p>
+                  <p className="mt-1 text-white">
+                    {formatCleanupSummary(diagnosticsSnapshot.last_orphan_cleanup)}
+                  </p>
+                </div>
+                {cleanupFeedback ? (
+                  <p
+                    className={`text-xs ${cleanupFeedback.startsWith("清理失败") ? "text-rose-300" : "text-emerald-300"}`}
+                    data-testid="about-orphan-cleanup-feedback"
+                  >
+                    {cleanupFeedback}
+                  </p>
+                ) : null}
                 {diagnosticsSnapshot.migration.backup_paths?.length ? (
                   <div>
                     <p className="text-slate-400">恢复备份</p>

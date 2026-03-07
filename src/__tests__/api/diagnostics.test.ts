@@ -10,6 +10,7 @@ import {
   getPermissionStatus,
   getReleaseInfo,
   openAccessibilitySettings,
+  runOrphanCleanup,
   showAboutWindow,
 } from "../../api/diagnostics";
 
@@ -93,6 +94,25 @@ describe("api/diagnostics", () => {
 
     await expect(showAboutWindow()).resolves.toBeUndefined();
     expect(invokeCalls).toEqual([{ command: "show_about_window", args: undefined }]);
+  });
+
+  it("runOrphanCleanup 调用对应命令", async () => {
+    const cleanupSummary = {
+      deleted_original_files: 1,
+      deleted_thumbnail_files: 2,
+      executed_at: 1700000002000,
+    };
+
+    __setInvokeHandler(async (command) => {
+      if (command === "run_orphan_cleanup") {
+        return cleanupSummary;
+      }
+
+      throw new Error(`unexpected command: ${command}`);
+    });
+
+    await expect(runOrphanCleanup()).resolves.toEqual(cleanupSummary);
+    expect(invokeCalls).toEqual([{ command: "run_orphan_cleanup", args: undefined }]);
   });
 
   it("权限相关命令调用对应接口", async () => {
