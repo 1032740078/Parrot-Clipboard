@@ -130,7 +130,7 @@ impl ClipboardRuntimeRepository for SqliteClipboardRuntimeRepository {
         )?;
         let prune_result = self
             .database
-            .prune_excess_records(ContentType::Text, self.config.max_text_records)?;
+            .prune_excess_records(ContentType::Text, self.config.max_text_records())?;
 
         Ok(CaptureResult {
             action: record.0,
@@ -160,7 +160,7 @@ impl ClipboardRuntimeRepository for SqliteClipboardRuntimeRepository {
         let record_id = insert_image_record(&self.database, &content_hash, &saved, captured_at)?;
         let prune_result = self
             .database
-            .prune_excess_records(ContentType::Image, self.config.max_image_records)?;
+            .prune_excess_records(ContentType::Image, self.config.max_image_records())?;
         self.image_storage
             .remove_assets(&prune_result.deleted_image_assets);
         let record = self
@@ -196,7 +196,7 @@ impl ClipboardRuntimeRepository for SqliteClipboardRuntimeRepository {
         let record = insert_files_record(&self.database, &content_hash, &items, captured_at)?;
         let prune_result = self
             .database
-            .prune_excess_records(ContentType::Files, self.config.max_file_records)?;
+            .prune_excess_records(ContentType::Files, self.config.max_file_records())?;
 
         Ok(CaptureResult {
             action: CaptureAction::Added,

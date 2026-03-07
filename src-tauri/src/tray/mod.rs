@@ -238,7 +238,7 @@ pub fn runtime_snapshot(app_handle: &AppHandle) -> Result<TrayRuntimeSnapshot, A
     Ok(TrayRuntimeSnapshot {
         monitoring: state.monitor.is_monitoring(),
         panel_visible: state.window_manager.is_visible()?,
-        launch_at_login: state.config_store.current().launch_at_login,
+        launch_at_login: state.config_store.current().launch_at_login(),
     })
 }
 

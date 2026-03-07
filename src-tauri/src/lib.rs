@@ -55,7 +55,7 @@ pub fn run() {
             );
             let autostart: Arc<dyn AutostartControl> = LaunchAgentService::initialize(&app_handle)?;
 
-            if let Err(error) = autostart.reconcile(config.launch_at_login) {
+            if let Err(error) = autostart.reconcile(config.launch_at_login()) {
                 tracing::warn!(error = %error, "launch agent reconcile failed during setup");
             }
 
@@ -92,7 +92,11 @@ pub fn run() {
                 image_storage.clone(),
             ));
 
-            register_toggle_shortcut(&app_handle, &config.toggle_shortcut, window_manager.clone())?;
+            register_toggle_shortcut(
+                &app_handle,
+                config.toggle_shortcut(),
+                window_manager.clone(),
+            )?;
 
             app.manage(AppState {
                 config_store,
