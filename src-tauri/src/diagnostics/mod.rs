@@ -78,7 +78,25 @@ pub fn build_release_info(
 }
 
 pub fn build_permission_status(capabilities: &PlatformCapabilities) -> PermissionStatus {
-    build_permission_status_at(capabilities, now_ms())
+    let checked_at = now_ms();
+
+    let (accessibility, reason) = match crate::platform::detect_accessibility_permission() {
+        Ok(Some(true)) => (PermissionAccessibilityState::Granted, None),
+        Ok(Some(false)) => (
+            PermissionAccessibilityState::Missing,
+            Some("macos_accessibility_not_granted".to_string()),
+        ),
+        Ok(None) => (
+            PermissionAccessibilityState::Unsupported,
+            Some("accessibility_permission_not_applicable".to_string()),
+        ),
+        Err(error) => (
+            PermissionAccessibilityState::Unsupported,
+            Some(error.to_string()),
+        ),
+    };
+
+    build_permission_status_at(capabilities, checked_at, accessibility, reason)
 }
 
 pub fn build_diagnostics_snapshot(
@@ -100,18 +118,9 @@ pub fn build_diagnostics_snapshot(
 fn build_permission_status_at(
     capabilities: &PlatformCapabilities,
     checked_at: i64,
+    accessibility: PermissionAccessibilityState,
+    reason: Option<String>,
 ) -> PermissionStatus {
-    let (accessibility, reason) = match capabilities.platform {
-        PlatformKind::Macos => (
-            PermissionAccessibilityState::Unsupported,
-            Some("macos_accessibility_probe_unavailable".to_string()),
-        ),
-        PlatformKind::Windows | PlatformKind::Linux => (
-            PermissionAccessibilityState::Unsupported,
-            Some("accessibility_permission_not_applicable".to_string()),
-        ),
-    };
-
     PermissionStatus {
         platform: capabilities.platform,
         accessibility,
@@ -178,16 +187,26 @@ mod tests {
             sample_capabilities(PlatformKind::Macos, Some(SessionType::Native));
         let linux_capabilities = sample_capabilities(PlatformKind::Linux, Some(SessionType::X11));
 
-        let macos_permission = build_permission_status_at(&macos_capabilities, 1234);
-        let linux_permission = build_permission_status_at(&linux_capabilities, 5678);
+        let macos_permission = build_permission_status_at(
+            &macos_capabilities,
+            1234,
+            PermissionAccessibilityState::Missing,
+            Some("macos_accessibility_not_granted".to_string()),
+        );
+        let linux_permission = build_permission_status_at(
+            &linux_capabilities,
+            5678,
+            PermissionAccessibilityState::Unsupported,
+            Some("accessibility_permission_not_applicable".to_string()),
+        );
 
         assert_eq!(
             macos_permission.accessibility,
-            PermissionAccessibilityState::Unsupported
+            PermissionAccessibilityState::Missing
         );
         assert_eq!(
             macos_permission.reason.as_deref(),
-            Some("macos_accessibility_probe_unavailable")
+            Some("macos_accessibility_not_granted")
         );
         assert_eq!(
             linux_permission.accessibility,

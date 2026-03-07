@@ -25,6 +25,32 @@ pub mod linux;
 pub mod windows;
 pub use capabilities::{PlatformCapabilities, PlatformCapabilityResolver};
 
+pub fn detect_accessibility_permission() -> Result<Option<bool>, AppError> {
+    #[cfg(target_os = "macos")]
+    {
+        return Ok(Some(macos::detect_accessibility_permission()));
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(None)
+    }
+}
+
+pub fn open_accessibility_settings() -> Result<(), AppError> {
+    #[cfg(target_os = "macos")]
+    {
+        return macos::open_accessibility_settings();
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err(AppError::UnsupportedPlatformFeature(
+            "accessibility settings are only available on macOS".to_string(),
+        ))
+    }
+}
+
 pub fn create_platform_clipboard() -> Result<Arc<dyn PlatformClipboard>, AppError> {
     #[cfg(target_os = "macos")]
     {

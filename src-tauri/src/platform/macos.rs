@@ -18,11 +18,19 @@ use super::{
 };
 
 const KEY_V: u16 = 0x09;
+const OPEN_EXECUTABLE: &str = "open";
 const OSASCRIPT_EXECUTABLE: &str = "osascript";
+const ACCESSIBILITY_SETTINGS_URL: &str =
+    "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
 const FRONTMOST_BUNDLE_ID_SCRIPT: &str =
     "tell application \"System Events\" to get bundle identifier of first application process whose frontmost is true";
 const FRONTMOST_NAME_SCRIPT: &str =
     "tell application \"System Events\" to get name of first application process whose frontmost is true";
+
+#[link(name = "ApplicationServices", kind = "framework")]
+unsafe extern "C" {
+    fn AXIsProcessTrusted() -> bool;
+}
 
 pub struct MacosPlatformClipboard {
     clipboard: Mutex<Clipboard>,
@@ -188,6 +196,47 @@ impl PlatformActiveAppDetector for MacosActiveAppDetector {
     }
 }
 
+pub fn detect_accessibility_permission() -> bool {
+    unsafe { AXIsProcessTrusted() }
+}
+
+pub fn open_accessibility_settings() -> Result<(), AppError> {
+    open_accessibility_settings_with_launcher(&CommandAccessibilitySettingsLauncher)
+}
+
+trait AccessibilitySettingsLauncher {
+    fn open(&self, target: &str) -> Result<(), AppError>;
+}
+
+struct CommandAccessibilitySettingsLauncher;
+
+impl AccessibilitySettingsLauncher for CommandAccessibilitySettingsLauncher {
+    fn open(&self, target: &str) -> Result<(), AppError> {
+        let status = Command::new(OPEN_EXECUTABLE)
+            .arg(target)
+            .status()
+            .map_err(|error| {
+                AppError::UnsupportedPlatformFeature(format!(
+                    "launch accessibility settings failed: {error}"
+                ))
+            })?;
+
+        if !status.success() {
+            return Err(AppError::UnsupportedPlatformFeature(format!(
+                "open accessibility settings failed with status `{status}`"
+            )));
+        }
+
+        Ok(())
+    }
+}
+
+fn open_accessibility_settings_with_launcher(
+    launcher: &dyn AccessibilitySettingsLauncher,
+) -> Result<(), AppError> {
+    launcher.open(ACCESSIBILITY_SETTINGS_URL)
+}
+
 fn run_osascript(script: &str) -> Result<String, AppError> {
     let output = Command::new(OSASCRIPT_EXECUTABLE)
         .args(["-e", script])
@@ -202,4 +251,65 @@ fn run_osascript(script: &str) -> Result<String, AppError> {
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
+    use crate::error::AppError;
+
+    use super::{
+        open_accessibility_settings_with_launcher, AccessibilitySettingsLauncher,
+        ACCESSIBILITY_SETTINGS_URL,
+    };
+
+    #[derive(Default, Clone)]
+    struct LauncherState {
+        targets: Vec<String>,
+        fail: bool,
+    }
+
+    #[derive(Clone)]
+    struct MockLauncher {
+        state: Rc<RefCell<LauncherState>>,
+    }
+
+    impl MockLauncher {
+        fn new() -> (Self, Rc<RefCell<LauncherState>>) {
+            let state = Rc::new(RefCell::new(LauncherState::default()));
+            (
+                Self {
+                    state: state.clone(),
+                },
+                state,
+            )
+        }
+    }
+
+    impl AccessibilitySettingsLauncher for MockLauncher {
+        fn open(&self, target: &str) -> Result<(), AppError> {
+            self.state.borrow_mut().targets.push(target.to_string());
+            if self.state.borrow().fail {
+                return Err(AppError::UnsupportedPlatformFeature(
+                    "open failed".to_string(),
+                ));
+            }
+
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn open_accessibility_settings_uses_expected_url() {
+        let (launcher, state) = MockLauncher::new();
+
+        open_accessibility_settings_with_launcher(&launcher)
+            .expect("accessibility settings should open");
+
+        assert_eq!(
+            state.borrow().targets,
+            vec![ACCESSIBILITY_SETTINGS_URL.to_string()]
+        );
+    }
 }

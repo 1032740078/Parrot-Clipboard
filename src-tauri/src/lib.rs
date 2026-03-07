@@ -149,6 +149,8 @@ pub fn run() {
             ipc::commands::write_client_log,
             ipc::commands::get_log_directory,
             ipc::commands::get_release_info,
+            ipc::commands::get_permission_status,
+            ipc::commands::open_accessibility_settings,
             ipc::commands::get_diagnostics_snapshot,
             ipc::commands::show_settings_window,
             ipc::commands::show_about_window,

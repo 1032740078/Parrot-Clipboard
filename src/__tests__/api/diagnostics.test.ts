@@ -5,7 +5,13 @@ import {
   __setInvokeHandler,
   invokeCalls,
 } from "../../__mocks__/@tauri-apps/api/core";
-import { getDiagnosticsSnapshot, getReleaseInfo, showAboutWindow } from "../../api/diagnostics";
+import {
+  getDiagnosticsSnapshot,
+  getPermissionStatus,
+  getReleaseInfo,
+  openAccessibilitySettings,
+  showAboutWindow,
+} from "../../api/diagnostics";
 
 const releaseInfo = {
   app_version: "1.0.0",
@@ -87,6 +93,26 @@ describe("api/diagnostics", () => {
 
     await expect(showAboutWindow()).resolves.toBeUndefined();
     expect(invokeCalls).toEqual([{ command: "show_about_window", args: undefined }]);
+  });
+
+  it("权限相关命令调用对应接口", async () => {
+    __setInvokeHandler(async (command) => {
+      if (command === "get_permission_status") {
+        return diagnosticsSnapshot.permission;
+      }
+      if (command === "open_accessibility_settings") {
+        return undefined;
+      }
+
+      throw new Error(`unexpected command: ${command}`);
+    });
+
+    await expect(getPermissionStatus()).resolves.toEqual(diagnosticsSnapshot.permission);
+    await expect(openAccessibilitySettings()).resolves.toBeUndefined();
+    expect(invokeCalls).toEqual([
+      { command: "get_permission_status", args: undefined },
+      { command: "open_accessibility_settings", args: undefined },
+    ]);
   });
 
   it("命令失败时会记录日志并继续抛错", async () => {

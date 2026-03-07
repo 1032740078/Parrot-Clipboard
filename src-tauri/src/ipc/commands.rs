@@ -13,7 +13,7 @@ use crate::{
         },
         AppConfig,
     },
-    diagnostics::{self, DiagnosticsSnapshot, ReleaseInfo},
+    diagnostics::{self, DiagnosticsSnapshot, PermissionStatus, ReleaseInfo},
     error::AppError,
     logging::{self, ClientLogLevel},
     platform::PlatformCapabilities,
@@ -265,6 +265,27 @@ pub fn get_release_info(state: State<'_, AppState>) -> ReleaseInfo {
     );
 
     release_info
+}
+
+#[tauri::command]
+pub fn get_permission_status() -> PermissionStatus {
+    let capabilities = crate::platform::PlatformCapabilityResolver::current().resolve();
+    let permission_status = diagnostics::build_permission_status(&capabilities);
+
+    tracing::debug!(
+        platform = ?permission_status.platform,
+        accessibility = ?permission_status.accessibility,
+        "ipc get_permission_status requested"
+    );
+
+    permission_status
+}
+
+#[tauri::command]
+pub fn open_accessibility_settings() -> Result<(), AppError> {
+    crate::platform::open_accessibility_settings()?;
+    tracing::info!("ipc open_accessibility_settings completed");
+    Ok(())
 }
 
 #[tauri::command]
