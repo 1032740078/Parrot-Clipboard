@@ -9,6 +9,8 @@ import {
   getSettingsSnapshot,
   updateGeneralSettings,
   updateHistorySettings,
+  updateToggleShortcut,
+  validateToggleShortcut,
 } from "../../api/settings";
 
 const settingsSnapshot = {
@@ -27,12 +29,19 @@ const settingsSnapshot = {
     capture_files: true,
   },
   shortcut: {
-    toggle_panel: "Shift+Ctrl+V",
-    platform_default: "Shift+Ctrl+V",
+    toggle_panel: "shift+control+v",
+    platform_default: "shift+control+v",
   },
   privacy: {
     blacklist_rules: [],
   },
+};
+
+const validationResult = {
+  normalized_shortcut: "shift+control+v",
+  valid: true,
+  conflict: false,
+  reason: null,
 };
 
 describe("api/settings", () => {
@@ -40,10 +49,17 @@ describe("api/settings", () => {
     __resetInvokeMock();
   });
 
-  it("读取并保存设置时调用对应命令", async () => {
-    __setInvokeHandler(async () => settingsSnapshot);
+  it("读取、校验并保存设置时调用对应命令", async () => {
+    __setInvokeHandler(async (command) => {
+      if (command === "validate_toggle_shortcut") {
+        return validationResult;
+      }
+
+      return settingsSnapshot;
+    });
 
     await expect(getSettingsSnapshot()).resolves.toEqual(settingsSnapshot);
+    await expect(validateToggleShortcut("Ctrl+Shift+V")).resolves.toEqual(validationResult);
     await expect(
       updateGeneralSettings({
         theme: "dark",
@@ -61,9 +77,11 @@ describe("api/settings", () => {
         capture_files: false,
       })
     ).resolves.toEqual(settingsSnapshot);
+    await expect(updateToggleShortcut("shift+alt+v")).resolves.toEqual(settingsSnapshot);
 
     expect(invokeCalls).toEqual([
       { command: "get_settings_snapshot", args: undefined },
+      { command: "validate_toggle_shortcut", args: { shortcut: "Ctrl+Shift+V" } },
       {
         command: "update_general_settings",
         args: {
@@ -83,6 +101,7 @@ describe("api/settings", () => {
           capture_files: false,
         },
       },
+      { command: "update_toggle_shortcut", args: { shortcut: "shift+alt+v" } },
     ]);
   });
 
@@ -92,6 +111,7 @@ describe("api/settings", () => {
     });
 
     await expect(getSettingsSnapshot()).rejects.toThrow("boom");
+    await expect(validateToggleShortcut("Ctrl+Shift+V")).rejects.toThrow("boom");
     await expect(
       updateGeneralSettings({
         theme: "light",
@@ -109,5 +129,6 @@ describe("api/settings", () => {
         capture_files: true,
       })
     ).rejects.toThrow("boom");
+    await expect(updateToggleShortcut("shift+alt+v")).rejects.toThrow("boom");
   });
 });

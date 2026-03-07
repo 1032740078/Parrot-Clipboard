@@ -112,6 +112,13 @@ export interface ShortcutSettingsSnapshot {
   platform_default: string;
 }
 
+export interface ShortcutValidationResult {
+  normalized_shortcut: string;
+  valid: boolean;
+  conflict: boolean;
+  reason?: string | null;
+}
+
 export interface PrivacySettingsSnapshot {
   blacklist_rules: Array<Record<string, unknown>>;
 }

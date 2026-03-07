@@ -17,6 +17,7 @@ use crate::{
     logging::{self, ClientLogLevel},
     platform::PlatformCapabilities,
     settings::{SettingsError, SettingsProfile},
+    shortcut::{self, ShortcutValidationResult},
     state::AppState,
     tray,
     window::settings_window::show_or_focus_settings_window,
@@ -339,6 +340,60 @@ pub fn update_history_settings(
         max_image_records = snapshot.history.max_image_records,
         "ipc update_history_settings completed"
     );
+    Ok(snapshot)
+}
+
+#[tauri::command]
+pub fn validate_toggle_shortcut(shortcut: String) -> ShortcutValidationResult {
+    let capabilities = crate::platform::PlatformCapabilityResolver::current().resolve();
+    let result = shortcut::validate_toggle_shortcut(&shortcut, &capabilities);
+    tracing::debug!(shortcut = %shortcut, valid = result.valid, conflict = result.conflict, "ipc validate_toggle_shortcut completed");
+    result
+}
+
+#[tauri::command]
+pub fn update_toggle_shortcut(
+    shortcut: String,
+    app_handle: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<SettingsSnapshot, AppError> {
+    tracing::info!(shortcut = %shortcut, "ipc update_toggle_shortcut requested");
+    let capabilities = crate::platform::PlatformCapabilityResolver::current().resolve();
+    let validation = shortcut::validate_toggle_shortcut(&shortcut, &capabilities);
+
+    if !validation.valid || validation.conflict {
+        return Err(AppError::InvalidParam(
+            validation
+                .reason
+                .clone()
+                .unwrap_or_else(|| "快捷键不可用".to_string()),
+        ));
+    }
+
+    let current = state.config_store.current();
+    let current_shortcut = current.shortcut.toggle_panel.clone();
+    let normalized = validation.normalized_shortcut.clone();
+
+    let mut profile = SettingsProfile::new(current).map_err(map_settings_error)?;
+    profile
+        .update_shortcut(crate::config::schema::ShortcutConfig {
+            toggle_panel: normalized.clone(),
+        })
+        .map_err(map_settings_error)?;
+
+    shortcut::reregister_toggle_shortcut(
+        &app_handle,
+        &current_shortcut,
+        &normalized,
+        state.window_manager.clone(),
+    )?;
+
+    let persisted = state
+        .config_store
+        .replace(profile.snapshot())
+        .map_err(AppError::FileAccess)?;
+    let snapshot = build_settings_snapshot(&persisted);
+    tracing::info!(shortcut = %snapshot.shortcut.toggle_panel, "ipc update_toggle_shortcut completed");
     Ok(snapshot)
 }
 

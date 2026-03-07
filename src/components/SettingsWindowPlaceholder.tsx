@@ -4,11 +4,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { getPlatformCapabilities } from "../api/commands";
 import { getErrorMessage } from "../api/errorHandler";
 import { logger, normalizeError } from "../api/logger";
-import { getSettingsSnapshot, updateGeneralSettings, updateHistorySettings } from "../api/settings";
+import {
+  getSettingsSnapshot,
+  updateGeneralSettings,
+  updateHistorySettings,
+  updateToggleShortcut,
+  validateToggleShortcut,
+} from "../api/settings";
 import type {
   CapabilityState,
   PlatformCapabilities,
   SettingsSnapshot,
+  ShortcutValidationResult,
   ThemeMode,
 } from "../api/types";
 import { ConfirmDialog } from "./common/ConfirmDialog";
@@ -38,7 +45,7 @@ interface SettingsHistoryDraft {
   captureFiles: boolean;
 }
 
-interface SettingsShortcutPreview {
+interface SettingsShortcutDraft {
   togglePanel: string;
   platformDefault: string;
 }
@@ -50,7 +57,7 @@ interface SettingsPrivacyPreview {
 interface SettingsDrafts {
   general: SettingsGeneralDraft;
   history: SettingsHistoryDraft;
-  shortcut: SettingsShortcutPreview;
+  shortcut: SettingsShortcutDraft;
   privacy: SettingsPrivacyPreview;
 }
 
@@ -119,7 +126,7 @@ const SETTINGS_SECTIONS: Array<{
     key: "shortcut",
     label: "快捷键",
     title: "快捷键设置",
-    description: "展示快捷键录制区域与平台限制提示位置。",
+    description: "录制、校验并保存调出主面板的全局快捷键。",
   },
   {
     key: "privacy",
@@ -164,8 +171,8 @@ const buildFallbackDrafts = (): SettingsDrafts => ({
     captureFiles: true,
   },
   shortcut: {
-    togglePanel: "Shift+Ctrl+V",
-    platformDefault: "Shift+Ctrl+V",
+    togglePanel: "shift+control+v",
+    platformDefault: "shift+control+v",
   },
   privacy: {
     blacklistRuleCount: 0,
@@ -232,6 +239,103 @@ const isSectionDirty = (
   section: SettingsSectionKey
 ): boolean => {
   return JSON.stringify(currentDrafts[section]) !== JSON.stringify(savedDrafts[section]);
+};
+
+const formatShortcutLabel = (
+  shortcut: string,
+  platform: PlatformCapabilities["platform"] | undefined
+): string => {
+  if (!shortcut.trim()) {
+    return "未设置";
+  }
+
+  return shortcut
+    .split("+")
+    .map((token) => {
+      const normalized = token.trim().toLowerCase();
+      switch (normalized) {
+        case "shift":
+          return "Shift";
+        case "control":
+          return "Ctrl";
+        case "alt":
+          return "Alt";
+        case "super":
+          return platform === "macos" ? "Command" : "Super";
+        default:
+          return normalized.length === 1
+            ? normalized.toUpperCase()
+            : normalized[0].toUpperCase() + normalized.slice(1);
+      }
+    })
+    .join(" + ");
+};
+
+const normalizeShortcutKey = (key: string): string | null => {
+  const modifierKeys = new Set(["Shift", "Control", "Alt", "Meta", "Super", "Command"]);
+  if (modifierKeys.has(key)) {
+    return null;
+  }
+
+  if (key.length === 1) {
+    return key.toUpperCase();
+  }
+
+  const specialKeys: Record<string, string> = {
+    Escape: "Escape",
+    Tab: "Tab",
+    Enter: "Enter",
+    Backspace: "Backspace",
+    Delete: "Delete",
+    Space: "Space",
+    " ": "Space",
+    ArrowUp: "Up",
+    ArrowDown: "Down",
+    ArrowLeft: "Left",
+    ArrowRight: "Right",
+    Home: "Home",
+    End: "End",
+    PageUp: "PageUp",
+    PageDown: "PageDown",
+    Insert: "Insert",
+  };
+
+  if (key in specialKeys) {
+    return specialKeys[key];
+  }
+
+  if (/^F\d{1,2}$/i.test(key)) {
+    return key.toUpperCase();
+  }
+
+  return null;
+};
+
+const buildShortcutCandidateFromKeyboardEvent = (
+  event: KeyboardEvent,
+  platform: PlatformCapabilities["platform"] | undefined
+): string | null => {
+  const keyToken = normalizeShortcutKey(event.key);
+  if (!keyToken) {
+    return null;
+  }
+
+  const tokens: string[] = [];
+  if (event.shiftKey) {
+    tokens.push("Shift");
+  }
+  if (event.ctrlKey) {
+    tokens.push("Control");
+  }
+  if (event.altKey) {
+    tokens.push("Alt");
+  }
+  if (event.metaKey) {
+    tokens.push(platform === "macos" ? "Command" : "Super");
+  }
+  tokens.push(keyToken);
+
+  return tokens.join("+");
 };
 
 const CapabilitySummaryGrid = ({ capabilities }: { capabilities: PlatformCapabilities | null }) => {
@@ -344,6 +448,10 @@ export const SettingsWindowPlaceholder = () => {
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isShortcutRecording, setIsShortcutRecording] = useState(false);
+  const [shortcutValidation, setShortcutValidation] = useState<ShortcutValidationResult | null>(
+    null
+  );
 
   const hasUnsavedChanges = useMemo(
     () => SETTINGS_SECTIONS.some((section) => isSectionDirty(drafts, savedDrafts, section.key)),
@@ -357,8 +465,15 @@ export const SettingsWindowPlaceholder = () => {
   );
   const hasUnsavedChangesRef = useRef(hasUnsavedChanges);
   const forceCloseRef = useRef(false);
+  const canSaveShortcut =
+    activeSection === "shortcut" &&
+    currentSectionDirty &&
+    Boolean(shortcutValidation?.valid) &&
+    !shortcutValidation?.conflict &&
+    capabilities?.global_shortcut === "supported";
   const canSaveCurrentSection =
-    (activeSection === "general" || activeSection === "history") && currentSectionDirty;
+    ((activeSection === "general" || activeSection === "history") && currentSectionDirty) ||
+    canSaveShortcut;
 
   useEffect(() => {
     hasUnsavedChangesRef.current = hasUnsavedChanges;
@@ -381,6 +496,12 @@ export const SettingsWindowPlaceholder = () => {
         setCapabilities(capabilitySnapshot);
         setDrafts(nextDrafts);
         setSavedDrafts(nextDrafts);
+        setShortcutValidation({
+          normalized_shortcut: settingsSnapshot.shortcut.toggle_panel,
+          valid: true,
+          conflict: false,
+          reason: null,
+        });
       } catch (error) {
         logger.error("读取设置窗口初始化数据失败", { error: normalizeError(error) });
         if (!active) {
@@ -429,10 +550,39 @@ export const SettingsWindowPlaceholder = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (activeSection !== "shortcut" || !isShortcutRecording) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const candidate = buildShortcutCandidateFromKeyboardEvent(event, capabilities?.platform);
+      if (!candidate) {
+        return;
+      }
+
+      event.preventDefault();
+      setIsShortcutRecording(false);
+      void applyShortcutCandidate(candidate);
+    };
+
+    window.addEventListener("keydown", handleKeyDown, true);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [activeSection, isShortcutRecording, capabilities?.platform]);
+
   const applySettingsSnapshot = (snapshot: SettingsSnapshot): void => {
     const nextDrafts = buildDraftsFromSnapshot(snapshot);
     setDrafts(nextDrafts);
     setSavedDrafts(nextDrafts);
+    setShortcutValidation({
+      normalized_shortcut: snapshot.shortcut.toggle_panel,
+      valid: true,
+      conflict: false,
+      reason: null,
+    });
   };
 
   const handleSectionClick = (section: SettingsSectionKey): void => {
@@ -453,6 +603,15 @@ export const SettingsWindowPlaceholder = () => {
       ...currentDrafts,
       [activeSection]: savedDrafts[activeSection],
     }));
+    if (activeSection === "shortcut") {
+      setShortcutValidation({
+        normalized_shortcut: savedDrafts.shortcut.togglePanel,
+        valid: true,
+        conflict: false,
+        reason: null,
+      });
+      setIsShortcutRecording(false);
+    }
   };
 
   const handleDiscardPendingAction = async (): Promise<void> => {
@@ -465,6 +624,15 @@ export const SettingsWindowPlaceholder = () => {
         ...currentDrafts,
         [activeSection]: savedDrafts[activeSection],
       }));
+      if (activeSection === "shortcut") {
+        setShortcutValidation({
+          normalized_shortcut: savedDrafts.shortcut.togglePanel,
+          valid: true,
+          conflict: false,
+          reason: null,
+        });
+        setIsShortcutRecording(false);
+      }
       setActiveSection(pendingAction.targetSection);
       setPendingAction(null);
       return;
@@ -480,6 +648,27 @@ export const SettingsWindowPlaceholder = () => {
         forceCloseRef.current = false;
         logger.error("关闭设置窗口失败", { error: normalizeError(error) });
       }
+    }
+  };
+
+  const applyShortcutCandidate = async (candidate: string): Promise<void> => {
+    try {
+      const validation = await validateToggleShortcut(candidate);
+      const normalized = validation.normalized_shortcut || candidate.trim().toLowerCase();
+      setDrafts((currentDrafts) => ({
+        ...currentDrafts,
+        shortcut: {
+          ...currentDrafts.shortcut,
+          togglePanel: normalized,
+        },
+      }));
+      setShortcutValidation(validation);
+    } catch (error) {
+      setToast({
+        level: "error",
+        message: getErrorMessage(error),
+        duration: 2600,
+      });
     }
   };
 
@@ -511,6 +700,12 @@ export const SettingsWindowPlaceholder = () => {
         });
         applySettingsSnapshot(snapshot);
         setToast({ level: "info", message: "记录与存储设置已保存", duration: 2500 });
+      }
+
+      if (activeSection === "shortcut") {
+        const snapshot = await updateToggleShortcut(drafts.shortcut.togglePanel);
+        applySettingsSnapshot(snapshot);
+        setToast({ level: "info", message: "快捷键已更新", duration: 2500 });
       }
     } catch (error) {
       setToast({
@@ -724,16 +919,59 @@ export const SettingsWindowPlaceholder = () => {
         return (
           <div className="flex flex-col gap-4">
             <article className="rounded-2xl border border-white/10 bg-slate-950/60 p-5">
-              <p className="text-sm font-medium text-white">快捷键录制器壳层</p>
-              <p className="mt-2 text-sm leading-6 text-slate-300">
-                录制、冲突校验与恢复默认将在后续任务接入；当前先显示已保存快捷键与平台默认值。
-              </p>
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-white">快捷键录制器</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-300">
+                    点击录制后按下新的组合键；保存成功后旧快捷键立即失效，新快捷键立即生效。
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    className="rounded-xl border border-white/10 px-4 py-2 text-sm text-slate-100 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={capabilities?.global_shortcut !== "supported"}
+                    onClick={() => {
+                      setIsShortcutRecording(true);
+                      setShortcutValidation(null);
+                    }}
+                    type="button"
+                  >
+                    {isShortcutRecording ? "请按下新的组合键" : "开始录制"}
+                  </button>
+                  <button
+                    className="rounded-xl border border-white/10 px-4 py-2 text-sm text-slate-100 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={capabilities?.global_shortcut !== "supported"}
+                    onClick={() => {
+                      void applyShortcutCandidate(drafts.shortcut.platformDefault);
+                    }}
+                    type="button"
+                  >
+                    恢复默认值
+                  </button>
+                </div>
+              </div>
+
               <div className="mt-4 rounded-xl border border-white/10 bg-white/5 px-4 py-4">
                 <p className="text-xs uppercase tracking-[0.18em] text-slate-400">当前快捷键</p>
-                <p className="mt-2 text-lg font-medium text-white">{drafts.shortcut.togglePanel}</p>
-                <p className="mt-2 text-sm text-slate-300">
-                  平台默认值：{drafts.shortcut.platformDefault}
+                <p className="mt-2 text-lg font-medium text-white">
+                  {formatShortcutLabel(drafts.shortcut.togglePanel, capabilities?.platform)}
                 </p>
+                <p className="mt-2 text-sm text-slate-300">
+                  平台默认值：
+                  {formatShortcutLabel(drafts.shortcut.platformDefault, capabilities?.platform)}
+                </p>
+              </div>
+
+              <div
+                className={`mt-4 rounded-xl border px-4 py-4 text-sm ${isShortcutRecording ? "border-sky-400/20 bg-sky-400/10 text-sky-50" : shortcutValidation?.reason ? (shortcutValidation.conflict || !shortcutValidation.valid ? "border-rose-400/20 bg-rose-400/10 text-rose-50" : "border-amber-400/20 bg-amber-400/10 text-amber-50") : "border-emerald-400/20 bg-emerald-400/10 text-emerald-50"}`}
+              >
+                {isShortcutRecording ? (
+                  <p>请按下新的组合键</p>
+                ) : shortcutValidation?.reason ? (
+                  <p>{shortcutValidation.reason}</p>
+                ) : (
+                  <p>当前组合键已通过校验，保存后会立即重注册。</p>
+                )}
               </div>
             </article>
             <CapabilityNotice
@@ -783,7 +1021,7 @@ export const SettingsWindowPlaceholder = () => {
             </p>
             <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white">设置中心</h1>
             <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-300">
-              当前任务已完成通用页与记录页表单保存，快捷键和隐私页则继续复用已搭好的壳层与能力提示区域。
+              当前任务已完成快捷键录制、冲突校验、恢复默认与保存，设置窗口的核心交互链路已经基本具备。
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -857,7 +1095,9 @@ export const SettingsWindowPlaceholder = () => {
                 >
                   {isSaving
                     ? "保存中..."
-                    : activeSection === "general" || activeSection === "history"
+                    : activeSection === "general" ||
+                        activeSection === "history" ||
+                        activeSection === "shortcut"
                       ? "保存本页"
                       : "当前页稍后接入"}
                 </button>
