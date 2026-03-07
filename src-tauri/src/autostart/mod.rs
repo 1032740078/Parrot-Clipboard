@@ -1,5 +1,7 @@
 use std::{fs, path::PathBuf, sync::Arc};
 
+pub mod windows;
+
 use tauri::{process::current_binary, AppHandle, Manager};
 
 use crate::error::AppError;
@@ -8,6 +10,64 @@ pub trait AutostartControl: Send + Sync {
     fn is_enabled(&self) -> Result<bool, AppError>;
     fn set_enabled(&self, enabled: bool) -> Result<bool, AppError>;
     fn reconcile(&self, enabled: bool) -> Result<bool, AppError>;
+}
+
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub struct UnavailableAutostartService {
+    message: String,
+}
+
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+impl UnavailableAutostartService {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
+impl AutostartControl for UnavailableAutostartService {
+    fn is_enabled(&self) -> Result<bool, AppError> {
+        Ok(false)
+    }
+
+    fn set_enabled(&self, enabled: bool) -> Result<bool, AppError> {
+        if enabled {
+            return Err(AppError::Autostart(self.message.clone()));
+        }
+
+        Ok(false)
+    }
+
+    fn reconcile(&self, enabled: bool) -> Result<bool, AppError> {
+        if enabled {
+            return Err(AppError::Autostart(self.message.clone()));
+        }
+
+        Ok(false)
+    }
+}
+
+pub fn create_autostart_service(
+    app_handle: &AppHandle,
+) -> Result<Arc<dyn AutostartControl>, AppError> {
+    #[cfg(target_os = "macos")]
+    {
+        return Ok(LaunchAgentService::initialize(app_handle)?);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        return Ok(WindowsAutostartService::initialize(app_handle)?);
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = app_handle;
+        Ok(Arc::new(UnavailableAutostartService::new(
+            "current platform autostart support is pending",
+        )))
+    }
 }
 
 pub struct LaunchAgentService {

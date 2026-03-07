@@ -18,7 +18,7 @@ mod window;
 
 use std::{error::Error, sync::Arc, time::Duration};
 
-use autostart::{AutostartControl, LaunchAgentService};
+use autostart::{create_autostart_service, AutostartControl};
 use clipboard::{
     monitor::{ClipboardMonitorControl, ClipboardMonitorService, DomainEventEmitter},
     runtime_repository::{ClipboardRuntimeRepository, SqliteClipboardRuntimeRepository},
@@ -27,7 +27,8 @@ use image::ImageStorageService;
 use ipc::events::TauriEventEmitter;
 use paste::PasteService;
 use platform::{
-    MacosKeySimulator, MacosPlatformClipboard, PlatformClipboard, PlatformKeySimulator,
+    create_platform_clipboard, create_platform_key_simulator, PlatformClipboard,
+    PlatformKeySimulator,
 };
 use shortcut::register_toggle_shortcut;
 use state::AppState;
@@ -54,7 +55,7 @@ pub fn run() {
             let image_storage = Arc::new(
                 ImageStorageService::initialize(&app_handle).map_err(std::io::Error::other)?,
             );
-            let autostart: Arc<dyn AutostartControl> = LaunchAgentService::initialize(&app_handle)?;
+            let autostart: Arc<dyn AutostartControl> = create_autostart_service(&app_handle)?;
 
             if let Err(error) = autostart.reconcile(config.launch_at_login()) {
                 tracing::warn!(error = %error, "launch agent reconcile failed during setup");
@@ -71,9 +72,8 @@ pub fn run() {
             let event_emitter: Arc<dyn DomainEventEmitter> =
                 Arc::new(TauriEventEmitter::new(app_handle.clone()));
 
-            let platform_clipboard: Arc<dyn PlatformClipboard> =
-                Arc::new(MacosPlatformClipboard::new()?);
-            let platform_key_sim: Arc<dyn PlatformKeySimulator> = Arc::new(MacosKeySimulator);
+            let platform_clipboard: Arc<dyn PlatformClipboard> = create_platform_clipboard()?;
+            let platform_key_sim: Arc<dyn PlatformKeySimulator> = create_platform_key_simulator()?;
 
             let monitor_service = Arc::new(ClipboardMonitorService::new(
                 repository.clone(),

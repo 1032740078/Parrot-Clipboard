@@ -1,9 +1,44 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 use crate::{clipboard::payload::ClipboardImageData, error::AppError};
 
 pub mod capabilities;
+pub mod windows;
 pub use capabilities::{PlatformCapabilities, PlatformCapabilityResolver};
+
+pub fn create_platform_clipboard() -> Result<Arc<dyn PlatformClipboard>, AppError> {
+    #[cfg(target_os = "macos")]
+    {
+        return Ok(Arc::new(MacosPlatformClipboard::new()?));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        return Ok(Arc::new(WindowsPlatformClipboard::new()?));
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        Ok(Arc::new(MacosPlatformClipboard::new()?))
+    }
+}
+
+pub fn create_platform_key_simulator() -> Result<Arc<dyn PlatformKeySimulator>, AppError> {
+    #[cfg(target_os = "macos")]
+    {
+        return Ok(Arc::new(MacosKeySimulator));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        return Ok(Arc::new(WindowsKeySimulator));
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        Ok(Arc::new(MacosKeySimulator))
+    }
+}
 
 pub trait PlatformClipboard: Send + Sync {
     fn read_text(&self) -> Result<Option<String>, AppError>;
