@@ -13,6 +13,7 @@ import type {
   ClipboardRecordSummary,
   LegacyClipboardRecord,
   MonitoringStatus,
+  PanelVisibilityReason,
   PasteMode,
   PasteResult,
   PlatformCapabilities,
@@ -96,11 +97,11 @@ export const pasteRecord = async (
   }
 };
 
-export const hidePanel = async (): Promise<void> => {
+export const hidePanel = async (reason?: PanelVisibilityReason): Promise<void> => {
   try {
-    await invoke<void>("hide_panel");
+    await invoke<void>("hide_panel", reason ? { reason } : undefined);
   } catch (error) {
-    logger.error("隐藏面板失败", { error: normalizeError(error) });
+    logger.error("隐藏面板失败", { reason, error: normalizeError(error) });
     throw error;
   }
 };

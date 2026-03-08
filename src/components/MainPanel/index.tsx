@@ -152,6 +152,7 @@ export const MainPanel = () => {
               </span>
               <span>Delete 删除</span>
               <span>1-9 快选</span>
+              <span>⌘+1-9 快贴</span>
               <span>Esc 关闭</span>
             </footer>
           </div>

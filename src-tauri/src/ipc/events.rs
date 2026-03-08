@@ -57,7 +57,7 @@ pub struct MonitoringChangedPayload {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, Copy, serde::Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum PanelVisibilityReasonPayload {
     ToggleShortcut,

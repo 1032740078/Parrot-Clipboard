@@ -117,7 +117,6 @@ pub fn delete_record(id: u64, state: State<'_, AppState>) -> Result<(), AppError
 pub async fn paste_record(
     id: u64,
     mode: PasteMode,
-    app_handle: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<PasteResult, AppError> {
     tracing::info!(record_id = id, ?mode, "ipc paste_record requested");
@@ -131,13 +130,6 @@ pub async fn paste_record(
             state
                 .event_emitter
                 .emit_record_updated(RecordUpdateReason::Promoted, paste_result.record.clone())?;
-            emit_panel_visibility_changed(
-                &app_handle,
-                false,
-                PanelVisibilityReasonPayload::PasteCompleted,
-                Some(paste_result.record.id),
-            )?;
-            tray::refresh(&app_handle)?;
             tracing::info!(
                 record_id = paste_result.record.id,
                 "ipc paste_record completed"
@@ -152,15 +144,17 @@ pub async fn paste_record(
 #[tauri::command]
 pub fn hide_panel(
     app_handle: tauri::AppHandle,
+    reason: Option<PanelVisibilityReasonPayload>,
     state: State<'_, AppState>,
 ) -> Result<(), AppError> {
     tracing::debug!("ipc hide_panel requested");
     match state.window_manager.hide() {
         Ok(()) => {
+            let reason = reason.unwrap_or(PanelVisibilityReasonPayload::Escape);
             emit_panel_visibility_changed(
                 &app_handle,
                 false,
-                PanelVisibilityReasonPayload::Escape,
+                reason,
                 None,
             )?;
             tray::refresh(&app_handle)?;

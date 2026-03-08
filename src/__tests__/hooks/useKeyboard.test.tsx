@@ -8,6 +8,7 @@ import {
 } from "../../__mocks__/@tauri-apps/api/core";
 import { useKeyboard } from "../../hooks/useKeyboard";
 import { useClipboardStore } from "../../stores/useClipboardStore";
+import { useSystemStore } from "../../stores/useSystemStore";
 import { useUIStore } from "../../stores/useUIStore";
 import { buildImageRecord, buildRecord } from "../fixtures/clipboardRecords";
 
@@ -19,9 +20,27 @@ const HookContainer = () => {
 describe("useKeyboard", () => {
   beforeEach(() => {
     useClipboardStore.getState().reset();
+    useSystemStore.getState().reset();
     useUIStore.getState().reset();
     __resetInvokeMock();
     __setInvokeHandler(async () => undefined);
+  });
+
+  it("UT-FE-KB-101 1~9 单按仍然只做快选，不会直接触发粘贴", async () => {
+    const store = useClipboardStore.getState();
+    store.hydrate([buildRecord(1, "A", 1000), buildRecord(2, "B", 999)]);
+    store.selectIndex(0);
+    useUIStore.getState().showPanel();
+
+    render(<HookContainer />);
+
+    fireEvent.keyDown(window, { key: "2" });
+
+    await waitFor(() => {
+      expect(useClipboardStore.getState().selectedIndex).toBe(1);
+    });
+
+    expect(invokeCalls.some((call) => call.command === "paste_record")).toBe(false);
   });
 
   it("ArrowRight / ArrowLeft 切换选中索引", () => {
@@ -154,13 +173,86 @@ describe("useKeyboard", () => {
     fireEvent.keyDown(window, { key: "Enter" });
 
     await waitFor(() => {
-      expect(invokeCalls.some((call) => call.command === "paste_record")).toBe(true);
-      expect(invokeCalls.some((call) => call.command === "hide_panel")).toBe(true);
+      expect(invokeCalls.find((call) => call.command === "paste_record")).toEqual({
+        command: "paste_record",
+        args: { id: 2, mode: "original" },
+      });
+      expect(invokeCalls.find((call) => call.command === "hide_panel")).toEqual({
+        command: "hide_panel",
+        args: { reason: "paste_completed" },
+      });
     });
 
     expect(useClipboardStore.getState().records.map((record) => record.id)).toEqual([2, 1]);
     expect(useClipboardStore.getState().selectedIndex).toBe(0);
     expect(useUIStore.getState().isPanelVisible).toBe(false);
+  });
+
+  it("UT-FE-KB-102 Command+1~9 直接触发快贴", async () => {
+    const store = useClipboardStore.getState();
+    const recordA = buildRecord(1, "A", 1000);
+    const recordB = buildRecord(2, "B", 999);
+    const recordC = buildRecord(3, "C", 998);
+    store.hydrate([recordA, recordB, recordC]);
+    store.selectIndex(0);
+    useUIStore.getState().showPanel();
+    useSystemStore.getState().setPermissionStatus({
+      platform: "macos",
+      accessibility: "granted",
+      checked_at: 1700000000000,
+    });
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "paste_record") {
+        const id = args?.id as number;
+        const record = [recordA, recordB, recordC].find((item) => item.id === id) ?? recordA;
+        return {
+          record: { ...record, last_used_at: 1400 },
+          paste_mode: "original",
+          executed_at: 1400,
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<HookContainer />);
+
+    fireEvent.keyDown(window, { key: "2", metaKey: true });
+
+    await waitFor(() => {
+      expect(invokeCalls.find((call) => call.command === "paste_record")).toEqual({
+        command: "paste_record",
+        args: { id: 2, mode: "original" },
+      });
+      expect(invokeCalls.find((call) => call.command === "hide_panel")).toEqual({
+        command: "hide_panel",
+        args: { reason: "quick_paste" },
+      });
+    });
+
+    expect(useClipboardStore.getState().selectedIndex).toBe(0);
+    expect(useClipboardStore.getState().records.map((record) => record.id)).toEqual([2, 1, 3]);
+    expect(useUIStore.getState().isPanelVisible).toBe(false);
+  });
+
+  it("UT-FE-KB-103 越界的 Command+数字 会被静默忽略", () => {
+    const store = useClipboardStore.getState();
+    store.hydrate([buildRecord(1, "A", 1000), buildRecord(2, "B", 999)]);
+    store.selectIndex(1);
+    useUIStore.getState().showPanel();
+    useSystemStore.getState().setPermissionStatus({
+      platform: "macos",
+      accessibility: "granted",
+      checked_at: 1700000000000,
+    });
+
+    render(<HookContainer />);
+
+    fireEvent.keyDown(window, { key: "9", metaKey: true });
+
+    expect(useClipboardStore.getState().selectedIndex).toBe(1);
+    expect(invokeCalls.some((call) => call.command === "paste_record")).toBe(false);
   });
 
   it("Shift+Enter 对文本记录触发 plain_text 粘贴并显示提示", async () => {

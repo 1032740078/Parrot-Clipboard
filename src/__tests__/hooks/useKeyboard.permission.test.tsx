@@ -49,4 +49,23 @@ describe("useKeyboard permission guidance", () => {
     expect(useUIStore.getState().toast?.message).toBe("请先完成辅助功能授权后再执行粘贴");
     expect(invokeCalls.some((call) => call.command === "paste_record")).toBe(false);
   });
+
+  it("UT-FE-KB-104 权限缺失时阻止 Command+数字 快贴并保持面板打开", async () => {
+    const store = useClipboardStore.getState();
+    store.hydrate([buildRecord(1, "A", 1000), buildRecord(2, "B", 999)]);
+    store.selectIndex(0);
+
+    render(<HookContainer />);
+
+    fireEvent.keyDown(window, { key: "2", metaKey: true });
+
+    await waitFor(() => {
+      expect(useUIStore.getState().permissionGuideVisible).toBe(true);
+    });
+
+    expect(useClipboardStore.getState().selectedIndex).toBe(1);
+    expect(useUIStore.getState().isPanelVisible).toBe(true);
+    expect(useUIStore.getState().toast?.message).toBe("请先完成辅助功能授权后再执行粘贴");
+    expect(invokeCalls.some((call) => call.command === "paste_record")).toBe(false);
+  });
 });

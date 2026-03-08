@@ -174,6 +174,7 @@ describe("MainPanel", () => {
     });
 
     expect(screen.getByText("1-9 快选")).toBeInTheDocument();
+    expect(screen.getByText("⌘+1-9 快贴")).toBeInTheDocument();
     expect(screen.getAllByTestId("quick-select-badge")).toHaveLength(9);
     expect(
       screen.getAllByTestId("quick-select-badge").map((element) => element.textContent)
