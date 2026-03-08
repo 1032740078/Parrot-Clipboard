@@ -20,7 +20,8 @@ interface ClipboardRecord {
   source_app?: string | null;
   created_at: number;
   last_used_at: number;
-  text_content?: string;
+  text_content?: string | null;
+  rich_content?: string | null;
   text_meta?: {
     char_count: number;
     line_count: number;
@@ -32,10 +33,25 @@ interface ClipboardRecord {
     thumbnail_path?: string | null;
     thumbnail_state: "pending" | "ready" | "failed";
   } | null;
+  image_detail?: {
+    original_path: string;
+    mime_type: string;
+    pixel_width: number;
+    pixel_height: number;
+    byte_size: number;
+  } | null;
   files_meta?: {
     count: number;
     primary_name: string;
     contains_directory: boolean;
+  } | null;
+  files_detail?: {
+    items: Array<{
+      path: string;
+      display_name: string;
+      entry_type: "file" | "directory";
+      extension?: string | null;
+    }>;
   } | null;
 }
 
@@ -156,6 +172,7 @@ interface ClipboardCaptureResult {
 }
 
 interface E2ETauriMock {
+  setRecords: (records: ClipboardRecord[]) => void;
   getRecords: () => ClipboardRecord[];
   getRuntimeStatus: () => RuntimeStatus;
   getSettingsSnapshot: () => SettingsSnapshot;
@@ -295,8 +312,63 @@ const buildTextRecord = (id: number, label: string, timestamp: number): Clipboar
   last_used_at: timestamp,
   text_meta: { char_count: label.length, line_count: 1 },
   image_meta: null,
+  image_detail: null,
   files_meta: null,
+  files_detail: null,
 });
+
+const buildSvgDataUrl = (label: string, fill = "#7c3aed"): string => {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180"><rect width="320" height="180" rx="18" fill="${fill}" /><text x="160" y="96" text-anchor="middle" font-size="24" font-family="Arial, sans-serif" fill="white">${label}</text></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+};
+
+const buildImageRecord = (
+  id: number,
+  label: string,
+  timestamp: number,
+  overrides: {
+    mime_type?: string;
+    pixel_width?: number;
+    pixel_height?: number;
+    thumbnail_path?: string | null;
+    thumbnail_state?: "pending" | "ready" | "failed";
+    original_path?: string | null;
+  } = {}
+): ClipboardRecord => {
+  const mimeType = overrides.mime_type ?? "image/svg+xml";
+  const pixelWidth = overrides.pixel_width ?? 320;
+  const pixelHeight = overrides.pixel_height ?? 180;
+  const thumbnailPath = overrides.thumbnail_path ?? null;
+  const originalPath = overrides.original_path ?? null;
+
+  return {
+    id,
+    content_type: "image",
+    preview_text: label,
+    source_app: "Preview",
+    created_at: timestamp,
+    last_used_at: timestamp,
+    text_meta: null,
+    image_meta: {
+      mime_type: mimeType,
+      pixel_width: pixelWidth,
+      pixel_height: pixelHeight,
+      thumbnail_path: thumbnailPath,
+      thumbnail_state: overrides.thumbnail_state ?? (thumbnailPath ? "ready" : "failed"),
+    },
+    image_detail: originalPath
+      ? {
+          original_path: originalPath,
+          mime_type: mimeType,
+          pixel_width: pixelWidth,
+          pixel_height: pixelHeight,
+          byte_size: 2048,
+        }
+      : null,
+    files_meta: null,
+    files_detail: null,
+  };
+};
 
 const buildSettingsSnapshot = (
   overrides: Partial<SettingsSnapshot> & {
@@ -477,6 +549,8 @@ const getInvokeCalls = (page: Page) => page.evaluate(() => window.__E2E_TAURI__.
 const getRuntimeStatus = (page: Page) =>
   page.evaluate(() => window.__E2E_TAURI__.getRuntimeStatus());
 const getMockRecords = (page: Page) => page.evaluate(() => window.__E2E_TAURI__.getRecords());
+const setMockRecords = (page: Page, records: ClipboardRecord[]) =>
+  page.evaluate((nextRecords) => window.__E2E_TAURI__.setRecords(nextRecords), records);
 const getSettingsSnapshot = (page: Page) =>
   page.evaluate(() => window.__E2E_TAURI__.getSettingsSnapshot());
 const getPlatformCapabilities = (page: Page) =>
@@ -530,6 +604,23 @@ const dispatchShortcut = async (
 
 const getCardListScrollLeft = (page: Page) =>
   page.getByTestId("card-list").evaluate((node) => Math.round((node as HTMLDivElement).scrollLeft));
+const scrollCardListTo = async (page: Page, left: number) => {
+  await page.getByTestId("card-list").evaluate((node, nextLeft) => {
+    const container = node as HTMLDivElement;
+    container.scrollLeft = nextLeft;
+    container.dispatchEvent(new Event("scroll"));
+  }, left);
+};
+const getVisibleQuickSlotCards = (page: Page) =>
+  page.evaluate(() =>
+    Array.from(document.querySelectorAll('[data-testid="quick-select-badge"]')).map((badge) => {
+      const article = badge.closest("article");
+      return {
+        slot: badge.textContent?.trim() ?? "",
+        text: article?.textContent?.replace(/\s+/g, " ").trim() ?? "",
+      };
+    })
+  );
 
 const getSelectedCardText = (page: Page) => page.locator('[aria-selected="true"]').first().innerText();
 
@@ -781,7 +872,7 @@ test("BDD-03-02 停用黑名单规则后恢复正常采集", async ({ page }) =>
   expect((await getSettingsSnapshot(page)).privacy.blacklist_rules[0]?.enabled).toBe(false);
 });
 
-test("BDD-04-03 Linux Wayland 显示能力降级提示", async ({ page }) => {
+test("BDD-04-03 Linux Wayland 在独立会话能力分组展示降级提示", async ({ page }) => {
   const platformCapabilities = buildPlatformCapabilities({
     platform: "linux",
     session_type: "wayland",
@@ -803,6 +894,17 @@ test("BDD-04-03 Linux Wayland 显示能力降级提示", async ({ page }) => {
     platformCapabilities,
   });
 
+  await expect(page.getByText("当前会话能力受限")).toHaveCount(0);
+
+  await openSettingsSection(page, "快捷键");
+  await expect(
+    page.getByText("当前会话不支持全局快捷键，请改用托盘菜单打开主面板。", { exact: true })
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "开始录制" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "恢复默认值" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "保存本页" })).toBeDisabled();
+
+  await openSettingsSection(page, "会话能力");
   await expect(page.getByText("当前会话能力受限")).toBeVisible();
   await expect(
     page.getByText("当前会话不支持全局快捷键，请改用托盘菜单打开主面板。", { exact: true })
@@ -814,11 +916,6 @@ test("BDD-04-03 Linux Wayland 显示能力降级提示", async ({ page }) => {
     page.getByText("当前会话不支持活动应用识别，隐私黑名单过滤会受到限制。", { exact: true })
   ).toBeVisible();
   await expect(page.getByText(/未知错误/)).toHaveCount(0);
-
-  await openSettingsSection(page, "快捷键");
-  await expect(page.getByRole("button", { name: "开始录制" })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "恢复默认值" })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "保存本页" })).toBeDisabled();
 
   const capabilities = await getPlatformCapabilities(page);
   expect(capabilities).toMatchObject(platformCapabilities);
@@ -1360,7 +1457,7 @@ test("BDD-14-01 左右切换超出可见区时自动滚动", async ({ page }) =>
   await expect.poll(() => getSelectedCardText(page)).toContain("历史记录 2");
 });
 
-test("BDD-14-02 数字快选跳转远端记录时自动滚动", async ({ page }) => {
+test("BDD-14-02 数字快选在可视槽位模型下只命中当前视口", async ({ page }) => {
   await page.setViewportSize({ width: 480, height: 360 });
   await gotoWithScenario(page, {
     route: "/",
@@ -1372,9 +1469,9 @@ test("BDD-14-02 数字快选跳转远端记录时自动滚动", async ({ page })
 
   await expect.poll(() => getCardListScrollLeft(page)).toBe(0);
 
-  await page.keyboard.press("9");
+  await page.keyboard.press("2");
 
-  await expect.poll(() => getSelectedCardText(page)).toContain("历史记录 9");
+  await expect.poll(() => getSelectedCardText(page)).toContain("历史记录 2");
   await expect.poll(() => getCardListScrollLeft(page)).toBeGreaterThan(0);
 });
 
@@ -1410,4 +1507,327 @@ test("BDD-14-03 虚拟滚动场景下自动滚动不丢失高亮", async ({ page
       (call) => call.command === "hide_panel" && call.args?.reason === "paste_completed"
     )
   ).toBe(true);
+});
+
+test("BDD-21-01 单击卡片后当前高亮切换到被点击项", async ({ page }) => {
+  await gotoWithScenario(page, {
+    route: "/",
+    records: [
+      buildTextRecord(1, "单击记录 1", 3_000),
+      buildTextRecord(2, "单击记录 2", 2_000),
+      buildTextRecord(3, "单击记录 3", 1_000),
+    ],
+  });
+
+  await expect.poll(() => getSelectedCardText(page)).toContain("单击记录 1");
+  await page.getByTestId("text-card").nth(2).click();
+  await expect.poll(() => getSelectedCardText(page)).toContain("单击记录 3");
+
+  const invokeCalls = await getInvokeCalls(page);
+  expect(invokeCalls.some((call) => call.command === "paste_record")).toBe(false);
+});
+
+test("BDD-21-02 双击卡片后直接粘贴该记录", async ({ page }) => {
+  await gotoWithScenario(page, {
+    route: "/",
+    records: [
+      buildTextRecord(1, "双击记录 1", 3_000),
+      buildTextRecord(2, "双击记录 2", 2_000),
+      buildTextRecord(3, "双击记录 3", 1_000),
+    ],
+  });
+
+  await page.getByTestId("text-card").nth(1).dblclick();
+
+  await expect(page.getByTestId("main-panel")).toHaveCount(0);
+  await expect.poll(() => getRuntimeStatus(page).then((status) => status.panel_visible)).toBe(false);
+
+  const invokeCalls = await getInvokeCalls(page);
+  expect(invokeCalls.filter((call) => call.command === "paste_record")).toHaveLength(1);
+  expect(invokeCalls.some((call) => call.command === "paste_record" && call.args?.id === 2)).toBe(
+    true
+  );
+  expect(
+    invokeCalls.some(
+      (call) => call.command === "hide_panel" && call.args?.reason === "paste_completed"
+    )
+  ).toBe(true);
+});
+
+test("BDD-21-03 双击粘贴失败时主面板保持打开", async ({ page }) => {
+  const records = [
+    buildTextRecord(1, "失效记录 1", 3_000),
+    buildTextRecord(2, "失效记录 2", 2_000),
+    buildTextRecord(3, "失效记录 3", 1_000),
+  ];
+
+  await gotoWithScenario(page, {
+    route: "/",
+    records,
+  });
+
+  await setMockRecords(page, [records[0], records[2]]);
+  await page.getByTestId("text-card").nth(1).dblclick();
+
+  await expect(page.getByTestId("main-panel")).toBeVisible();
+  await expect(page.getByTestId("toast")).toContainText("记录已不存在");
+
+  const invokeCalls = await getInvokeCalls(page);
+  expect(invokeCalls.filter((call) => call.command === "paste_record")).toHaveLength(1);
+  expect(invokeCalls.some((call) => call.command === "hide_panel")).toBe(false);
+  expect((await getRuntimeStatus(page)).panel_visible).toBe(true);
+});
+
+test("BDD-22-01 缩略图可用时图片卡片显示真实预览", async ({ page }) => {
+  const thumbnail = buildSvgDataUrl("缩略图", "#8b5cf6");
+
+  await gotoWithScenario(page, {
+    route: "/",
+    records: [buildImageRecord(1, "缩略图预览", 3_000, { thumbnail_path: thumbnail })],
+  });
+
+  await expect(page.getByTestId("image-thumbnail")).toBeVisible();
+  await expect(page.getByTestId("image-thumbnail")).toHaveAttribute("src", thumbnail);
+  await expect(page.getByTestId("image-placeholder")).toHaveCount(0);
+});
+
+test("BDD-22-02 缩略图不可用时回退显示原图预览", async ({ page }) => {
+  const original = buildSvgDataUrl("原图", "#0ea5e9");
+
+  await gotoWithScenario(page, {
+    route: "/",
+    records: [
+      buildImageRecord(1, "原图回退", 3_000, {
+        thumbnail_state: "failed",
+        original_path: original,
+      }),
+    ],
+  });
+
+  await expect(page.getByTestId("image-original")).toBeVisible();
+  await expect(page.getByTestId("image-original")).toHaveAttribute("src", original);
+
+  const invokeCalls = await getInvokeCalls(page);
+  expect(invokeCalls.some((call) => call.command === "get_record_detail" && call.args?.id === 1)).toBe(
+    true
+  );
+});
+
+test("BDD-22-03 所有预览资源不可用时显示占位态", async ({ page }) => {
+  await gotoWithScenario(page, {
+    route: "/",
+    records: [
+      buildImageRecord(1, "占位态回退", 3_000, {
+        thumbnail_state: "failed",
+        original_path: "data:text/plain,not-an-image",
+      }),
+    ],
+  });
+
+  await expect.poll(() => getInvokeCalls(page).then((calls) => calls.length)).toBeGreaterThan(0);
+  await expect(page.getByTestId("image-placeholder")).toContainText("预览不可用");
+  await expect(page.getByTestId("image-thumbnail")).toHaveCount(0);
+});
+
+test("BDD-23-01 初始视口内左侧第一个可见卡片显示为 1", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 360 });
+  await gotoWithScenario(page, {
+    route: "/",
+    records: Array.from({ length: 30 }, (_, index) =>
+      buildTextRecord(index + 1, `虚拟记录 ${index + 1}`, 30_000 - index)
+    ),
+  });
+
+  await expect(page.getByTestId("virtualized-track")).toBeVisible();
+  const visibleSlots = await getVisibleQuickSlotCards(page);
+  expect(visibleSlots.map((item) => item.slot)).toEqual(["1", "2", "3", "4"]);
+  expect(visibleSlots[0]?.text).toContain("虚拟记录 1");
+});
+
+test("BDD-23-02 横向滚动后快捷编号随视口更新", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 360 });
+  await gotoWithScenario(page, {
+    route: "/",
+    records: Array.from({ length: 30 }, (_, index) =>
+      buildTextRecord(index + 1, `虚拟记录 ${index + 1}`, 30_000 - index)
+    ),
+  });
+
+  await scrollCardListTo(page, 1824);
+  await expect.poll(() => getCardListScrollLeft(page)).toBe(1824);
+  await expect.poll(async () => (await getVisibleQuickSlotCards(page))[0]?.text ?? "").toContain(
+    "虚拟记录 7"
+  );
+
+  const visibleSlots = await getVisibleQuickSlotCards(page);
+  expect(visibleSlots.map((item) => item.slot)).toEqual(["1", "2", "3", "4"]);
+  expect(visibleSlots[0]?.text).toContain("虚拟记录 7");
+  expect(visibleSlots[0]?.text).not.toContain("虚拟记录 1");
+});
+
+test("BDD-23-03 滚动到后半段后 Command + 数字 仍能快贴当前可视卡片", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 360 });
+  await gotoWithScenario(page, {
+    route: "/",
+    records: Array.from({ length: 30 }, (_, index) =>
+      buildTextRecord(index + 1, `虚拟记录 ${index + 1}`, 30_000 - index)
+    ),
+    platformCapabilities: buildPlatformCapabilities({
+      platform: "macos",
+      session_type: "native",
+    }),
+    permissionStatus: buildPermissionStatus({
+      platform: "macos",
+      accessibility: "granted",
+      reason: null,
+    }),
+  });
+
+  await scrollCardListTo(page, 1824);
+  await expect.poll(() => getCardListScrollLeft(page)).toBe(1824);
+  await expect.poll(async () => (await getVisibleQuickSlotCards(page))[2]?.text ?? "").toContain(
+    "虚拟记录 9"
+  );
+  await dispatchShortcut(page, {
+    key: "3",
+    metaKey: true,
+  });
+
+  await expect(page.getByTestId("main-panel")).toHaveCount(0);
+
+  const invokeCalls = await getInvokeCalls(page);
+  const pasteCalls = invokeCalls.filter((call) => call.command === "paste_record");
+  expect(pasteCalls).toHaveLength(1);
+  expect(pasteCalls[0]?.args?.id).toBe(9);
+  expect(pasteCalls[0]?.args?.id).not.toBe(3);
+});
+
+test("BDD-24-01 设置页采用左侧导航与右侧内容区", async ({ page }) => {
+  await gotoWithScenario(page, {
+    route: "/?window=settings",
+    settingsSnapshot: buildSettingsSnapshot(),
+    platformCapabilities: buildPlatformCapabilities(),
+  });
+
+  const tablist = page.getByRole("tablist", { name: "设置分组导航" });
+  const tabpanel = page.getByRole("tabpanel");
+
+  await expect(tablist).toBeVisible();
+  await expect(tabpanel).toBeVisible();
+  await expect(page.getByRole("heading", { name: "通用设置" })).toBeVisible();
+
+  const tablistBox = await tablist.boundingBox();
+  const tabpanelBox = await tabpanel.boundingBox();
+  expect(tablistBox).not.toBeNull();
+  expect(tabpanelBox).not.toBeNull();
+  if (tablistBox && tabpanelBox) {
+    expect(tablistBox.x).toBeLessThan(tabpanelBox.x);
+  }
+});
+
+test("BDD-24-02 切换设置分组时仅右侧内容变化", async ({ page }) => {
+  await gotoWithScenario(page, {
+    route: "/?window=settings",
+    settingsSnapshot: buildSettingsSnapshot(),
+    platformCapabilities: buildPlatformCapabilities(),
+  });
+
+  const tablist = page.getByRole("tablist", { name: "设置分组导航" });
+  await expect(tablist).toBeVisible();
+  await expect(page.getByRole("tab", { name: /通用/ })).toHaveAttribute("aria-selected", "true");
+
+  await openSettingsSection(page, "快捷键");
+
+  await expect(tablist).toBeVisible();
+  await expect(page.getByRole("tab", { name: /快捷键/ })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { name: "快捷键设置" })).toBeVisible();
+});
+
+test("BDD-25-01 当前会话能力完整支持时显示独立分组", async ({ page }) => {
+  await gotoWithScenario(page, {
+    route: "/?window=settings",
+    settingsSnapshot: buildSettingsSnapshot(),
+    platformCapabilities: buildPlatformCapabilities(),
+  });
+
+  await expect(page.getByRole("tab", { name: /会话能力/ })).toBeVisible();
+  await expect(page.getByText("当前会话能力完整支持")).toHaveCount(0);
+
+  await openSettingsSection(page, "会话能力");
+
+  await expect(page.getByRole("heading", { name: "会话能力" })).toBeVisible();
+  await expect(page.getByText("当前会话能力完整支持")).toBeVisible();
+});
+
+test("BDD-25-02 当前会话能力受限时降级原因集中在独立分组中展示", async ({ page }) => {
+  const platformCapabilities = buildPlatformCapabilities({
+    platform: "linux",
+    session_type: "wayland",
+    clipboard_monitoring: "degraded",
+    global_shortcut: "unsupported",
+    launch_at_login: "supported",
+    tray: "supported",
+    active_app_detection: "unsupported",
+    reasons: [
+      "wayland_global_shortcut_unavailable",
+      "wayland_clipboard_monitoring_limited",
+      "wayland_active_app_detection_unavailable",
+    ],
+  });
+
+  await gotoWithScenario(page, {
+    route: "/?window=settings",
+    settingsSnapshot: buildSettingsSnapshot(),
+    platformCapabilities,
+  });
+
+  await openSettingsSection(page, "快捷键");
+  await expect(page.getByText("快捷键能力提示")).toBeVisible();
+  await expect(
+    page.getByText("当前会话不支持全局快捷键，请改用托盘菜单打开主面板。", { exact: true })
+  ).toBeVisible();
+  await expect(page.getByText("当前会话能力受限")).toHaveCount(0);
+
+  await openSettingsSection(page, "会话能力");
+
+  await expect(page.getByText("当前会话能力受限")).toBeVisible();
+  await expect(
+    page.getByText("当前会话不支持全局快捷键，请改用托盘菜单打开主面板。", { exact: true })
+  ).toBeVisible();
+  await expect(
+    page.getByText("当前会话的粘贴板监听能力受限，记录采集可能存在限制。", { exact: true })
+  ).toBeVisible();
+});
+
+test("BDD-NFR-21 双击卡片不会触发重复粘贴请求", async ({ page }) => {
+  await gotoWithScenario(page, {
+    route: "/",
+    records: [
+      buildTextRecord(1, "NFR 双击 1", 3_000),
+      buildTextRecord(2, "NFR 双击 2", 2_000),
+    ],
+  });
+
+  await page.getByTestId("text-card").first().dblclick();
+  await expect(page.getByTestId("main-panel")).toHaveCount(0);
+
+  const invokeCalls = await getInvokeCalls(page);
+  expect(invokeCalls.filter((call) => call.command === "paste_record")).toHaveLength(1);
+});
+
+test("BDD-NFR-22 图片预览解析失败不会阻塞主面板渲染", async ({ page }) => {
+  await gotoWithScenario(page, {
+    route: "/",
+    records: [
+      buildImageRecord(1, "损坏图片", 3_000, {
+        thumbnail_state: "failed",
+        original_path: "data:text/plain,broken-image",
+      }),
+      buildTextRecord(2, "仍可浏览的文本记录", 2_000),
+    ],
+  });
+
+  await expect(page.getByTestId("main-panel")).toBeVisible();
+  await expect(page.getByTestId("text-card")).toBeVisible();
+  await expect(page.getByTestId("image-placeholder")).toContainText("预览不可用");
 });

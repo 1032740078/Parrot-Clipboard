@@ -136,6 +136,20 @@
       : JSON.parse(JSON.stringify(defaultOrphanCleanupSummary));
 
   const clone = (value) => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
+  const convertFileSrc = (filePath, protocol = 'asset') => {
+    if (typeof filePath !== 'string' || filePath.length === 0) {
+      return '';
+    }
+
+    if (/^(data:|blob:|https?:|\/)/.test(filePath)) {
+      return filePath;
+    }
+
+    const encodedPath = encodeURIComponent(filePath);
+    return platformCapabilities.platform === 'windows'
+      ? `http://${protocol}.localhost/${encodedPath}`
+      : `${protocol}://localhost/${encodedPath}`;
+  };
   const sortRecords = (items) =>
     [...items].sort((left, right) => {
       const timeDelta =
@@ -463,6 +477,7 @@
       currentWindow: { label: windowLabel },
       currentWebview: { label: windowLabel },
     },
+    convertFileSrc,
     transformCallback(callback) {
       const id = nextCallbackId;
       nextCallbackId += 1;
@@ -501,6 +516,26 @@
 
       if (command === "get_records") {
         return clone(records.slice(0, args?.limit ?? 20));
+      }
+
+      if (command === "get_record_detail") {
+        const record = records.find((item) => item.id === args?.id);
+        if (!record) {
+          throw { code: "RECORD_NOT_FOUND", message: "missing" };
+        }
+
+        return clone({
+          ...record,
+          text_content:
+            typeof record.text_content === "string"
+              ? record.text_content
+              : record.content_type === "text"
+                ? record.preview_text
+                : null,
+          rich_content: record.rich_content ?? null,
+          image_detail: record.content_type === "image" ? record.image_detail ?? null : null,
+          files_detail: record.content_type === "files" ? record.files_detail ?? null : null,
+        });
       }
 
       if (command === "get_settings_snapshot") {
