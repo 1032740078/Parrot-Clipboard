@@ -35,7 +35,7 @@ type CapabilityField =
   | "tray"
   | "active_app_detection";
 
-type SettingsSectionKey = "general" | "history" | "shortcut" | "privacy";
+type SettingsSectionKey = "general" | "history" | "shortcut" | "privacy" | "capabilities";
 
 interface SettingsGeneralDraft {
   theme: ThemeMode;
@@ -61,6 +61,8 @@ interface SettingsPrivacyDraft {
   blacklistRules: BlacklistRule[];
 }
 
+type SettingsCapabilitiesDraft = Record<string, never>;
+
 interface PrivacyRuleFormDraft {
   mode: "create" | "edit";
   id?: string;
@@ -76,6 +78,7 @@ interface SettingsDrafts {
   history: SettingsHistoryDraft;
   shortcut: SettingsShortcutDraft;
   privacy: SettingsPrivacyDraft;
+  capabilities: SettingsCapabilitiesDraft;
 }
 
 interface PendingAction {
@@ -131,7 +134,7 @@ const SETTINGS_SECTIONS: Array<{
     key: "general",
     label: "通用",
     title: "通用设置",
-    description: "主题、语言、开机自启动与平台能力概览。",
+    description: "主题、语言与开机自启动等常规设置。",
   },
   {
     key: "history",
@@ -150,6 +153,12 @@ const SETTINGS_SECTIONS: Array<{
     label: "隐私",
     title: "隐私设置",
     description: "管理黑名单规则，并明确说明规则命中后的行为。",
+  },
+  {
+    key: "capabilities",
+    label: "会话能力",
+    title: "会话能力",
+    description: "集中查看当前平台 / 会话支持情况、受限原因与替代路径。",
   },
 ];
 
@@ -171,6 +180,22 @@ const REASON_MESSAGES: Record<string, string> = {
   wayland_active_app_detection_unavailable:
     "当前会话不支持活动应用识别，隐私黑名单过滤会受到限制。",
   linux_session_type_unknown: "当前 Linux 会话类型未识别，快捷键、监听与黑名单能力可能受限。",
+};
+
+const CAPABILITY_REASON_KEYS: Record<CapabilityField, string[]> = {
+  clipboard_monitoring: ["wayland_clipboard_monitoring_limited", "linux_session_type_unknown"],
+  global_shortcut: ["wayland_global_shortcut_unavailable", "linux_session_type_unknown"],
+  launch_at_login: ["linux_session_type_unknown"],
+  tray: ["linux_session_type_unknown"],
+  active_app_detection: ["wayland_active_app_detection_unavailable", "linux_session_type_unknown"],
+};
+
+const FALLBACK_CAPABILITY_HINTS: Record<CapabilityField, string> = {
+  clipboard_monitoring: "当前会话下粘贴板监听能力受限，请前往“会话能力”查看完整说明。",
+  global_shortcut: "当前会话下全局快捷键能力受限，请前往“会话能力”查看替代路径。",
+  launch_at_login: "当前会话下开机自启动能力受限，请前往“会话能力”查看完整说明。",
+  tray: "当前会话下系统托盘能力受限，请前往“会话能力”查看完整说明。",
+  active_app_detection: "当前会话下活动应用识别能力受限，请前往“会话能力”查看完整说明。",
 };
 
 const PLATFORM_LABELS: Record<PlatformKind, string> = {
@@ -252,6 +277,7 @@ const buildFallbackDrafts = (): SettingsDrafts => ({
   privacy: {
     blacklistRules: [],
   },
+  capabilities: {},
 });
 
 const buildDraftsFromSnapshot = (snapshot: SettingsSnapshot): SettingsDrafts => ({
@@ -275,6 +301,7 @@ const buildDraftsFromSnapshot = (snapshot: SettingsSnapshot): SettingsDrafts => 
   privacy: {
     blacklistRules: snapshot.privacy.blacklist_rules,
   },
+  capabilities: {},
 });
 
 const resolveSessionLabel = (capabilities: PlatformCapabilities): string => {
@@ -302,6 +329,26 @@ const resolveReasonMessages = (capabilities: PlatformCapabilities): string[] => 
     .filter((message): message is string => Boolean(message));
 
   return Array.from(new Set(messages));
+};
+
+const resolveScopedReasonMessages = (
+  capabilities: PlatformCapabilities | null,
+  field: CapabilityField
+): string[] => {
+  if (!capabilities || capabilities[field] === "supported") {
+    return [];
+  }
+
+  const messages = CAPABILITY_REASON_KEYS[field]
+    .filter((reason) => capabilities.reasons.includes(reason))
+    .map((reason) => REASON_MESSAGES[reason])
+    .filter((message): message is string => Boolean(message));
+
+  if (messages.length > 0) {
+    return Array.from(new Set(messages));
+  }
+
+  return [FALLBACK_CAPABILITY_HINTS[field]];
 };
 
 const getSectionMeta = (section: SettingsSectionKey) => {
@@ -489,6 +536,23 @@ const CapabilityNotice = ({
   );
 };
 
+const CapabilityInlineNotice = ({ title, messages }: { title: string; messages: string[] }) => {
+  if (messages.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="rounded-2xl border border-amber-400/20 bg-amber-400/10 px-5 py-4 text-sm text-amber-50">
+      <p className="font-medium text-amber-100">{title}</p>
+      <ul className="mt-2 space-y-2 leading-6 text-slate-100">
+        {messages.map((message) => (
+          <li key={message}>{message}</li>
+        ))}
+      </ul>
+    </section>
+  );
+};
+
 const NumberField = ({
   label,
   value,
@@ -549,6 +613,14 @@ export const SettingsWindowPlaceholder = () => {
   const activeSectionMeta = getSectionMeta(activeSection);
   const reasonMessages = useMemo(
     () => (capabilities ? resolveReasonMessages(capabilities) : []),
+    [capabilities]
+  );
+  const shortcutReasonMessages = useMemo(
+    () => resolveScopedReasonMessages(capabilities, "global_shortcut"),
+    [capabilities]
+  );
+  const privacyReasonMessages = useMemo(
+    () => resolveScopedReasonMessages(capabilities, "active_app_detection"),
     [capabilities]
   );
   const privacyFormValid =
@@ -1032,13 +1104,6 @@ export const SettingsWindowPlaceholder = () => {
                 </div>
               </article>
             </div>
-
-            <CapabilityNotice
-              capabilities={capabilities}
-              loadError={loadError}
-              reasonMessages={reasonMessages}
-            />
-            <CapabilitySummaryGrid capabilities={capabilities} />
           </div>
         );
       case "history":
@@ -1206,11 +1271,7 @@ export const SettingsWindowPlaceholder = () => {
                 )}
               </div>
             </article>
-            <CapabilityNotice
-              capabilities={capabilities}
-              loadError={loadError}
-              reasonMessages={reasonMessages}
-            />
+            <CapabilityInlineNotice messages={shortcutReasonMessages} title="快捷键能力提示" />
           </div>
         );
       case "privacy":
@@ -1467,11 +1528,36 @@ export const SettingsWindowPlaceholder = () => {
                 <li>删除规则只会移除后续过滤条件，不会恢复此前未记录的内容。</li>
               </ul>
             </article>
+            <CapabilityInlineNotice messages={privacyReasonMessages} title="隐私能力提示" />
+          </div>
+        );
+      case "capabilities":
+        return (
+          <div className="flex flex-col gap-6">
+            <article className="rounded-2xl border border-white/10 bg-slate-950/60 p-5">
+              <p className="text-sm font-medium text-white">会话摘要</p>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-400">平台 / 会话</p>
+                  <p className="mt-2 text-sm text-slate-100">
+                    {capabilities ? resolveSessionLabel(capabilities) : "正在读取平台信息..."}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-400">能力概览</p>
+                  <p className="mt-2 text-sm text-slate-100">
+                    {reasonMessages.length > 0 ? "当前存在受限能力" : "未检测到受限项"}
+                  </p>
+                </div>
+              </div>
+            </article>
+
             <CapabilityNotice
               capabilities={capabilities}
               loadError={loadError}
               reasonMessages={reasonMessages}
             />
+            <CapabilitySummaryGrid capabilities={capabilities} />
           </div>
         );
       default:
@@ -1567,11 +1653,13 @@ export const SettingsWindowPlaceholder = () => {
                       ? privacyFormDraft.mode === "edit"
                         ? "保存规则"
                         : "新增规则"
-                      : activeSection === "general" ||
-                          activeSection === "history" ||
-                          activeSection === "shortcut"
-                        ? "保存本页"
-                        : "当前页稍后接入"}
+                      : activeSection === "capabilities"
+                        ? "本页无需保存"
+                        : activeSection === "general" ||
+                            activeSection === "history" ||
+                            activeSection === "shortcut"
+                          ? "保存本页"
+                          : "当前页稍后接入"}
                 </button>
               </div>
             </div>

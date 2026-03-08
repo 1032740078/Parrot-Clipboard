@@ -269,6 +269,7 @@ describe("components/SettingsWindowPlaceholder", () => {
 
     expect(await screen.findByText("设置中心")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /通用/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: /会话能力/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "通用设置" })).toBeInTheDocument();
     expect(screen.getByLabelText("跟随系统")).toBeChecked();
     expect(screen.getByText("zh-CN")).toBeInTheDocument();
@@ -278,6 +279,47 @@ describe("components/SettingsWindowPlaceholder", () => {
     expect(await screen.findByRole("heading", { name: "记录与存储" })).toBeInTheDocument();
     expect(screen.getByLabelText("文本记录上限")).toHaveValue(200);
     expect(screen.getByLabelText("图片存储上限（MB）")).toHaveValue(512);
+  });
+
+  it("当前会话能力完整支持时只在独立分组展示完整摘要", async () => {
+    setupComponent({ capabilities: createCapabilities() });
+    await screen.findByText("设置中心");
+
+    expect(screen.queryByText("当前会话能力完整支持")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: /会话能力/ }));
+
+    expect(await screen.findByRole("heading", { name: "会话能力" })).toBeInTheDocument();
+    expect(screen.getByText("当前会话能力完整支持")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "本页无需保存" })).toBeDisabled();
+  });
+
+  it("能力受限时在会话能力分组集中展示完整说明", async () => {
+    setupComponent({
+      capabilities: createCapabilities({
+        platform: "linux",
+        session_type: "wayland",
+        global_shortcut: "unsupported",
+        active_app_detection: "unsupported",
+        reasons: [
+          "wayland_global_shortcut_unavailable",
+          "wayland_active_app_detection_unavailable",
+        ],
+      }),
+    });
+    await screen.findByText("设置中心");
+
+    expect(screen.queryByText("当前会话能力受限")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: /会话能力/ }));
+
+    expect(await screen.findByText("当前会话能力受限")).toBeInTheDocument();
+    expect(
+      screen.getByText("当前会话不支持全局快捷键，请改用托盘菜单打开主面板。")
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("当前会话不支持活动应用识别，隐私黑名单过滤会受到限制。")
+    ).toBeInTheDocument();
   });
 
   it("保存通用设置后更新草稿基线并提示成功", async () => {
