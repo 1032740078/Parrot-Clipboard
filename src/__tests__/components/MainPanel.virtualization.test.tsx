@@ -35,6 +35,30 @@ const setInvokeForRecords = (records = buildLargeRecords()) => {
   });
 };
 
+const attachScrollableViewport = async (): Promise<HTMLDivElement> => {
+  const cardList = (await screen.findByTestId("card-list")) as HTMLDivElement;
+
+  Object.defineProperty(cardList, "clientWidth", {
+    configurable: true,
+    value: 320,
+  });
+
+  Object.defineProperty(cardList, "scrollLeft", {
+    configurable: true,
+    value: 0,
+    writable: true,
+  });
+
+  cardList.scrollTo = ((optionsOrX?: ScrollToOptions | number) => {
+    const nextLeft =
+      typeof optionsOrX === "number" ? optionsOrX : Number(optionsOrX?.left ?? 0);
+    cardList.scrollLeft = nextLeft;
+  }) as typeof cardList.scrollTo;
+
+  fireEvent(window, new Event("resize"));
+  return cardList;
+};
+
 describe("MainPanel virtualization", () => {
   beforeEach(() => {
     useClipboardStore.getState().reset();
@@ -44,11 +68,12 @@ describe("MainPanel virtualization", () => {
     __resetInvokeMock();
   });
 
-  it("长列表只渲染可见区附近卡片，键盘切换后仍可执行粘贴", async () => {
+  it("UT-FE-LIST-102 虚拟滚动列表中左右切换超出视口时自动滚动", async () => {
     const records = buildLargeRecords(60);
     setInvokeForRecords(records);
 
     render(<MainPanel />);
+    const cardList = await attachScrollableViewport();
 
     await waitFor(() => {
       expect(screen.getByTestId("virtualized-track")).toBeInTheDocument();
@@ -63,6 +88,7 @@ describe("MainPanel virtualization", () => {
       expect(useClipboardStore.getState().selectedIndex).toBe(15);
       expect(screen.getByText("记录 16")).toBeInTheDocument();
       expect(screen.queryByText("记录 1")).not.toBeInTheDocument();
+      expect(cardList.scrollLeft).toBeGreaterThan(0);
     });
 
     fireEvent.keyDown(window, { key: "Enter" });
@@ -103,6 +129,47 @@ describe("MainPanel virtualization", () => {
       });
       expect(useClipboardStore.getState().records.some((record) => record.id === 21)).toBe(false);
       expect(useClipboardStore.getState().getSelectedRecord()?.id).toBe(22);
+    });
+  });
+
+  it("UT-FE-LIST-101 小列表左右切换超出视口时会自动横向滚动", async () => {
+    const records = buildLargeRecords(10);
+    setInvokeForRecords(records);
+
+    render(<MainPanel />);
+    const cardList = await attachScrollableViewport();
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("text-card")).toHaveLength(10);
+    });
+
+    for (let index = 0; index < 4; index += 1) {
+      fireEvent.keyDown(window, { key: "ArrowRight" });
+    }
+
+    await waitFor(() => {
+      expect(useClipboardStore.getState().selectedIndex).toBe(4);
+      expect(cardList.scrollLeft).toBeGreaterThan(0);
+    });
+  });
+
+  it("UT-FE-LIST-103 数字快选跳转到远端记录时会自动滚动并保持选中一致", async () => {
+    const records = buildLargeRecords(10);
+    setInvokeForRecords(records);
+
+    render(<MainPanel />);
+    const cardList = await attachScrollableViewport();
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("text-card")).toHaveLength(10);
+    });
+
+    fireEvent.keyDown(window, { key: "9" });
+
+    await waitFor(() => {
+      expect(useClipboardStore.getState().selectedIndex).toBe(8);
+      expect(useClipboardStore.getState().getSelectedRecord()?.id).toBe(9);
+      expect(cardList.scrollLeft).toBeGreaterThan(0);
     });
   });
 });

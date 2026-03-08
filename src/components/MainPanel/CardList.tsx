@@ -36,6 +36,27 @@ const setContainerScrollLeft = (container: HTMLDivElement, left: number): void =
   container.dispatchEvent(new Event("scroll"));
 };
 
+const calculateNextScrollLeft = (
+  currentLeft: number,
+  selectedIndex: number,
+  visibleWidth: number,
+  contentWidth: number
+): number => {
+  const maxScrollLeft = Math.max(contentWidth - visibleWidth, 0);
+  const cardStart = selectedIndex * ITEM_STRIDE_PX;
+  const cardEnd = cardStart + CARD_WIDTH_PX;
+
+  if (cardStart < currentLeft) {
+    return Math.max(cardStart - CARD_GAP_PX, 0);
+  }
+
+  if (cardEnd > currentLeft + visibleWidth) {
+    return Math.min(cardEnd - visibleWidth + CARD_GAP_PX, maxScrollLeft);
+  }
+
+  return currentLeft;
+};
+
 const renderCard = (record: ClipboardRecord, index: number, isSelected: boolean) => {
   if (isImageRecord(record)) {
     return <ImageCard index={index} isSelected={isSelected} record={record} />;
@@ -82,25 +103,21 @@ export const CardList = ({ records, selectedIndex }: CardListProps) => {
       return;
     }
 
-    const visibleWidth = getViewportWidth(container);
-    const maxScrollLeft = Math.max(contentWidth - visibleWidth, 0);
+    const visibleWidth = viewportWidth > 0 ? viewportWidth : getViewportWidth(container);
     const currentLeft = container.scrollLeft ?? scrollLeft;
-    const cardStart = selectedIndex * ITEM_STRIDE_PX;
-    const cardEnd = cardStart + CARD_WIDTH_PX;
-    let nextLeft = currentLeft;
-
-    if (cardStart < currentLeft) {
-      nextLeft = Math.max(cardStart - CARD_GAP_PX, 0);
-    } else if (cardEnd > currentLeft + visibleWidth) {
-      nextLeft = Math.min(cardEnd - visibleWidth + CARD_GAP_PX, maxScrollLeft);
-    }
+    const nextLeft = calculateNextScrollLeft(
+      currentLeft,
+      selectedIndex,
+      visibleWidth,
+      contentWidth
+    );
 
     if (nextLeft === currentLeft) {
       return;
     }
 
     setContainerScrollLeft(container, nextLeft);
-  }, [contentWidth, records.length, scrollLeft, selectedIndex]);
+  }, [contentWidth, records.length, scrollLeft, selectedIndex, viewportWidth]);
 
   const visibleRange = useMemo(() => {
     if (!shouldVirtualize || records.length === 0) {
