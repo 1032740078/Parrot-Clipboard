@@ -1,3 +1,5 @@
+pub const PANEL_HEIGHT_PX: f64 = 304.0;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PanelFrame {
     pub x: i32,
@@ -87,51 +89,52 @@ mod tests {
     use super::{
         calculate_macos_display_point_from_mouse_location, calculate_panel_frame,
         calculate_panel_frame_for_work_area, select_target_work_area, PanelFrame, WorkArea,
+        PANEL_HEIGHT_PX,
     };
 
     #[test]
     fn should_anchor_panel_to_bottom_of_physical_screen_frame_when_dock_is_bottom() {
-        let frame = calculate_panel_frame(0, 0, 1512, 982, 220.0);
+        let frame = calculate_panel_frame(0, 0, 1512, 982, PANEL_HEIGHT_PX);
 
         assert_eq!(
             frame,
             PanelFrame {
                 x: 0,
-                y: 762,
+                y: 678,
                 width: 1512,
-                height: 220,
+                height: 304,
             }
         );
     }
 
     #[test]
     fn should_keep_full_width_when_dock_is_on_left() {
-        let frame = calculate_panel_frame(0, 0, 1512, 982, 220.0);
+        let frame = calculate_panel_frame(0, 0, 1512, 982, PANEL_HEIGHT_PX);
 
         assert_eq!(
             frame,
             PanelFrame {
                 x: 0,
-                y: 762,
+                y: 678,
                 width: 1512,
-                height: 220,
+                height: 304,
             }
         );
     }
 
     #[test]
-    fn should_keep_panel_height_220_when_dock_is_on_right() {
-        let frame = calculate_panel_frame(1512, 0, 1728, 1117, 220.0);
+    fn should_keep_panel_height_304_when_dock_is_on_right() {
+        let frame = calculate_panel_frame(1512, 0, 1728, 1117, PANEL_HEIGHT_PX);
 
-        assert_eq!(frame.height, 220);
+        assert_eq!(frame.height, 304);
         assert_eq!(frame.x, 1512);
         assert_eq!(frame.width, 1728);
-        assert_eq!(frame.y, 897);
+        assert_eq!(frame.y, 813);
     }
 
     #[test]
     fn should_clamp_panel_height_to_visible_work_area() {
-        let frame = calculate_panel_frame(0, 24, 1440, 180, 220.0);
+        let frame = calculate_panel_frame(0, 24, 1440, 180, PANEL_HEIGHT_PX);
 
         assert_eq!(
             frame,
@@ -161,16 +164,16 @@ mod tests {
 
         let selected =
             select_target_work_area(&[primary, secondary], Some((2200.0, 600.0)), primary);
-        let frame = calculate_panel_frame_for_work_area(selected, 220.0);
+        let frame = calculate_panel_frame_for_work_area(selected, PANEL_HEIGHT_PX);
 
         assert_eq!(selected, secondary);
         assert_eq!(
             frame,
             PanelFrame {
                 x: 1512,
-                y: 897,
+                y: 813,
                 width: 1728,
-                height: 220,
+                height: 304,
             }
         );
     }
@@ -232,15 +235,15 @@ mod tests {
             height: 2_535,
         };
 
-        let frame = calculate_panel_frame_for_work_area(work_area, 220.0);
+        let frame = calculate_panel_frame_for_work_area(work_area, PANEL_HEIGHT_PX);
 
         assert_eq!(
             frame,
             PanelFrame {
                 x: 3_440,
-                y: 1_671,
+                y: 1_587,
                 width: 1_440,
-                height: 220,
+                height: 304,
             }
         );
     }

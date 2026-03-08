@@ -157,7 +157,7 @@ export const CardList = ({ records, selectedIndex }: CardListProps) => {
 
   return (
     <div
-      className="overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      className="h-full overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       data-testid="card-list"
       onScroll={(event) => {
         if (!shouldVirtualize) {

@@ -37,7 +37,9 @@ use state::AppState;
 use tauri::Manager;
 use tauri_plugin_global_shortcut::Builder as GlobalShortcutBuilder;
 use tray::{runtime_snapshot as tray_runtime_snapshot, TrayController};
-use window::{register_panel_focus_auto_hide, TauriWindowManager, WindowManager};
+use window::{
+    position::PANEL_HEIGHT_PX, register_panel_focus_auto_hide, TauriWindowManager, WindowManager,
+};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -75,7 +77,7 @@ pub fn run() {
                 image_storage.clone(),
             ));
             let window_manager: Arc<dyn WindowManager> =
-                TauriWindowManager::new(app_handle.clone(), "main", 220.0);
+                TauriWindowManager::new(app_handle.clone(), "main", PANEL_HEIGHT_PX);
             let event_emitter: Arc<dyn DomainEventEmitter> =
                 Arc::new(TauriEventEmitter::new(app_handle.clone()));
 

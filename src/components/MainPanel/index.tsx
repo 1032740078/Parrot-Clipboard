@@ -82,7 +82,7 @@ export const MainPanel = () => {
           style={{ originY: 1 }}
           variants={panelMotionVariants}
         >
-          <div className="flex h-full flex-col">
+          <div className="flex h-full min-h-0 flex-col">
             <header className="mb-3 flex items-center justify-between gap-3">
               <div>
                 <h1 className="text-base font-semibold text-white">最近记录</h1>
@@ -123,7 +123,7 @@ export const MainPanel = () => {
 
             {monitoring ? null : <PauseHint />}
 
-            <div className="flex-1 overflow-hidden">
+            <div className="min-h-0 flex-1 overflow-hidden">
               {isHydrating ? (
                 <div className="flex gap-4 overflow-x-auto pb-2" data-testid="skeleton-list">
                   {Array.from({ length: 3 }, (_, index) => (
