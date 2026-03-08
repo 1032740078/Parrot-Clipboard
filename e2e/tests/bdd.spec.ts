@@ -528,6 +528,11 @@ const dispatchShortcut = async (
   }, keyboardEventInit);
 };
 
+const getCardListScrollLeft = (page: Page) =>
+  page.getByTestId("card-list").evaluate((node) => Math.round((node as HTMLDivElement).scrollLeft));
+
+const getSelectedCardText = (page: Page) => page.locator('[aria-selected="true"]').first().innerText();
+
 const openSettingsSection = async (page: Page, label: string) => {
   await page.getByRole("tab", { name: new RegExp(label) }).click();
 };
@@ -1156,4 +1161,253 @@ test("v1.0 BDD-05-01 孤立图片文件会被自动识别并清理", async ({ pa
 
   const lastCleanup = await getDiagnosticsSnapshot(page).then((snapshot) => snapshot.last_orphan_cleanup);
   expect(lastCleanup?.executed_at).toEqual(expect.any(Number));
+});
+
+
+test("BDD-11-01 主面板失去焦点后自动隐藏", async ({ page }) => {
+  await gotoWithScenario(page, {
+    route: "/",
+    records: [
+      buildTextRecord(1, "记录 1", 3_000),
+      buildTextRecord(2, "记录 2", 2_000),
+      buildTextRecord(3, "记录 3", 1_000),
+    ],
+    runtimeStatus: defaultRuntimeStatus,
+  });
+
+  await expect(page.getByTestId("main-panel")).toBeVisible();
+
+  await emitEvent(page, "system:panel-visibility-changed", {
+    panel_visible: false,
+    reason: "focus_lost",
+  });
+
+  await expect(page.getByTestId("main-panel")).toHaveCount(0);
+  await expect.poll(() => getRuntimeStatus(page).then((status) => status.panel_visible)).toBe(false);
+});
+
+test("BDD-11-02 自动隐藏后再次呼出可正常工作", async ({ page }) => {
+  await gotoWithScenario(page, {
+    route: "/",
+    records: [
+      buildTextRecord(1, "记录 1", 3_000),
+      buildTextRecord(2, "记录 2", 2_000),
+      buildTextRecord(3, "记录 3", 1_000),
+    ],
+    runtimeStatus: defaultRuntimeStatus,
+  });
+
+  await emitEvent(page, "system:panel-visibility-changed", {
+    panel_visible: false,
+    reason: "focus_lost",
+  });
+  await expect(page.getByTestId("main-panel")).toHaveCount(0);
+
+  await emitEvent(page, "system:panel-visibility-changed", {
+    panel_visible: true,
+    reason: "toggle_shortcut",
+  });
+
+  await expect(page.getByTestId("main-panel")).toBeVisible();
+  await expect.poll(() => getRuntimeStatus(page).then((status) => status.panel_visible)).toBe(true);
+
+  await page.keyboard.press("ArrowRight");
+  await expect.poll(() => getSelectedCardText(page)).toContain("记录 2");
+
+  await dispatchShortcut(page, {
+    key: "3",
+  });
+  await expect.poll(() => getSelectedCardText(page)).toContain("记录 3");
+
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("main-panel")).toHaveCount(0);
+
+  const invokeCalls = await getInvokeCalls(page);
+  expect(invokeCalls.some((call) => call.command === "paste_record" && call.args?.id === 3)).toBe(
+    true
+  );
+  expect(
+    invokeCalls.some(
+      (call) => call.command === "hide_panel" && call.args?.reason === "paste_completed"
+    )
+  ).toBe(true);
+});
+
+test("BDD-13-01 Command + 数字直接粘贴对应记录", async ({ page }) => {
+  await gotoWithScenario(page, {
+    route: "/",
+    records: [
+      buildTextRecord(1, "记录 1", 3_000),
+      buildTextRecord(2, "记录 2", 2_000),
+      buildTextRecord(3, "记录 3", 1_000),
+    ],
+    platformCapabilities: buildPlatformCapabilities({
+      platform: "macos",
+      session_type: "native",
+    }),
+    permissionStatus: buildPermissionStatus({
+      platform: "macos",
+      accessibility: "granted",
+      reason: null,
+    }),
+  });
+
+  await expect(page.getByTestId("main-panel")).toBeVisible();
+
+  await dispatchShortcut(page, {
+    key: "3",
+    metaKey: true,
+  });
+
+  await expect(page.getByTestId("main-panel")).toHaveCount(0);
+  await expect.poll(() => getRuntimeStatus(page).then((status) => status.panel_visible)).toBe(false);
+
+  const invokeCalls = await getInvokeCalls(page);
+  const pasteCalls = invokeCalls.filter((call) => call.command === "paste_record");
+  expect(pasteCalls).toHaveLength(1);
+  expect(pasteCalls[0]?.args?.id).toBe(3);
+  expect(
+    invokeCalls.filter(
+      (call) => call.command === "hide_panel" && call.args?.reason === "quick_paste"
+    )
+  ).toHaveLength(1);
+
+  const records = await getMockRecords(page);
+  expect(records[0]?.id).toBe(3);
+});
+
+test("BDD-13-02 单独数字键仍然只是快选", async ({ page }) => {
+  await gotoWithScenario(page, {
+    route: "/",
+    records: [
+      buildTextRecord(1, "记录 1", 3_000),
+      buildTextRecord(2, "记录 2", 2_000),
+      buildTextRecord(3, "记录 3", 1_000),
+    ],
+    platformCapabilities: buildPlatformCapabilities({
+      platform: "macos",
+      session_type: "native",
+    }),
+    permissionStatus: buildPermissionStatus({
+      platform: "macos",
+      accessibility: "granted",
+      reason: null,
+    }),
+  });
+
+  await dispatchShortcut(page, {
+    key: "3",
+  });
+
+  await expect.poll(() => getSelectedCardText(page)).toContain("记录 3");
+  await expect(page.getByTestId("main-panel")).toBeVisible();
+
+  const invokeCalls = await getInvokeCalls(page);
+  expect(invokeCalls.some((call) => call.command === "paste_record")).toBe(false);
+  expect(invokeCalls.some((call) => call.command === "hide_panel")).toBe(false);
+  expect((await getRuntimeStatus(page)).panel_visible).toBe(true);
+});
+
+test("BDD-13-03 权限缺失时快速粘贴被阻止并提示", async ({ page }) => {
+  await gotoWithScenario(page, {
+    route: "/",
+    records: [
+      buildTextRecord(1, "记录 1", 3_000),
+      buildTextRecord(2, "记录 2", 2_000),
+      buildTextRecord(3, "记录 3", 1_000),
+    ],
+    platformCapabilities: buildPlatformCapabilities({
+      platform: "macos",
+      session_type: "native",
+    }),
+    permissionStatus: buildPermissionStatus({
+      platform: "macos",
+      accessibility: "missing",
+      reason: "macos_accessibility_not_granted",
+    }),
+  });
+
+  await dispatchShortcut(page, {
+    key: "1",
+    metaKey: true,
+  });
+
+  await expect(page.getByTestId("main-panel")).toBeVisible();
+  await expect(page.getByTestId("permission-guide-dialog")).toBeVisible();
+  await expect(page.getByTestId("toast")).toContainText("请先完成辅助功能授权后再执行粘贴");
+
+  const invokeCalls = await getInvokeCalls(page);
+  expect(invokeCalls.some((call) => call.command === "paste_record")).toBe(false);
+  expect(invokeCalls.some((call) => call.command === "hide_panel")).toBe(false);
+  expect((await getRuntimeStatus(page)).panel_visible).toBe(true);
+});
+
+test("BDD-14-01 左右切换超出可见区时自动滚动", async ({ page }) => {
+  await page.setViewportSize({ width: 480, height: 360 });
+  await gotoWithScenario(page, {
+    route: "/",
+    records: Array.from({ length: 6 }, (_, index) =>
+      buildTextRecord(index + 1, `历史记录 ${index + 1}`, 6_000 - index)
+    ),
+    settingsSnapshot: buildSettingsSnapshot(),
+  });
+
+  await expect.poll(() => getCardListScrollLeft(page)).toBe(0);
+
+  await page.keyboard.press("ArrowRight");
+
+  await expect.poll(() => getCardListScrollLeft(page)).toBeGreaterThan(0);
+  await expect.poll(() => getSelectedCardText(page)).toContain("历史记录 2");
+});
+
+test("BDD-14-02 数字快选跳转远端记录时自动滚动", async ({ page }) => {
+  await page.setViewportSize({ width: 480, height: 360 });
+  await gotoWithScenario(page, {
+    route: "/",
+    records: Array.from({ length: 9 }, (_, index) =>
+      buildTextRecord(index + 1, `历史记录 ${index + 1}`, 9_000 - index)
+    ),
+    settingsSnapshot: buildSettingsSnapshot(),
+  });
+
+  await expect.poll(() => getCardListScrollLeft(page)).toBe(0);
+
+  await page.keyboard.press("9");
+
+  await expect.poll(() => getSelectedCardText(page)).toContain("历史记录 9");
+  await expect.poll(() => getCardListScrollLeft(page)).toBeGreaterThan(0);
+});
+
+test("BDD-14-03 虚拟滚动场景下自动滚动不丢失高亮", async ({ page }) => {
+  await page.setViewportSize({ width: 480, height: 360 });
+  await gotoWithScenario(page, {
+    route: "/",
+    records: Array.from({ length: 48 }, (_, index) =>
+      buildTextRecord(index + 1, `虚拟记录 ${index + 1}`, 48_000 - index)
+    ),
+    settingsSnapshot: buildSettingsSnapshot(),
+  });
+
+  await expect(page.getByTestId("virtualized-track")).toBeVisible();
+  await expect.poll(() => getCardListScrollLeft(page)).toBe(0);
+
+  for (let index = 0; index < 12; index += 1) {
+    await page.keyboard.press("ArrowRight");
+  }
+
+  await expect.poll(() => getCardListScrollLeft(page)).toBeGreaterThan(0);
+  await expect.poll(() => getSelectedCardText(page)).toContain("虚拟记录 13");
+
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("main-panel")).toHaveCount(0);
+
+  const invokeCalls = await getInvokeCalls(page);
+  expect(invokeCalls.some((call) => call.command === "paste_record" && call.args?.id === 13)).toBe(
+    true
+  );
+  expect(
+    invokeCalls.some(
+      (call) => call.command === "hide_panel" && call.args?.reason === "paste_completed"
+    )
+  ).toBe(true);
 });

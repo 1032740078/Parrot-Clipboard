@@ -334,6 +334,14 @@
       syncRuntimeStatus({ panel_visible: true });
     }
 
+    if (
+      event === "system:panel-visibility-changed" &&
+      payload &&
+      typeof payload.panel_visible === "boolean"
+    ) {
+      syncRuntimeStatus({ panel_visible: payload.panel_visible });
+    }
+
     if (event === "system:settings-updated" && payload) {
       setSettingsSnapshot(payload);
     }
@@ -730,7 +738,10 @@
       }
 
       if (command === "hide_panel") {
-        syncRuntimeStatus({ panel_visible: false });
+        emitEvent("system:panel-visibility-changed", {
+          panel_visible: false,
+          reason: args?.reason ?? "escape",
+        });
         return null;
       }
 

@@ -127,7 +127,7 @@ describe("App permission guidance", () => {
 
       if (command === "get_permission_status") {
         permissionCheckCount += 1;
-        return permissionCheckCount <= 2 ? missingPermission : grantedPermission;
+        return permissionCheckCount <= 1 ? missingPermission : grantedPermission;
       }
 
       return undefined;
