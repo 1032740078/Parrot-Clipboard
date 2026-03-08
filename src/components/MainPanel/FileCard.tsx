@@ -6,10 +6,11 @@ import { formatRelativeTime } from "./time";
 interface FileCardProps {
   record: ClipboardRecord;
   isSelected: boolean;
-  index: number;
+  slot?: number | null;
+  index?: number;
 }
 
-export const FileCard = ({ record, isSelected, index }: FileCardProps) => {
+export const FileCard = ({ record, isSelected, slot, index }: FileCardProps) => {
   const wrapperClass = isSelected
     ? "border-brand shadow-[0_0_0_2px_rgba(0,122,255,0.3)]"
     : "border-white/15";
@@ -18,6 +19,7 @@ export const FileCard = ({ record, isSelected, index }: FileCardProps) => {
   const countLabel = meta ? `共 ${meta.count} 项` : "共 0 项";
   const folderLabel = meta?.contains_directory ? "含文件夹" : "";
   const icon = meta?.contains_directory ? "📁" : "📄";
+  const displaySlot = slot ?? (typeof index === "number" ? index + 1 : null);
 
   return (
     <article
@@ -25,7 +27,7 @@ export const FileCard = ({ record, isSelected, index }: FileCardProps) => {
       className={`relative flex h-48 w-card shrink-0 flex-col overflow-hidden rounded-xl border bg-white/10 backdrop-blur-md transition-[border-color,box-shadow] duration-[120ms] ease-out motion-reduce:transition-none ${wrapperClass}`}
       data-testid="file-card"
     >
-      <QuickSelectBadge index={index} />
+      <QuickSelectBadge slot={displaySlot} />
 
       <header className="flex h-7 items-center bg-emerald-500 px-3 text-[13px] font-semibold text-white">
         文件

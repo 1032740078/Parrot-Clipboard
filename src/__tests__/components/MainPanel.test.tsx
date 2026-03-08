@@ -161,7 +161,7 @@ describe("MainPanel", () => {
     });
   });
 
-  it("UT-PANEL-006 显示 1-9 快选提示且仅前 9 条展示数字槽位", async () => {
+  it("UT-PANEL-006 显示可视区域快选提示且仅当前可视卡片展示槽位", async () => {
     const records = Array.from({ length: 10 }, (_, index) =>
       buildRecord(index + 1, `记录 ${index + 1}`, 1000 - index)
     );
@@ -173,12 +173,12 @@ describe("MainPanel", () => {
       expect(screen.getAllByTestId("text-card")).toHaveLength(10);
     });
 
-    expect(screen.getByText("1-9 快选")).toBeInTheDocument();
-    expect(screen.getByText("⌘+1-9 快贴")).toBeInTheDocument();
-    expect(screen.getAllByTestId("quick-select-badge")).toHaveLength(9);
+    expect(screen.getByText("可视 1-9 快选")).toBeInTheDocument();
+    expect(screen.getByText("⌘+可视 1-9 快贴")).toBeInTheDocument();
+    expect(screen.getAllByTestId("quick-select-badge")).toHaveLength(4);
     expect(
       screen.getAllByTestId("quick-select-badge").map((element) => element.textContent)
-    ).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9"]);
+    ).toEqual(["1", "2", "3", "4"]);
   });
 
   it("UT-PANEL-007 监听暂停时展示弱提示且不影响历史浏览", async () => {

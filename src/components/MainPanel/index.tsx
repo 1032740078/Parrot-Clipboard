@@ -1,11 +1,11 @@
-import { useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
 import { getRecordSummaries } from "../../api/commands";
 import { showAboutWindow } from "../../api/diagnostics";
 import { logger, normalizeError } from "../../api/logger";
 import { getErrorMessage } from "../../api/errorHandler";
-import { isTextRecord, toClipboardRecord } from "../../types/clipboard";
+import { isTextRecord, toClipboardRecord, type VisibleQuickSlot } from "../../types/clipboard";
 import { useClipboardEvents } from "../../hooks/useClipboardEvents";
 import { useKeyboard } from "../../hooks/useKeyboard";
 import { executeRecordPaste } from "../../hooks/recordPaste";
@@ -33,8 +33,10 @@ export const MainPanel = () => {
   const monitoring = useSystemStore((state) => state.monitoring);
   const permissionStatus = useSystemStore((state) => state.permissionStatus);
 
+  const visibleQuickSlotsRef = useRef<VisibleQuickSlot[]>([]);
+
   useClipboardEvents();
-  useKeyboard({ enabled: isPanelVisible });
+  useKeyboard({ enabled: isPanelVisible, visibleQuickSlotsRef });
 
   useEffect(() => {
     const bootstrap = async (): Promise<void> => {
@@ -100,6 +102,10 @@ export const MainPanel = () => {
       });
     });
   };
+
+  const handleVisibleQuickSlotsChange = useCallback((slots: VisibleQuickSlot[]): void => {
+    visibleQuickSlotsRef.current = slots;
+  }, []);
 
   return (
     <AnimatePresence>
@@ -170,6 +176,7 @@ export const MainPanel = () => {
                     handleCardDoubleClick(record.id, index);
                   }}
                   onSelectRecord={handleCardSelect}
+                  onVisibleQuickSlotsChange={handleVisibleQuickSlotsChange}
                   records={records}
                   selectedIndex={selectedIndex}
                 />
@@ -193,8 +200,8 @@ export const MainPanel = () => {
                 Shift+Enter 纯文本
               </span>
               <span>Delete 删除</span>
-              <span>1-9 快选</span>
-              <span>⌘+1-9 快贴</span>
+              <span>可视 1-9 快选</span>
+              <span>⌘+可视 1-9 快贴</span>
               <span>Esc 关闭</span>
             </footer>
           </div>

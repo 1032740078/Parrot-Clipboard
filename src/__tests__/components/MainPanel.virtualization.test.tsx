@@ -60,6 +60,11 @@ const attachScrollableViewport = async (): Promise<HTMLDivElement> => {
   return cardList;
 };
 
+const scrollViewport = (cardList: HTMLDivElement, nextLeft: number): void => {
+  cardList.scrollLeft = nextLeft;
+  fireEvent.scroll(cardList);
+};
+
 describe("MainPanel virtualization", () => {
   beforeEach(() => {
     useClipboardStore.getState().reset();
@@ -154,23 +159,63 @@ describe("MainPanel virtualization", () => {
     });
   });
 
-  it("UT-FE-LIST-103 数字快选跳转到远端记录时会自动滚动并保持选中一致", async () => {
-    const records = buildLargeRecords(10);
+  it("UT-FE-SLOT-203 横向滚动后数字快选命中当前可视槽位", async () => {
+    const records = buildLargeRecords(18);
     setInvokeForRecords(records);
 
     render(<MainPanel />);
     const cardList = await attachScrollableViewport();
 
     await waitFor(() => {
-      expect(screen.getAllByTestId("text-card")).toHaveLength(10);
+      expect(screen.getAllByTestId("text-card")).toHaveLength(18);
     });
 
-    fireEvent.keyDown(window, { key: "9" });
+    scrollViewport(cardList, 640);
 
     await waitFor(() => {
-      expect(useClipboardStore.getState().selectedIndex).toBe(8);
-      expect(useClipboardStore.getState().getSelectedRecord()?.id).toBe(9);
-      expect(cardList.scrollLeft).toBeGreaterThan(0);
+      expect(
+        screen.getAllByTestId("quick-select-badge").map((element) => element.textContent)
+      ).toEqual(["1", "2"]);
+    });
+
+    fireEvent.keyDown(window, { key: "2" });
+
+    await waitFor(() => {
+      expect(useClipboardStore.getState().selectedIndex).toBe(3);
+      expect(useClipboardStore.getState().getSelectedRecord()?.id).toBe(4);
+      expect(cardList.scrollLeft).toBeGreaterThan(640);
+    });
+  });
+
+  it("UT-FE-SLOT-204 横向滚动后 Command+数字 快贴命中当前可视槽位", async () => {
+    const records = buildLargeRecords(18);
+    setInvokeForRecords(records);
+    useSystemStore.getState().setPermissionStatus({
+      platform: "macos",
+      accessibility: "granted",
+      checked_at: 1700000000000,
+    });
+
+    render(<MainPanel />);
+    const cardList = await attachScrollableViewport();
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("text-card")).toHaveLength(18);
+    });
+
+    scrollViewport(cardList, 640);
+
+    fireEvent.keyDown(window, { key: "2", metaKey: true });
+
+    await waitFor(() => {
+      expect(invokeCalls.find((call) => call.command === "paste_record")).toEqual({
+        command: "paste_record",
+        args: { id: 4, mode: "original" },
+      });
+      expect(invokeCalls.find((call) => call.command === "hide_panel")).toEqual({
+        command: "hide_panel",
+        args: { reason: "quick_paste" },
+      });
     });
   });
 

@@ -11,7 +11,8 @@ import { formatRelativeTime } from "./time";
 interface ImageCardProps {
   record: ClipboardRecord;
   isSelected: boolean;
-  index: number;
+  slot?: number | null;
+  index?: number;
 }
 
 type PreviewSourceKind = "thumbnail" | "original" | "placeholder";
@@ -35,7 +36,7 @@ const toPreviewSrc = (path?: string | null): string | null => {
   }
 };
 
-export const ImageCard = ({ record, isSelected, index }: ImageCardProps) => {
+export const ImageCard = ({ record, isSelected, slot, index }: ImageCardProps) => {
   const wrapperClass = isSelected
     ? "border-brand shadow-[0_0_0_2px_rgba(0,122,255,0.3)]"
     : "border-white/15";
@@ -45,6 +46,7 @@ export const ImageCard = ({ record, isSelected, index }: ImageCardProps) => {
   const sizeLabel = meta ? `${meta.pixel_width}×${meta.pixel_height}` : "尺寸未知";
   const thumbnailState = meta?.thumbnail_state ?? "failed";
   const thumbnailSrc = useMemo(() => toPreviewSrc(meta?.thumbnail_path), [meta?.thumbnail_path]);
+  const displaySlot = slot ?? (typeof index === "number" ? index + 1 : null);
   const [previewLoadState, setPreviewLoadState] = useState<PreviewLoadState>({
     thumbnailBroken: false,
     originalBroken: false,
@@ -125,7 +127,7 @@ export const ImageCard = ({ record, isSelected, index }: ImageCardProps) => {
       className={`relative flex h-48 w-card shrink-0 flex-col overflow-hidden rounded-xl border bg-white/10 backdrop-blur-md transition-[border-color,box-shadow] duration-[120ms] ease-out motion-reduce:transition-none ${wrapperClass}`}
       data-testid="image-card"
     >
-      <QuickSelectBadge index={index} />
+      <QuickSelectBadge slot={displaySlot} />
 
       <header className="flex h-7 items-center bg-violet-500 px-3 text-[13px] font-semibold text-white">
         图片

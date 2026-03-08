@@ -17,6 +17,12 @@ export type ClipboardRecord = ClipboardRecordSummary & {
   text_content?: string | null;
 };
 
+export interface VisibleQuickSlot {
+  slot: number;
+  record_id: number;
+  absolute_index: number;
+}
+
 export const isTextRecord = (record: ClipboardRecord): boolean => record.content_type === "text";
 
 export const isImageRecord = (record: ClipboardRecord): boolean => record.content_type === "image";

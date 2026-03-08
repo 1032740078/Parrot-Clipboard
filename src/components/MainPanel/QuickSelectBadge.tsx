@@ -1,10 +1,9 @@
 interface QuickSelectBadgeProps {
-  index: number;
+  slot?: number | null;
 }
 
-export const QuickSelectBadge = ({ index }: QuickSelectBadgeProps) => {
-  const slot = index + 1;
-  if (slot > 9) {
+export const QuickSelectBadge = ({ slot }: QuickSelectBadgeProps) => {
+  if (!slot || slot > 9) {
     return null;
   }
 

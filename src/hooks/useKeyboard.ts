@@ -3,11 +3,13 @@ import { useEffect } from "react";
 import { deleteRecord, hidePanel } from "../api/commands";
 import { getErrorMessage } from "../api/errorHandler";
 import { logger, normalizeError } from "../api/logger";
+import { type ClipboardRecord, type VisibleQuickSlot } from "../types/clipboard";
 import { useClipboardStore, useSystemStore, useUIStore } from "../stores";
 import { executeRecordPaste } from "./recordPaste";
 
 interface UseKeyboardOptions {
   enabled: boolean;
+  visibleQuickSlotsRef?: { current: VisibleQuickSlot[] };
 }
 
 const isEditableTarget = (target: EventTarget | null): boolean => {
@@ -59,7 +61,43 @@ const isMacQuickPasteEnabled = (platform?: string): boolean => {
   return window.navigator.userAgent.toLowerCase().includes("mac");
 };
 
-export const useKeyboard = ({ enabled }: UseKeyboardOptions): void => {
+const resolveVisibleQuickSlotTarget = (
+  records: ClipboardRecord[],
+  visibleQuickSlots: VisibleQuickSlot[],
+  slot: number
+): { target: ClipboardRecord; absoluteIndex: number } | null => {
+  if (visibleQuickSlots.length === 0) {
+    const absoluteIndex = slot - 1;
+    const target = records[absoluteIndex];
+
+    return target ? { target, absoluteIndex } : null;
+  }
+
+  const visibleQuickSlot = visibleQuickSlots.find((item) => item.slot === slot);
+  if (!visibleQuickSlot) {
+    return null;
+  }
+
+  const directTarget = records[visibleQuickSlot.absolute_index];
+  if (directTarget?.id === visibleQuickSlot.record_id) {
+    return {
+      target: directTarget,
+      absoluteIndex: visibleQuickSlot.absolute_index,
+    };
+  }
+
+  const fallbackIndex = records.findIndex((record) => record.id === visibleQuickSlot.record_id);
+  if (fallbackIndex === -1) {
+    return null;
+  }
+
+  return {
+    target: records[fallbackIndex],
+    absoluteIndex: fallbackIndex,
+  };
+};
+
+export const useKeyboard = ({ enabled, visibleQuickSlotsRef }: UseKeyboardOptions): void => {
   const records = useClipboardStore((state) => state.records);
   const selectedIndex = useClipboardStore((state) => state.selectedIndex);
   const selectPrev = useClipboardStore((state) => state.selectPrev);
@@ -88,26 +126,32 @@ export const useKeyboard = ({ enabled }: UseKeyboardOptions): void => {
 
       const quickPasteIndex = resolveQuickPasteIndex(event, quickPasteEnabled);
       if (quickPasteIndex !== null) {
-        if (isEditableTarget(event.target) || quickPasteIndex >= records.length) {
+        if (isEditableTarget(event.target)) {
           return;
         }
 
-        const target = records[quickPasteIndex];
-        if (!target) {
+        const slot = quickPasteIndex + 1;
+        const quickTarget = resolveVisibleQuickSlotTarget(
+          records,
+          visibleQuickSlotsRef?.current ?? [],
+          slot
+        );
+        if (!quickTarget) {
           return;
         }
 
         event.preventDefault();
-        selectIndex(quickPasteIndex);
+        selectIndex(quickTarget.absoluteIndex);
 
         try {
           await executeRecordPaste({
-            record: target,
+            record: quickTarget.target,
             hideReason: "quick_paste",
             trigger: "keyboard_quick_paste",
             logContext: {
               trigger_key: `Command+${event.key}`,
-              selected_index: quickPasteIndex,
+              selected_index: quickTarget.absoluteIndex,
+              visible_slot: slot,
             },
           });
         } catch (error) {
@@ -123,16 +167,27 @@ export const useKeyboard = ({ enabled }: UseKeyboardOptions): void => {
 
       const quickSelectIndex = resolveQuickSelectIndex(event);
       if (quickSelectIndex !== null) {
-        if (isEditableTarget(event.target) || quickSelectIndex >= records.length) {
+        if (isEditableTarget(event.target)) {
+          return;
+        }
+
+        const slot = quickSelectIndex + 1;
+        const quickTarget = resolveVisibleQuickSlotTarget(
+          records,
+          visibleQuickSlotsRef?.current ?? [],
+          slot
+        );
+        if (!quickTarget) {
           return;
         }
 
         event.preventDefault();
-        selectIndex(quickSelectIndex);
+        selectIndex(quickTarget.absoluteIndex);
         logger.debug("用户通过数字键快选记录", {
           trigger_key: event.key,
-          selected_index: quickSelectIndex,
-          record_id: records[quickSelectIndex]?.id,
+          selected_index: quickTarget.absoluteIndex,
+          record_id: quickTarget.target.id,
+          visible_slot: slot,
         });
         return;
       }
@@ -240,5 +295,6 @@ export const useKeyboard = ({ enabled }: UseKeyboardOptions): void => {
     setPanelVisible,
     permissionStatus,
     showToast,
+    visibleQuickSlotsRef,
   ]);
 };

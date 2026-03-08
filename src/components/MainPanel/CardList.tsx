@@ -1,7 +1,12 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useRef, useState, type WheelEvent } from "react";
 
-import { isFileRecord, isImageRecord, type ClipboardRecord } from "../../types/clipboard";
+import {
+  isFileRecord,
+  isImageRecord,
+  type ClipboardRecord,
+  type VisibleQuickSlot,
+} from "../../types/clipboard";
 import { FileCard } from "./FileCard";
 import { ImageCard } from "./ImageCard";
 import { getCardMotionProps, prefersReducedMotion } from "./motion";
@@ -12,6 +17,7 @@ interface CardListProps {
   selectedIndex: number;
   onSelectRecord: (index: number) => void;
   onPasteRecord: (record: ClipboardRecord, index: number) => void;
+  onVisibleQuickSlotsChange: (slots: VisibleQuickSlot[]) => void;
 }
 
 const CARD_WIDTH_PX = 288;
@@ -86,16 +92,56 @@ const calculateNextScrollLeft = (
   return currentLeft;
 };
 
-const renderCard = (record: ClipboardRecord, index: number, isSelected: boolean) => {
+const isCardVisible = (index: number, left: number, right: number): boolean => {
+  const cardStart = index * ITEM_STRIDE_PX;
+  const cardEnd = cardStart + CARD_WIDTH_PX;
+
+  return cardEnd > left && cardStart < right;
+};
+
+const calculateVisibleQuickSlotIndexes = (
+  left: number,
+  viewportWidth: number,
+  recordsLength: number
+): number[] => {
+  if (recordsLength === 0 || viewportWidth <= 0) {
+    return [];
+  }
+
+  const right = left + viewportWidth;
+  const startIndex = Math.max(Math.floor((left + CARD_GAP_PX) / ITEM_STRIDE_PX), 0);
+  const absoluteIndexes: number[] = [];
+
+  for (
+    let absoluteIndex = startIndex;
+    absoluteIndex < recordsLength && absoluteIndexes.length < 9;
+    absoluteIndex += 1
+  ) {
+    const cardStart = absoluteIndex * ITEM_STRIDE_PX;
+    if (cardStart >= right && absoluteIndexes.length > 0) {
+      break;
+    }
+
+    if (!isCardVisible(absoluteIndex, left, right)) {
+      continue;
+    }
+
+    absoluteIndexes.push(absoluteIndex);
+  }
+
+  return absoluteIndexes;
+};
+
+const renderCard = (record: ClipboardRecord, isSelected: boolean, slot?: number | null) => {
   if (isImageRecord(record)) {
-    return <ImageCard index={index} isSelected={isSelected} record={record} />;
+    return <ImageCard isSelected={isSelected} record={record} slot={slot} />;
   }
 
   if (isFileRecord(record)) {
-    return <FileCard index={index} isSelected={isSelected} record={record} />;
+    return <FileCard isSelected={isSelected} record={record} slot={slot} />;
   }
 
-  return <TextCard index={index} isSelected={isSelected} record={record} />;
+  return <TextCard isSelected={isSelected} record={record} slot={slot} />;
 };
 
 const getCardRenderKey = (record: ClipboardRecord): string => {
@@ -111,6 +157,7 @@ export const CardList = ({
   selectedIndex,
   onSelectRecord,
   onPasteRecord,
+  onVisibleQuickSlotsChange,
 }: CardListProps) => {
   const cardMotionProps = getCardMotionProps(prefersReducedMotion());
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -203,6 +250,39 @@ export const CardList = ({
     return { startIndex, endIndex };
   }, [records.length, scrollLeft, shouldVirtualize, viewportWidth]);
 
+  const visibleQuickSlots = useMemo<VisibleQuickSlot[]>(() => {
+    const safeViewportWidth = viewportWidth > 0 ? viewportWidth : DEFAULT_VIEWPORT_WIDTH_PX;
+    const absoluteIndexes = calculateVisibleQuickSlotIndexes(
+      scrollLeft,
+      safeViewportWidth,
+      records.length
+    );
+
+    return absoluteIndexes
+      .map((absoluteIndex, slotIndex) => {
+        const record = records[absoluteIndex];
+        if (!record) {
+          return null;
+        }
+
+        return {
+          slot: slotIndex + 1,
+          record_id: record.id,
+          absolute_index: absoluteIndex,
+        } satisfies VisibleQuickSlot;
+      })
+      .filter((slot): slot is VisibleQuickSlot => slot !== null);
+  }, [records, scrollLeft, viewportWidth]);
+
+  const visibleSlotMap = useMemo(
+    () => new Map(visibleQuickSlots.map((slot) => [slot.absolute_index, slot.slot] as const)),
+    [visibleQuickSlots]
+  );
+
+  useEffect(() => {
+    onVisibleQuickSlotsChange(visibleQuickSlots);
+  }, [onVisibleQuickSlotsChange, visibleQuickSlots]);
+
   const renderVisibleCards = (items: ClipboardRecord[], startIndex: number) => {
     if (shouldVirtualize) {
       return items.map((record, visibleIndex) => {
@@ -219,7 +299,7 @@ export const CardList = ({
               onPasteRecord(record, index);
             }}
           >
-            {renderCard(record, index, selectedIndex === index)}
+            {renderCard(record, selectedIndex === index, visibleSlotMap.get(index) ?? null)}
           </div>
         );
       });
@@ -242,7 +322,7 @@ export const CardList = ({
               }}
               {...cardMotionProps}
             >
-              {renderCard(record, index, selectedIndex === index)}
+              {renderCard(record, selectedIndex === index, visibleSlotMap.get(index) ?? null)}
             </motion.div>
           );
         })}
@@ -259,11 +339,14 @@ export const CardList = ({
       className="h-full overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       data-testid="card-list"
       onScroll={(event) => {
+        const nextScrollLeft = (event.currentTarget as HTMLDivElement).scrollLeft ?? 0;
+
         if (!shouldVirtualize) {
+          setScrollLeft(nextScrollLeft);
           return;
         }
 
-        scheduleScrollLeftSync((event.currentTarget as HTMLDivElement).scrollLeft ?? 0);
+        scheduleScrollLeftSync(nextScrollLeft);
       }}
       onWheel={(event) => {
         const horizontalDelta = getShiftWheelHorizontalDelta(event);
