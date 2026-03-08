@@ -52,12 +52,12 @@ const calculateNextWheelScrollLeft = (
 };
 
 const getShiftWheelHorizontalDelta = (event: WheelEvent<HTMLDivElement>): number => {
-  if (!event.shiftKey) {
+  if (!event.shiftKey || event.deltaY === 0) {
     return 0;
   }
 
   if (event.deltaX !== 0) {
-    return event.deltaX;
+    return 0;
   }
 
   return event.deltaY;
@@ -131,7 +131,7 @@ export const CardList = ({ records, selectedIndex }: CardListProps) => {
     }
 
     const visibleWidth = viewportWidth > 0 ? viewportWidth : getViewportWidth(container);
-    const currentLeft = container.scrollLeft ?? scrollLeft;
+    const currentLeft = container.scrollLeft;
     const nextLeft = calculateNextScrollLeft(
       currentLeft,
       selectedIndex,
@@ -144,7 +144,7 @@ export const CardList = ({ records, selectedIndex }: CardListProps) => {
     }
 
     setContainerScrollLeft(container, nextLeft);
-  }, [contentWidth, records.length, scrollLeft, selectedIndex, viewportWidth]);
+  }, [contentWidth, records.length, selectedIndex, viewportWidth]);
 
   const visibleRange = useMemo(() => {
     if (!shouldVirtualize || records.length === 0) {

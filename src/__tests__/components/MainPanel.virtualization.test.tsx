@@ -174,7 +174,7 @@ describe("MainPanel virtualization", () => {
     });
   });
 
-  it("UT-FE-LIST-105 Shift + 鼠标滚轮会转换为横向滚动", async () => {
+  it("UT-FE-LIST-105 Shift + 鼠标滚轮会转换为横向滚动且不会被自动回弹", async () => {
     const records = buildLargeRecords(10);
     setInvokeForRecords(records);
 
@@ -188,7 +188,11 @@ describe("MainPanel virtualization", () => {
     fireEvent.wheel(cardList, { deltaY: 160, shiftKey: true });
 
     await waitFor(() => {
-      expect(cardList.scrollLeft).toBeGreaterThan(0);
+      expect(cardList.scrollLeft).toBe(160);
     });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+
+    expect(cardList.scrollLeft).toBe(160);
   });
 });
