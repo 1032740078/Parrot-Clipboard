@@ -88,6 +88,43 @@ describe("useSystemEvents", () => {
     });
   });
 
+  it("收到主面板显隐事件后同步 UIStore 与 SystemStore，且不误关权限引导", async () => {
+    useUIStore.getState().showPanel();
+    useUIStore.getState().openPermissionGuide();
+    useSystemStore.getState().setPanelVisible(true);
+
+    render(<HookConsumer />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      __emitMockEvent("system:panel-visibility-changed", {
+        panel_visible: false,
+        reason: "focus_lost",
+      });
+    });
+
+    await waitFor(() => {
+      expect(useUIStore.getState().isPanelVisible).toBe(false);
+      expect(useSystemStore.getState().panelVisible).toBe(false);
+      expect(useUIStore.getState().permissionGuideVisible).toBe(true);
+    });
+
+    await act(async () => {
+      __emitMockEvent("system:panel-visibility-changed", {
+        panel_visible: true,
+        reason: "toggle_shortcut",
+      });
+    });
+
+    await waitFor(() => {
+      expect(useUIStore.getState().isPanelVisible).toBe(true);
+      expect(useSystemStore.getState().panelVisible).toBe(true);
+    });
+  });
+
   it("收到设置更新与自启动事件后同步主题和运行态", async () => {
     render(<HookConsumer />);
 

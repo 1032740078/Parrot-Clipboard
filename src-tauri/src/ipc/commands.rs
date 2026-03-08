@@ -15,6 +15,7 @@ use crate::{
     },
     diagnostics::{self, CleanupSummary, DiagnosticsSnapshot, PermissionStatus, ReleaseInfo},
     error::AppError,
+    ipc::events::{emit_panel_visibility_changed, PanelVisibilityReasonPayload},
     logging::{self, ClientLogLevel},
     platform::PlatformCapabilities,
     settings::{BlacklistRuleDraft, SettingsError, SettingsProfile},
@@ -116,6 +117,7 @@ pub fn delete_record(id: u64, state: State<'_, AppState>) -> Result<(), AppError
 pub async fn paste_record(
     id: u64,
     mode: PasteMode,
+    app_handle: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<PasteResult, AppError> {
     tracing::info!(record_id = id, ?mode, "ipc paste_record requested");
@@ -129,6 +131,13 @@ pub async fn paste_record(
             state
                 .event_emitter
                 .emit_record_updated(RecordUpdateReason::Promoted, paste_result.record.clone())?;
+            emit_panel_visibility_changed(
+                &app_handle,
+                false,
+                PanelVisibilityReasonPayload::PasteCompleted,
+                Some(paste_result.record.id),
+            )?;
+            tray::refresh(&app_handle)?;
             tracing::info!(
                 record_id = paste_result.record.id,
                 "ipc paste_record completed"
@@ -141,13 +150,27 @@ pub async fn paste_record(
 }
 
 #[tauri::command]
-pub fn hide_panel(state: State<'_, AppState>) -> Result<(), AppError> {
+pub fn hide_panel(
+    app_handle: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), AppError> {
     tracing::debug!("ipc hide_panel requested");
-    let result = state.window_manager.hide();
-    if let Err(error) = &result {
-        tracing::error!(error = %error, "ipc hide_panel failed");
+    match state.window_manager.hide() {
+        Ok(()) => {
+            emit_panel_visibility_changed(
+                &app_handle,
+                false,
+                PanelVisibilityReasonPayload::Escape,
+                None,
+            )?;
+            tray::refresh(&app_handle)?;
+            Ok(())
+        }
+        Err(error) => {
+            tracing::error!(error = %error, "ipc hide_panel failed");
+            Err(error)
+        }
     }
-    result
 }
 
 #[tauri::command]

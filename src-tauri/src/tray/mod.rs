@@ -10,6 +10,7 @@ use tauri::{
 use crate::{
     error::AppError,
     ipc::commands::CLEAR_HISTORY_CONFIRM_TOKEN,
+    ipc::events::{emit_panel_visibility_changed, PanelVisibilityReasonPayload},
     platform::{
         capabilities::{CapabilityState, PlatformCapabilities, SessionType},
         PlatformCapabilityResolver,
@@ -308,6 +309,12 @@ fn handle_menu_event(app_handle: &AppHandle, event: &MenuEvent) -> Result<(), Ap
         MENU_TOGGLE_PANEL => {
             let state = app_handle.state::<AppState>();
             let visible = state.window_manager.toggle()?;
+            emit_panel_visibility_changed(
+                app_handle,
+                visible,
+                PanelVisibilityReasonPayload::ToggleShortcut,
+                None,
+            )?;
             tracing::info!(visible, "tray toggled panel visibility");
             refresh(app_handle)?;
             Ok(())

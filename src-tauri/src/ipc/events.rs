@@ -17,6 +17,7 @@ pub const EVENT_RECORD_UPDATED: &str = "clipboard:record-updated";
 pub const EVENT_RECORD_DELETED: &str = "clipboard:record-deleted";
 pub const EVENT_HISTORY_CLEARED: &str = "clipboard:history-cleared";
 pub const EVENT_MONITORING_CHANGED: &str = "system:monitoring-changed";
+pub const EVENT_PANEL_VISIBILITY_CHANGED: &str = "system:panel-visibility-changed";
 pub const EVENT_LAUNCH_AT_LOGIN_CHANGED: &str = "system:launch-at-login-changed";
 pub const EVENT_SETTINGS_UPDATED: &str = "system:settings-updated";
 pub const EVENT_UPDATE_CHECK_FINISHED: &str = "system:update-check-finished";
@@ -53,6 +54,26 @@ pub struct MonitoringChangedPayload {
     pub monitoring: bool,
     pub state: MonitoringStatePayload,
     pub changed_at: i64,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, serde::Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PanelVisibilityReasonPayload {
+    ToggleShortcut,
+    FocusLost,
+    Escape,
+    PasteCompleted,
+    QuickPaste,
+    ExternalHide,
+}
+
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+pub struct PanelVisibilityChangedPayload {
+    pub panel_visible: bool,
+    pub reason: PanelVisibilityReasonPayload,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub record_id: Option<u64>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -99,6 +120,32 @@ where
         .emit(EVENT_SETTINGS_UPDATED, snapshot)
         .map_err(|error| AppError::Window(format!("emit settings updated failed: {error}")))?;
     tracing::debug!("ipc settings updated event emitted");
+    Ok(())
+}
+
+pub fn emit_panel_visibility_changed(
+    app_handle: &AppHandle,
+    panel_visible: bool,
+    reason: PanelVisibilityReasonPayload,
+    record_id: Option<u64>,
+) -> Result<(), AppError> {
+    let payload = PanelVisibilityChangedPayload {
+        panel_visible,
+        reason,
+        record_id,
+    };
+
+    app_handle
+        .emit(EVENT_PANEL_VISIBILITY_CHANGED, payload)
+        .map_err(|error| {
+            AppError::Window(format!("emit panel visibility changed failed: {error}"))
+        })?;
+    tracing::debug!(
+        panel_visible,
+        ?reason,
+        record_id,
+        "ipc panel visibility changed event emitted"
+    );
     Ok(())
 }
 

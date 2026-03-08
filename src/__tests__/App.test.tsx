@@ -216,7 +216,7 @@ describe("App", () => {
     });
   });
 
-  it("窗口重新聚焦后会恢复主面板显示", async () => {
+  it("收到主面板显隐事件后会同步主面板显示状态", async () => {
     render(<App />);
 
     await waitFor(() => {
@@ -224,15 +224,23 @@ describe("App", () => {
     });
 
     await act(async () => {
-      useUIStore.getState().hidePanel();
+      __emitMockEvent("system:panel-visibility-changed", {
+        panel_visible: false,
+        reason: "focus_lost",
+      });
     });
 
     await waitFor(() => {
       expect(screen.queryByTestId("card-list")).not.toBeInTheDocument();
     });
+    expect(useUIStore.getState().isPanelVisible).toBe(false);
+    expect(useSystemStore.getState().panelVisible).toBe(false);
 
     await act(async () => {
-      fireEvent.focus(window);
+      __emitMockEvent("system:panel-visibility-changed", {
+        panel_visible: true,
+        reason: "toggle_shortcut",
+      });
     });
 
     await waitFor(() => {

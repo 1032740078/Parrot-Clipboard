@@ -10,6 +10,7 @@ import type {
   NewRecordPayload,
   NewRecordPayloadV2,
   MonitoringChangedPayload,
+  PanelVisibilityChangedPayload,
   RecordDeletedPayload,
   RecordUpdatedPayload,
   SettingsUpdatedPayload,
@@ -97,6 +98,23 @@ export const onMonitoringChanged = async (
     });
   } catch (error) {
     logger.error("订阅监听状态变更事件失败", { error: normalizeError(error) });
+    throw error;
+  }
+};
+
+export const onPanelVisibilityChanged = async (
+  handler: (payload: PanelVisibilityChangedPayload) => void
+): Promise<() => void> => {
+  try {
+    return await listen<PanelVisibilityChangedPayload>("system:panel-visibility-changed", (event) => {
+      try {
+        handler(event.payload);
+      } catch (error) {
+        logger.error("处理主面板显隐事件失败", { error: normalizeError(error) });
+      }
+    });
+  } catch (error) {
+    logger.error("订阅主面板显隐事件失败", { error: normalizeError(error) });
     throw error;
   }
 };

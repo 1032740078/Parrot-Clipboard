@@ -17,6 +17,7 @@ import {
   onMonitoringChanged,
   onNewRecord,
   onNewRecordSummary,
+  onPanelVisibilityChanged,
   onRecordDeleted,
   onRecordUpdated,
   onSettingsUpdated,
@@ -82,22 +83,26 @@ describe("api/events", () => {
     const summaryHandler = vi.fn();
     const updatedHandler = vi.fn();
     const monitoringHandler = vi.fn();
+    const panelVisibilityHandler = vi.fn();
     const launchAtLoginHandler = vi.fn();
     const settingsUpdatedHandler = vi.fn();
     const unlistenLegacy = await onNewRecord(legacyHandler);
     const unlistenSummary = await onNewRecordSummary(summaryHandler);
     const unlistenUpdated = await onRecordUpdated(updatedHandler);
     const unlistenMonitoring = await onMonitoringChanged(monitoringHandler);
+    const unlistenPanelVisibility = await onPanelVisibilityChanged(panelVisibilityHandler);
     const unlistenLaunchAtLogin = await onLaunchAtLoginChanged(launchAtLoginHandler);
     const unlistenSettingsUpdated = await onSettingsUpdated(settingsUpdatedHandler);
     const newPayload = { record: summaryRecord, evicted_ids: [9] };
     const updatedPayload = { reason: "promoted" as const, record: summaryRecord };
     const monitoringPayload = { monitoring: false, state: "paused" as const, changed_at: 1234 };
+    const panelVisibilityPayload = { panel_visible: false, reason: "focus_lost" as const };
     const launchAtLoginPayload = { launch_at_login: false, changed_at: 2345 };
 
     __emitMockEvent("clipboard:new-record", newPayload);
     __emitMockEvent("clipboard:record-updated", updatedPayload);
     __emitMockEvent("system:monitoring-changed", monitoringPayload);
+    __emitMockEvent("system:panel-visibility-changed", panelVisibilityPayload);
     __emitMockEvent("system:launch-at-login-changed", launchAtLoginPayload);
     __emitMockEvent("system:settings-updated", settingsSnapshot);
 
@@ -105,12 +110,14 @@ describe("api/events", () => {
     expect(summaryHandler).toHaveBeenCalledWith(newPayload);
     expect(updatedHandler).toHaveBeenCalledWith(updatedPayload);
     expect(monitoringHandler).toHaveBeenCalledWith(monitoringPayload);
+    expect(panelVisibilityHandler).toHaveBeenCalledWith(panelVisibilityPayload);
     expect(launchAtLoginHandler).toHaveBeenCalledWith(launchAtLoginPayload);
     expect(settingsUpdatedHandler).toHaveBeenCalledWith(settingsSnapshot);
     unlistenLegacy();
     unlistenSummary();
     unlistenUpdated();
     unlistenMonitoring();
+    unlistenPanelVisibility();
     unlistenLaunchAtLogin();
     unlistenSettingsUpdated();
   });
@@ -184,6 +191,7 @@ describe("api/events", () => {
     await expect(onNewRecord(() => undefined)).rejects.toThrow("subscribe failed");
     await expect(onRecordUpdated(() => undefined)).rejects.toThrow("subscribe failed");
     await expect(onMonitoringChanged(() => undefined)).rejects.toThrow("subscribe failed");
+    await expect(onPanelVisibilityChanged(() => undefined)).rejects.toThrow("subscribe failed");
     await expect(onLaunchAtLoginChanged(() => undefined)).rejects.toThrow("subscribe failed");
     await expect(onSettingsUpdated(() => undefined)).rejects.toThrow("subscribe failed");
     await expect(onHistoryCleared(() => undefined)).rejects.toThrow("subscribe failed");
@@ -197,11 +205,18 @@ describe("api/events", () => {
     const unlistenLaunchAtLogin = await onLaunchAtLoginChanged(() => {
       throw new Error("launch failed");
     });
+    const unlistenPanelVisibility = await onPanelVisibilityChanged(() => {
+      throw new Error("panel failed");
+    });
     const unlistenRecordDeleted = await onRecordDeleted(() => {
       throw new Error("delete failed");
     });
 
     __emitMockEvent("system:launch-at-login-changed", { launch_at_login: true, changed_at: 3456 });
+    __emitMockEvent("system:panel-visibility-changed", {
+      panel_visible: false,
+      reason: "focus_lost",
+    });
     __emitMockEvent("clipboard:record-deleted", { id: 1, reason: "manual" });
     await Promise.resolve();
 
@@ -213,11 +228,16 @@ describe("api/events", () => {
         }),
         expect.objectContaining({
           command: "write_client_log",
+          args: expect.objectContaining({ message: "处理主面板显隐事件失败" }),
+        }),
+        expect.objectContaining({
+          command: "write_client_log",
           args: expect.objectContaining({ message: "处理记录删除事件失败" }),
         }),
       ])
     );
     unlistenLaunchAtLogin();
+    unlistenPanelVisibility();
     unlistenRecordDeleted();
   });
 });

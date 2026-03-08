@@ -15,6 +15,7 @@ import { useSettingsStore, useSystemStore, useUIStore } from "./stores";
 
 function App() {
   const showPanel = useUIStore((state) => state.showPanel);
+  const hidePanelState = useUIStore((state) => state.hidePanel);
   const toast = useUIStore((state) => state.toast);
   const hideToast = useUIStore((state) => state.hideToast);
   const clearHistoryDialog = useUIStore((state) => state.clearHistoryDialog);
@@ -26,7 +27,6 @@ function App() {
 
   const hydrateRuntimeStatus = useSystemStore((state) => state.hydrateRuntimeStatus);
   const permissionStatus = useSystemStore((state) => state.permissionStatus);
-  const setPanelVisible = useSystemStore((state) => state.setPanelVisible);
   const setPermissionStatus = useSystemStore((state) => state.setPermissionStatus);
   const setTrayAvailable = useSystemStore((state) => state.setTrayAvailable);
   const hydrateSettings = useSettingsStore((state) => state.hydrateSettings);
@@ -49,6 +49,11 @@ function App() {
         }
 
         hydrateRuntimeStatus(status);
+        if (status.panel_visible) {
+          showPanel();
+        } else {
+          hidePanelState();
+        }
       } catch (error) {
         if (!isMounted) {
           return;
@@ -93,38 +98,19 @@ function App() {
       }
     };
 
-    const restorePanelVisibility = (): void => {
-      showPanel();
-      setPanelVisible(true);
-      void syncRuntimeStatus();
-      void syncPermission(false);
-    };
-
-    const handleVisibilityChange = (): void => {
-      if (document.visibilityState === "visible") {
-        restorePanelVisibility();
-      }
-    };
-
-    restorePanelVisibility();
+    void syncRuntimeStatus();
     void syncSettings();
     void syncPermission(true);
-    window.addEventListener("focus", restorePanelVisibility);
-    window.addEventListener("pageshow", restorePanelVisibility);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       isMounted = false;
-      window.removeEventListener("focus", restorePanelVisibility);
-      window.removeEventListener("pageshow", restorePanelVisibility);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [
     closePermissionGuide,
+    hidePanelState,
     hydrateRuntimeStatus,
     hydrateSettings,
     openPermissionGuide,
-    setPanelVisible,
     setPermissionStatus,
     setTrayAvailable,
     showPanel,

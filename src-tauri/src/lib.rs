@@ -37,7 +37,7 @@ use state::AppState;
 use tauri::Manager;
 use tauri_plugin_global_shortcut::Builder as GlobalShortcutBuilder;
 use tray::{runtime_snapshot as tray_runtime_snapshot, TrayController};
-use window::{TauriWindowManager, WindowManager};
+use window::{register_panel_focus_auto_hide, TauriWindowManager, WindowManager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -134,6 +134,8 @@ pub fn run() {
                 logging_state,
                 migration_status: persistence_state.migration_status,
             });
+
+            register_panel_focus_auto_hide(&app_handle).map_err(std::io::Error::other)?;
 
             tauri::async_runtime::spawn(async move {
                 let mut interval = tokio::time::interval(Duration::from_secs(6 * 60 * 60));

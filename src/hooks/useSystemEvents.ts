@@ -5,6 +5,7 @@ import {
   onHistoryCleared,
   onLaunchAtLoginChanged,
   onMonitoringChanged,
+  onPanelVisibilityChanged,
   onSettingsUpdated,
 } from "../api/events";
 import { logger, normalizeError } from "../api/logger";
@@ -19,6 +20,7 @@ export const useSystemEvents = (): void => {
   const hydrateSettings = useSettingsStore((state) => state.hydrateSettings);
 
   const showPanel = useUIStore((state) => state.showPanel);
+  const hidePanel = useUIStore((state) => state.hidePanel);
   const openClearHistoryDialog = useUIStore((state) => state.openClearHistoryDialog);
   const closeClearHistoryDialog = useUIStore((state) => state.closeClearHistoryDialog);
   const showToast = useUIStore((state) => state.showToast);
@@ -69,6 +71,23 @@ export const useSystemEvents = (): void => {
         );
 
         cleanups.push(
+          await onPanelVisibilityChanged((payload) => {
+            if (!isMounted) {
+              return;
+            }
+
+            if (payload.panel_visible) {
+              showPanel();
+            } else {
+              hidePanel();
+            }
+
+            setPanelVisible(payload.panel_visible);
+            logger.info("主面板显隐状态已同步到前端", { ...payload });
+          })
+        );
+
+        cleanups.push(
           await onLaunchAtLoginChanged((payload) => {
             if (!isMounted) {
               return;
@@ -112,6 +131,7 @@ export const useSystemEvents = (): void => {
     };
   }, [
     closeClearHistoryDialog,
+    hidePanel,
     openClearHistoryDialog,
     resetClipboard,
     hydrateSettings,

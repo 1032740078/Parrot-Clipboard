@@ -89,11 +89,24 @@ export interface MonitoringStatus {
 }
 
 export type MonitoringState = "running" | "paused";
+export type PanelVisibilityReason =
+  | "toggle_shortcut"
+  | "focus_lost"
+  | "escape"
+  | "paste_completed"
+  | "quick_paste"
+  | "external_hide";
 
 export interface MonitoringChangedPayload {
   monitoring: boolean;
   state: MonitoringState;
   changed_at: number;
+}
+
+export interface PanelVisibilityChangedPayload {
+  panel_visible: boolean;
+  reason: PanelVisibilityReason;
+  record_id?: number | null;
 }
 
 export interface LaunchAtLoginChangedPayload {

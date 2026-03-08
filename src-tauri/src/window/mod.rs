@@ -1,11 +1,16 @@
-use std::sync::{Arc, Mutex};
+use std::{sync::{Arc, Mutex}, time::Duration};
 
-use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize};
+use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, WindowEvent};
 
 #[cfg(target_os = "macos")]
 use core_graphics::{display::CGDisplayBounds, geometry::CGPoint};
 
-use crate::error::AppError;
+use crate::{
+    error::AppError,
+    ipc::events::{emit_panel_visibility_changed, PanelVisibilityReasonPayload},
+    state::AppState,
+    tray,
+};
 
 use self::position::{
     calculate_macos_display_point_from_mouse_location, calculate_panel_frame_for_work_area,
@@ -22,6 +27,103 @@ use objc::{
 pub mod about_window;
 pub mod position;
 pub mod settings_window;
+
+const PANEL_AUTO_HIDE_DELAY_MS: u64 = 40;
+
+trait PanelAutoHideRuntime {
+    fn is_visible(&self) -> Result<bool, AppError>;
+    fn is_focused(&self) -> Result<bool, AppError>;
+    fn hide(&self) -> Result<(), AppError>;
+    fn emit_focus_lost_hidden(&self) -> Result<(), AppError>;
+    fn refresh_tray(&self) -> Result<(), AppError>;
+}
+
+struct AppPanelAutoHideRuntime<'a> {
+    app_handle: &'a AppHandle,
+}
+
+impl<'a> AppPanelAutoHideRuntime<'a> {
+    fn new(app_handle: &'a AppHandle) -> Self {
+        Self { app_handle }
+    }
+}
+
+impl PanelAutoHideRuntime for AppPanelAutoHideRuntime<'_> {
+    fn is_visible(&self) -> Result<bool, AppError> {
+        let state = self.app_handle.state::<AppState>();
+        state.window_manager.is_visible()
+    }
+
+    fn is_focused(&self) -> Result<bool, AppError> {
+        let window = self
+            .app_handle
+            .get_webview_window("main")
+            .ok_or_else(|| AppError::Window("main window not found".to_string()))?;
+
+        window
+            .is_focused()
+            .map_err(|error| AppError::Window(format!("query focused failed: {error}")))
+    }
+
+    fn hide(&self) -> Result<(), AppError> {
+        let state = self.app_handle.state::<AppState>();
+        state.window_manager.hide()
+    }
+
+    fn emit_focus_lost_hidden(&self) -> Result<(), AppError> {
+        emit_panel_visibility_changed(
+            self.app_handle,
+            false,
+            PanelVisibilityReasonPayload::FocusLost,
+            None,
+        )
+    }
+
+    fn refresh_tray(&self) -> Result<(), AppError> {
+        tray::refresh(self.app_handle)
+    }
+}
+
+fn auto_hide_panel_on_focus_lost<R: PanelAutoHideRuntime>(runtime: &R) -> Result<bool, AppError> {
+    if !runtime.is_visible()? || runtime.is_focused()? {
+        return Ok(false);
+    }
+
+    runtime.hide()?;
+    runtime.emit_focus_lost_hidden()?;
+    runtime.refresh_tray()?;
+    Ok(true)
+}
+
+pub fn register_panel_focus_auto_hide(app_handle: &AppHandle) -> Result<(), AppError> {
+    let window = app_handle
+        .get_webview_window("main")
+        .ok_or_else(|| AppError::Window("main window not found".to_string()))?;
+    let app_handle = app_handle.clone();
+
+    window.on_window_event(move |event| {
+        if !matches!(event, WindowEvent::Focused(false)) {
+            return;
+        }
+
+        let app_handle = app_handle.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(PANEL_AUTO_HIDE_DELAY_MS)).await;
+
+            let runtime = AppPanelAutoHideRuntime::new(&app_handle);
+            match auto_hide_panel_on_focus_lost(&runtime) {
+                Ok(true) => tracing::info!("panel auto hidden after focus lost"),
+                Ok(false) => {}
+                Err(error) => tracing::warn!(
+                    error = %error,
+                    "panel auto hide after focus lost failed"
+                ),
+            }
+        });
+    });
+
+    Ok(())
+}
 
 pub trait WindowManager: Send + Sync {
     fn show(&self) -> Result<(), AppError>;
@@ -535,5 +637,88 @@ impl WindowManager for TauriWindowManager {
         window
             .is_visible()
             .map_err(|error| AppError::Window(format!("query visible failed: {error}")))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{cell::RefCell, collections::VecDeque};
+
+    use super::{auto_hide_panel_on_focus_lost, PanelAutoHideRuntime};
+    use crate::error::AppError;
+
+    #[derive(Default)]
+    struct MockPanelAutoHideRuntime {
+        visible_states: RefCell<VecDeque<bool>>,
+        focused_states: RefCell<VecDeque<bool>>,
+        calls: RefCell<Vec<&'static str>>,
+    }
+
+    impl MockPanelAutoHideRuntime {
+        fn new(visible_states: Vec<bool>, focused_states: Vec<bool>) -> Self {
+            Self {
+                visible_states: RefCell::new(VecDeque::from(visible_states)),
+                focused_states: RefCell::new(VecDeque::from(focused_states)),
+                calls: RefCell::new(Vec::new()),
+            }
+        }
+    }
+
+    impl PanelAutoHideRuntime for MockPanelAutoHideRuntime {
+        fn is_visible(&self) -> Result<bool, AppError> {
+            Ok(self.visible_states.borrow_mut().pop_front().unwrap_or(false))
+        }
+
+        fn is_focused(&self) -> Result<bool, AppError> {
+            Ok(self.focused_states.borrow_mut().pop_front().unwrap_or(false))
+        }
+
+        fn hide(&self) -> Result<(), AppError> {
+            self.calls.borrow_mut().push("hide");
+            Ok(())
+        }
+
+        fn emit_focus_lost_hidden(&self) -> Result<(), AppError> {
+            self.calls.borrow_mut().push("emit_focus_lost_hidden");
+            Ok(())
+        }
+
+        fn refresh_tray(&self) -> Result<(), AppError> {
+            self.calls.borrow_mut().push("refresh_tray");
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn auto_hides_panel_when_focus_is_lost_and_window_remains_visible() {
+        let runtime = MockPanelAutoHideRuntime::new(vec![true], vec![false]);
+
+        let handled = auto_hide_panel_on_focus_lost(&runtime).expect("auto hide should succeed");
+
+        assert!(handled);
+        assert_eq!(
+            *runtime.calls.borrow(),
+            vec!["hide", "emit_focus_lost_hidden", "refresh_tray"]
+        );
+    }
+
+    #[test]
+    fn skips_auto_hide_when_window_is_already_hidden() {
+        let runtime = MockPanelAutoHideRuntime::new(vec![false], vec![]);
+
+        let handled = auto_hide_panel_on_focus_lost(&runtime).expect("skip should succeed");
+
+        assert!(!handled);
+        assert!(runtime.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn skips_auto_hide_when_window_has_regained_focus() {
+        let runtime = MockPanelAutoHideRuntime::new(vec![true], vec![true]);
+
+        let handled = auto_hide_panel_on_focus_lost(&runtime).expect("skip should succeed");
+
+        assert!(!handled);
+        assert!(runtime.calls.borrow().is_empty());
     }
 }

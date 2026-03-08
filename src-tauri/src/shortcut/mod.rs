@@ -6,7 +6,9 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use crate::{
     config::schema::PlatformKind,
     error::AppError,
+    ipc::events::{emit_panel_visibility_changed, PanelVisibilityReasonPayload},
     platform::{capabilities::CapabilityState, PlatformCapabilities, PlatformCapabilityResolver},
+    tray,
     window::WindowManager,
 };
 
@@ -31,6 +33,7 @@ pub fn register_toggle_shortcut(
 ) -> Result<ShortcutRegistrationOutcome, AppError> {
     let shortcut_string = shortcut.to_string();
     let capabilities = PlatformCapabilityResolver::current().resolve();
+    let app_handle = app.clone();
 
     if !should_register_toggle_shortcut(&capabilities) {
         tracing::warn!(
@@ -49,8 +52,32 @@ pub fn register_toggle_shortcut(
         .on_shortcut(shortcut, move |_app, _shortcut, event| {
             if event.state == ShortcutState::Pressed {
                 tracing::debug!(shortcut = %shortcut_string, "toggle shortcut pressed");
-                if let Err(error) = window_manager.toggle() {
+                match window_manager.toggle() {
+                    Ok(panel_visible) => {
+                        if let Err(error) = emit_panel_visibility_changed(
+                            &app_handle,
+                            panel_visible,
+                            PanelVisibilityReasonPayload::ToggleShortcut,
+                            None,
+                        ) {
+                            tracing::warn!(
+                                error = %error,
+                                panel_visible,
+                                "emit panel visibility after shortcut failed"
+                            );
+                        }
+
+                        if let Err(error) = tray::refresh(&app_handle) {
+                            tracing::warn!(
+                                error = %error,
+                                panel_visible,
+                                "refresh tray after shortcut toggle failed"
+                            );
+                        }
+                    }
+                    Err(error) => {
                     tracing::error!(error = %error, "toggle window failed");
+                    }
                 }
             }
         })
