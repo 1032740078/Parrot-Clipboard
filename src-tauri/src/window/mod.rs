@@ -1,4 +1,7 @@
-use std::{sync::{Arc, Mutex}, time::Duration};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, WindowEvent};
 
@@ -143,7 +146,7 @@ impl TauriWindowManager {
     #[cfg(target_os = "macos")]
     const NS_APPLICATION_ACTIVATE_IGNORING_OTHER_APPS: usize = 1 << 1;
     #[cfg(target_os = "macos")]
-    const NS_STATUS_WINDOW_LEVEL: isize = 25;
+    const CG_POPUP_MENU_WINDOW_LEVEL_KEY: i32 = 11;
     #[cfg(target_os = "macos")]
     const NS_WINDOW_COLLECTION_BEHAVIOR_CAN_JOIN_ALL_SPACES: usize = 1 << 0;
     #[cfg(target_os = "macos")]
@@ -275,6 +278,7 @@ impl TauriWindowManager {
     }
 
     fn configure_panel_window(&self, window: &tauri::WebviewWindow) -> Result<(), AppError> {
+        #[cfg(not(target_os = "macos"))]
         window
             .set_always_on_top(true)
             .map_err(|error| AppError::Window(format!("set always on top failed: {error}")))?;
@@ -293,29 +297,15 @@ impl TauriWindowManager {
                 AppError::Window(format!("set visible on all workspaces failed: {error}"))
             })?;
 
-        let native_window = window
-            .ns_window()
-            .map_err(|error| AppError::Window(format!("get native window failed: {error}")))?
-            as *mut Object;
-
-        if native_window.is_null() {
-            return Err(AppError::Window("native window is null".to_string()));
-        }
-
-        unsafe {
-            let _: () = msg_send![native_window, setLevel: Self::NS_STATUS_WINDOW_LEVEL];
-
-            let mut collection_behavior: usize = msg_send![native_window, collectionBehavior];
-            collection_behavior |= Self::NS_WINDOW_COLLECTION_BEHAVIOR_CAN_JOIN_ALL_SPACES;
-            collection_behavior |= Self::NS_WINDOW_COLLECTION_BEHAVIOR_FULL_SCREEN_AUXILIARY;
-            let _: () = msg_send![native_window, setCollectionBehavior: collection_behavior];
-        }
+        let native_window = self.native_macos_window(window)?;
+        self.apply_macos_panel_level(native_window);
+        self.apply_macos_panel_collection_behavior(native_window);
 
         Ok(())
     }
 
     #[cfg(target_os = "macos")]
-    fn bring_panel_to_front(&self, window: &tauri::WebviewWindow) -> Result<(), AppError> {
+    fn native_macos_window(&self, window: &tauri::WebviewWindow) -> Result<*mut Object, AppError> {
         let native_window = window
             .ns_window()
             .map_err(|error| AppError::Window(format!("get native window failed: {error}")))?
@@ -325,9 +315,44 @@ impl TauriWindowManager {
             return Err(AppError::Window("native window is null".to_string()));
         }
 
+        Ok(native_window)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn macos_panel_window_level(&self) -> isize {
+        unsafe { CGWindowLevelForKey(Self::CG_POPUP_MENU_WINDOW_LEVEL_KEY) as isize }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn apply_macos_panel_level(&self, native_window: *mut Object) {
+        let level = self.macos_panel_window_level();
+
+        unsafe {
+            let _: () = msg_send![native_window, setLevel: level];
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn apply_macos_panel_collection_behavior(&self, native_window: *mut Object) {
+        unsafe {
+            let mut collection_behavior: usize = msg_send![native_window, collectionBehavior];
+            collection_behavior |= Self::NS_WINDOW_COLLECTION_BEHAVIOR_CAN_JOIN_ALL_SPACES;
+            collection_behavior |= Self::NS_WINDOW_COLLECTION_BEHAVIOR_FULL_SCREEN_AUXILIARY;
+            let _: () = msg_send![native_window, setCollectionBehavior: collection_behavior];
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn bring_panel_to_front(&self, window: &tauri::WebviewWindow) -> Result<(), AppError> {
+        let native_window = self.native_macos_window(window)?;
+        self.apply_macos_panel_level(native_window);
+        self.apply_macos_panel_collection_behavior(native_window);
+
         unsafe {
             let _: () = msg_send![native_window, orderFrontRegardless];
         }
+
+        self.apply_macos_panel_level(native_window);
 
         Ok(())
     }
@@ -434,6 +459,7 @@ unsafe extern "C" {
         displays: *mut CGDirectDisplayID,
         matching_display_count: *mut u32,
     ) -> i32;
+    fn CGWindowLevelForKey(key: i32) -> i32;
 }
 
 #[cfg(target_os = "macos")]
@@ -659,6 +685,8 @@ mod tests {
     use std::{cell::RefCell, collections::VecDeque};
 
     use super::{auto_hide_panel_on_focus_lost, PanelAutoHideRuntime};
+    #[cfg(target_os = "macos")]
+    use super::{CGWindowLevelForKey, TauriWindowManager};
     use crate::error::AppError;
 
     #[derive(Default)]
@@ -680,11 +708,19 @@ mod tests {
 
     impl PanelAutoHideRuntime for MockPanelAutoHideRuntime {
         fn is_visible(&self) -> Result<bool, AppError> {
-            Ok(self.visible_states.borrow_mut().pop_front().unwrap_or(false))
+            Ok(self
+                .visible_states
+                .borrow_mut()
+                .pop_front()
+                .unwrap_or(false))
         }
 
         fn is_focused(&self) -> Result<bool, AppError> {
-            Ok(self.focused_states.borrow_mut().pop_front().unwrap_or(false))
+            Ok(self
+                .focused_states
+                .borrow_mut()
+                .pop_front()
+                .unwrap_or(false))
         }
 
         fn hide(&self) -> Result<(), AppError> {
@@ -734,5 +770,17 @@ mod tests {
 
         assert!(!handled);
         assert!(runtime.calls.borrow().is_empty());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn popup_menu_window_level_stays_above_dock_level() {
+        const CG_DOCK_WINDOW_LEVEL_KEY: i32 = 7;
+
+        let popup_level =
+            unsafe { CGWindowLevelForKey(TauriWindowManager::CG_POPUP_MENU_WINDOW_LEVEL_KEY) };
+        let dock_level = unsafe { CGWindowLevelForKey(CG_DOCK_WINDOW_LEVEL_KEY) };
+
+        assert!(popup_level > dock_level);
     }
 }
