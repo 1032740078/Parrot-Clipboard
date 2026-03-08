@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type WheelEvent } from "react";
 
 import { isFileRecord, isImageRecord, type ClipboardRecord } from "../../types/clipboard";
 import { FileCard } from "./FileCard";
@@ -34,6 +34,33 @@ const setContainerScrollLeft = (container: HTMLDivElement, left: number): void =
 
   container.scrollLeft = left;
   container.dispatchEvent(new Event("scroll"));
+};
+
+const calculateNextWheelScrollLeft = (
+  currentLeft: number,
+  horizontalDelta: number,
+  visibleWidth: number,
+  contentWidth: number
+): number => {
+  const maxScrollLeft = Math.max(contentWidth - visibleWidth, 0);
+
+  if (maxScrollLeft <= 0) {
+    return currentLeft;
+  }
+
+  return Math.min(Math.max(currentLeft + horizontalDelta, 0), maxScrollLeft);
+};
+
+const getShiftWheelHorizontalDelta = (event: WheelEvent<HTMLDivElement>): number => {
+  if (!event.shiftKey) {
+    return 0;
+  }
+
+  if (event.deltaX !== 0) {
+    return event.deltaX;
+  }
+
+  return event.deltaY;
 };
 
 const calculateNextScrollLeft = (
@@ -165,6 +192,29 @@ export const CardList = ({ records, selectedIndex }: CardListProps) => {
         }
 
         setScrollLeft((event.currentTarget as HTMLDivElement).scrollLeft ?? 0);
+      }}
+      onWheel={(event) => {
+        const horizontalDelta = getShiftWheelHorizontalDelta(event);
+        if (horizontalDelta === 0) {
+          return;
+        }
+
+        const container = event.currentTarget;
+        const visibleWidth = getViewportWidth(container);
+        const currentLeft = container.scrollLeft ?? scrollLeft;
+        const nextLeft = calculateNextWheelScrollLeft(
+          currentLeft,
+          horizontalDelta,
+          visibleWidth,
+          contentWidth
+        );
+
+        if (nextLeft === currentLeft) {
+          return;
+        }
+
+        event.preventDefault();
+        setContainerScrollLeft(container, nextLeft);
       }}
       ref={containerRef}
     >

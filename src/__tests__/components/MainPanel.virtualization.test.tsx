@@ -13,7 +13,9 @@ import { useUIStore } from "../../stores/useUIStore";
 import { buildRecord } from "../fixtures/clipboardRecords";
 
 const buildLargeRecords = (count = 60) =>
-  Array.from({ length: count }, (_, index) => buildRecord(index + 1, `记录 ${index + 1}`, 5000 - index));
+  Array.from({ length: count }, (_, index) =>
+    buildRecord(index + 1, `记录 ${index + 1}`, 5000 - index)
+  );
 
 const setInvokeForRecords = (records = buildLargeRecords()) => {
   __setInvokeHandler(async (command: string, args?: Record<string, unknown>) => {
@@ -50,8 +52,7 @@ const attachScrollableViewport = async (): Promise<HTMLDivElement> => {
   });
 
   cardList.scrollTo = ((optionsOrX?: ScrollToOptions | number) => {
-    const nextLeft =
-      typeof optionsOrX === "number" ? optionsOrX : Number(optionsOrX?.left ?? 0);
+    const nextLeft = typeof optionsOrX === "number" ? optionsOrX : Number(optionsOrX?.left ?? 0);
     cardList.scrollLeft = nextLeft;
   }) as typeof cardList.scrollTo;
 
@@ -169,6 +170,24 @@ describe("MainPanel virtualization", () => {
     await waitFor(() => {
       expect(useClipboardStore.getState().selectedIndex).toBe(8);
       expect(useClipboardStore.getState().getSelectedRecord()?.id).toBe(9);
+      expect(cardList.scrollLeft).toBeGreaterThan(0);
+    });
+  });
+
+  it("UT-FE-LIST-105 Shift + 鼠标滚轮会转换为横向滚动", async () => {
+    const records = buildLargeRecords(10);
+    setInvokeForRecords(records);
+
+    render(<MainPanel />);
+    const cardList = await attachScrollableViewport();
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("text-card")).toHaveLength(10);
+    });
+
+    fireEvent.wheel(cardList, { deltaY: 160, shiftKey: true });
+
+    await waitFor(() => {
       expect(cardList.scrollLeft).toBeGreaterThan(0);
     });
   });
