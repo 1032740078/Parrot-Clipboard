@@ -3,7 +3,10 @@ type InvokeCall = {
   args?: Record<string, unknown>;
 };
 
-type InvokeHandler = (command: string, args?: Record<string, unknown>) => unknown | Promise<unknown>;
+type InvokeHandler = (
+  command: string,
+  args?: Record<string, unknown>
+) => unknown | Promise<unknown>;
 
 let invokeHandler: InvokeHandler | null = null;
 
@@ -26,6 +29,11 @@ export const invoke = async <T>(command: string, args?: Record<string, unknown>)
   }
 
   return (await invokeHandler(command, args)) as T;
+};
+
+export const convertFileSrc = (filePath: string, protocol = "asset"): string => {
+  const normalizedPath = encodeURI(filePath).replace(/#/g, "%23").replace(/\?/g, "%3F");
+  return `${protocol}://${normalizedPath}`;
 };
 
 export const transformCallback = (): (() => void) => {

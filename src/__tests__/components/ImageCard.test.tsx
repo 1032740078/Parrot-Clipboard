@@ -1,22 +1,138 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { ImageCard } from "../../components/MainPanel/ImageCard";
+import {
+  __resetInvokeMock,
+  __setInvokeHandler,
+  invokeCalls,
+} from "../../__mocks__/@tauri-apps/api/core";
 import { buildImageRecord } from "../fixtures/clipboardRecords";
 
+const buildImageDetail = (id: number, originalPath?: string | null) => ({
+  id,
+  content_type: "image" as const,
+  preview_text: "截图",
+  source_app: "Finder",
+  created_at: 1000,
+  last_used_at: 1000,
+  text_meta: null,
+  image_meta: {
+    mime_type: "image/png",
+    pixel_width: 1280,
+    pixel_height: 720,
+    thumbnail_path: null,
+    thumbnail_state: "failed" as const,
+  },
+  files_meta: null,
+  text_content: null,
+  rich_content: null,
+  image_detail: originalPath
+    ? {
+        original_path: originalPath,
+        mime_type: "image/png",
+        pixel_width: 1280,
+        pixel_height: 720,
+        byte_size: 2048,
+      }
+    : null,
+  files_detail: null,
+});
+
 describe("ImageCard", () => {
-  it("UT-FE-CARD-002 未就绪时展示占位态", () => {
-    render(<ImageCard index={0} isSelected={false} record={buildImageRecord(1, "截图", 1000, "pending")} />);
+  beforeEach(() => {
+    __resetInvokeMock();
+    __setInvokeHandler(async () => undefined);
+  });
+
+  it("UT-FE-IMG-201 thumbnail_path 可用时显示缩略图", () => {
+    render(
+      <ImageCard index={1} isSelected={true} record={buildImageRecord(2, "截图", 1000, "ready")} />
+    );
+
+    expect(screen.getByTestId("image-thumbnail").getAttribute("src")).toContain("thumb-2.png");
+    expect(screen.getByText("PNG")).toBeInTheDocument();
+    expect(screen.getByText("1280×720")).toBeInTheDocument();
+  });
+
+  it("UT-FE-IMG-202 缩略图不可用时回退显示原图预览", async () => {
+    __setInvokeHandler(async (command) => {
+      if (command === "get_record_detail") {
+        return buildImageDetail(2, "/tmp/original-2.png");
+      }
+
+      return undefined;
+    });
+
+    render(
+      <ImageCard
+        index={0}
+        isSelected={false}
+        record={buildImageRecord(2, "截图", 1000, "failed")}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("image-original").getAttribute("src")).toContain("original-2.png");
+    });
+
+    expect(invokeCalls).toContainEqual({ command: "get_record_detail", args: { id: 2 } });
+  });
+
+  it("UT-FE-IMG-203 缩略图与原图都不可用时显示占位态", async () => {
+    __setInvokeHandler(async (command) => {
+      if (command === "get_record_detail") {
+        return buildImageDetail(4, null);
+      }
+
+      return undefined;
+    });
+
+    render(
+      <ImageCard
+        index={0}
+        isSelected={false}
+        record={buildImageRecord(4, "截图", 1000, "failed")}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("image-placeholder")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("预览不可用")).toBeInTheDocument();
+  });
+
+  it("UT-FE-IMG-204 缩略图加载失败后自动回退原图", async () => {
+    __setInvokeHandler(async (command) => {
+      if (command === "get_record_detail") {
+        return buildImageDetail(3, "/tmp/original-3.png");
+      }
+
+      return undefined;
+    });
+
+    render(
+      <ImageCard index={0} isSelected={false} record={buildImageRecord(3, "截图", 1000, "ready")} />
+    );
+
+    fireEvent.error(screen.getByTestId("image-thumbnail"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("image-original").getAttribute("src")).toContain("original-3.png");
+    });
+  });
+
+  it("thumbnail_state=pending 时展示生成中占位态", () => {
+    render(
+      <ImageCard
+        index={0}
+        isSelected={false}
+        record={buildImageRecord(1, "截图", 1000, "pending")}
+      />
+    );
 
     expect(screen.getByTestId("image-placeholder")).toBeInTheDocument();
     expect(screen.getByText("正在生成预览")).toBeInTheDocument();
-  });
-
-  it("UT-FE-CARD-003 就绪后展示缩略图与尺寸信息", () => {
-    render(<ImageCard index={1} isSelected={true} record={buildImageRecord(2, "截图", 1000, "ready")} />);
-
-    expect(screen.getByTestId("image-thumbnail")).toHaveAttribute("src", "/tmp/thumb-2.png");
-    expect(screen.getByText("PNG")).toBeInTheDocument();
-    expect(screen.getByText("1280×720")).toBeInTheDocument();
   });
 });

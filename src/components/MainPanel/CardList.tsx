@@ -98,6 +98,14 @@ const renderCard = (record: ClipboardRecord, index: number, isSelected: boolean)
   return <TextCard index={index} isSelected={isSelected} record={record} />;
 };
 
+const getCardRenderKey = (record: ClipboardRecord): string => {
+  if (!isImageRecord(record)) {
+    return `${record.id}`;
+  }
+
+  return `${record.id}:${record.image_meta?.thumbnail_state ?? "failed"}:${record.image_meta?.thumbnail_path ?? ""}`;
+};
+
 export const CardList = ({
   records,
   selectedIndex,
@@ -203,7 +211,7 @@ export const CardList = ({
         return (
           <div
             className="cursor-pointer"
-            key={record.id}
+            key={getCardRenderKey(record)}
             onClick={() => {
               onSelectRecord(index);
             }}
@@ -225,7 +233,7 @@ export const CardList = ({
           return (
             <motion.div
               className="cursor-pointer"
-              key={record.id}
+              key={getCardRenderKey(record)}
               onClick={() => {
                 onSelectRecord(index);
               }}
