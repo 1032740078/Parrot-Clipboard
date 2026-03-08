@@ -1,10 +1,10 @@
 import { useEffect } from "react";
 
-import { deleteRecord, hidePanel, pasteRecordResult } from "../api/commands";
+import { deleteRecord, hidePanel } from "../api/commands";
 import { getErrorMessage } from "../api/errorHandler";
 import { logger, normalizeError } from "../api/logger";
-import { isTextRecord } from "../types/clipboard";
 import { useClipboardStore, useSystemStore, useUIStore } from "../stores";
+import { executeRecordPaste } from "./recordPaste";
 
 interface UseKeyboardOptions {
   enabled: boolean;
@@ -62,7 +62,6 @@ const isMacQuickPasteEnabled = (platform?: string): boolean => {
 export const useKeyboard = ({ enabled }: UseKeyboardOptions): void => {
   const records = useClipboardStore((state) => state.records);
   const selectedIndex = useClipboardStore((state) => state.selectedIndex);
-  const upsertRecord = useClipboardStore((state) => state.upsertRecord);
   const selectPrev = useClipboardStore((state) => state.selectPrev);
   const selectNext = useClipboardStore((state) => state.selectNext);
   const selectIndex = useClipboardStore((state) => state.selectIndex);
@@ -70,7 +69,6 @@ export const useKeyboard = ({ enabled }: UseKeyboardOptions): void => {
 
   const clearHistoryDialog = useUIStore((state) => state.clearHistoryDialog);
   const hidePanelState = useUIStore((state) => state.hidePanel);
-  const openPermissionGuide = useUIStore((state) => state.openPermissionGuide);
   const showToast = useUIStore((state) => state.showToast);
 
   const setPanelVisible = useSystemStore((state) => state.setPanelVisible);
@@ -102,33 +100,15 @@ export const useKeyboard = ({ enabled }: UseKeyboardOptions): void => {
         event.preventDefault();
         selectIndex(quickPasteIndex);
 
-        if (
-          permissionStatus?.platform === "macos" &&
-          permissionStatus.accessibility === "missing"
-        ) {
-          openPermissionGuide();
-          showToast({
-            level: "info",
-            message: "请先完成辅助功能授权后再执行粘贴",
-            duration: 2200,
-          });
-          logger.warn("辅助功能权限缺失，阻止数字快贴", {
-            record_id: target.id,
-            trigger_key: `Command+${event.key}`,
-          });
-          return;
-        }
-
         try {
-          const result = await pasteRecordResult(target.id, "original");
-          upsertRecord(result.record);
-          hidePanelState();
-          setPanelVisible(false);
-          await hidePanel("quick_paste");
-          logger.info("用户通过数字快捷键执行快贴", {
-            record_id: target.id,
-            trigger_key: `Command+${event.key}`,
-            selected_index: quickPasteIndex,
+          await executeRecordPaste({
+            record: target,
+            hideReason: "quick_paste",
+            trigger: "keyboard_quick_paste",
+            logContext: {
+              trigger_key: `Command+${event.key}`,
+              selected_index: quickPasteIndex,
+            },
           });
         } catch (error) {
           showToast({
@@ -175,57 +155,20 @@ export const useKeyboard = ({ enabled }: UseKeyboardOptions): void => {
           return;
         }
 
-        if (
-          permissionStatus?.platform === "macos" &&
-          permissionStatus.accessibility === "missing"
-        ) {
-          event.preventDefault();
-          openPermissionGuide();
-          showToast({
-            level: "info",
-            message: "请先完成辅助功能授权后再执行粘贴",
-            duration: 2200,
-          });
-          logger.warn("辅助功能权限缺失，阻止粘贴快捷键", {
-            record_id: selected.id,
-            paste_mode: event.shiftKey ? "plain_text" : "original",
-          });
-          return;
-        }
-
         event.preventDefault();
         const mode = event.shiftKey ? "plain_text" : "original";
 
-        if (mode === "plain_text" && !isTextRecord(selected)) {
-          showToast({
-            level: "info",
-            message: "仅文本记录支持纯文本粘贴",
-            duration: 1600,
-          });
-          logger.info("阻止非文本记录的纯文本粘贴", {
-            record_id: selected.id,
-            content_type: selected.content_type,
-          });
-          return;
-        }
-
         try {
-          const result = await pasteRecordResult(selected.id, mode);
-          upsertRecord(result.record);
-          if (mode === "plain_text") {
-            showToast({
-              level: "info",
-              message: "已切换为纯文本粘贴",
-              duration: 1200,
-            });
-          }
-          hidePanelState();
-          setPanelVisible(false);
-          await hidePanel("paste_completed");
-          logger.info("用户通过快捷键执行粘贴", {
-            record_id: selected.id,
-            trigger_key: event.shiftKey ? "Shift+Enter" : "Enter",
-            paste_mode: mode,
+          await executeRecordPaste({
+            record: selected,
+            mode,
+            hideReason: "paste_completed",
+            successToastMessage: mode === "plain_text" ? "已切换为纯文本粘贴" : undefined,
+            trigger: event.shiftKey ? "keyboard_shift_enter" : "keyboard_enter",
+            logContext: {
+              trigger_key: event.shiftKey ? "Shift+Enter" : "Enter",
+              selected_index: selectedIndex,
+            },
           });
         } catch (error) {
           showToast({
@@ -296,8 +239,6 @@ export const useKeyboard = ({ enabled }: UseKeyboardOptions): void => {
     selectedIndex,
     setPanelVisible,
     permissionStatus,
-    openPermissionGuide,
     showToast,
-    upsertRecord,
   ]);
 };

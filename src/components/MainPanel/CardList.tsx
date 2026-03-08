@@ -10,6 +10,8 @@ import { TextCard } from "./TextCard";
 interface CardListProps {
   records: ClipboardRecord[];
   selectedIndex: number;
+  onSelectRecord: (index: number) => void;
+  onPasteRecord: (record: ClipboardRecord, index: number) => void;
 }
 
 const CARD_WIDTH_PX = 288;
@@ -96,7 +98,12 @@ const renderCard = (record: ClipboardRecord, index: number, isSelected: boolean)
   return <TextCard index={index} isSelected={isSelected} record={record} />;
 };
 
-export const CardList = ({ records, selectedIndex }: CardListProps) => {
+export const CardList = ({
+  records,
+  selectedIndex,
+  onSelectRecord,
+  onPasteRecord,
+}: CardListProps) => {
   const cardMotionProps = getCardMotionProps(prefersReducedMotion());
   const containerRef = useRef<HTMLDivElement | null>(null);
   const scrollFrameRef = useRef<number | null>(null);
@@ -193,7 +200,20 @@ export const CardList = ({ records, selectedIndex }: CardListProps) => {
       return items.map((record, visibleIndex) => {
         const index = startIndex + visibleIndex;
 
-        return <div key={record.id}>{renderCard(record, index, selectedIndex === index)}</div>;
+        return (
+          <div
+            className="cursor-pointer"
+            key={record.id}
+            onClick={() => {
+              onSelectRecord(index);
+            }}
+            onDoubleClick={() => {
+              onPasteRecord(record, index);
+            }}
+          >
+            {renderCard(record, index, selectedIndex === index)}
+          </div>
+        );
       });
     }
 
@@ -203,7 +223,17 @@ export const CardList = ({ records, selectedIndex }: CardListProps) => {
           const index = startIndex + visibleIndex;
 
           return (
-            <motion.div key={record.id} {...cardMotionProps}>
+            <motion.div
+              className="cursor-pointer"
+              key={record.id}
+              onClick={() => {
+                onSelectRecord(index);
+              }}
+              onDoubleClick={() => {
+                onPasteRecord(record, index);
+              }}
+              {...cardMotionProps}
+            >
               {renderCard(record, index, selectedIndex === index)}
             </motion.div>
           );

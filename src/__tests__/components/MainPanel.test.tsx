@@ -212,4 +212,86 @@ describe("MainPanel", () => {
       expect(invokeCalls.some((call) => call.command === "show_about_window")).toBe(true);
     });
   });
+
+  it("UT-PANEL-009 单击卡片切换选中且不触发粘贴", async () => {
+    setInvokeForRecords(mixedFixtureRecords);
+    render(<MainPanel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("image-card")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("image-card"));
+
+    await waitFor(() => {
+      expect(useClipboardStore.getState().selectedIndex).toBe(1);
+      expect(screen.getByTestId("image-card").className.includes("border-brand")).toBe(true);
+    });
+
+    expect(invokeCalls.some((call) => call.command === "paste_record")).toBe(false);
+  });
+
+  it("UT-PANEL-010 双击卡片直接粘贴且防止重复提交", async () => {
+    let resolvePaste:
+      | ((value: {
+          record: (typeof mixedFixtureRecords)[number];
+          paste_mode: "original";
+          executed_at: number;
+        }) => void)
+      | undefined;
+
+    __setInvokeHandler(async (command: string, args?: Record<string, unknown>) => {
+      if (command === "get_records") {
+        const limit = (args?.limit as number) ?? 20;
+        return mixedFixtureRecords.slice(0, limit);
+      }
+
+      if (command === "paste_record") {
+        return await new Promise((resolve) => {
+          resolvePaste = resolve as typeof resolvePaste;
+        });
+      }
+
+      if (command === "show_about_window") {
+        return undefined;
+      }
+
+      return undefined;
+    });
+
+    render(<MainPanel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("image-card")).toBeInTheDocument();
+    });
+
+    const imageCard = screen.getByTestId("image-card");
+
+    fireEvent.doubleClick(imageCard);
+    fireEvent.doubleClick(imageCard);
+
+    await waitFor(() => {
+      expect(invokeCalls.filter((call) => call.command === "paste_record")).toHaveLength(1);
+      expect(resolvePaste).toBeDefined();
+    });
+
+    resolvePaste?.({
+      record: {
+        ...mixedFixtureRecords[1],
+        last_used_at: 5000,
+      },
+      paste_mode: "original",
+      executed_at: 5000,
+    });
+
+    await waitFor(() => {
+      expect(invokeCalls.find((call) => call.command === "hide_panel")).toEqual({
+        command: "hide_panel",
+        args: { reason: "paste_completed" },
+      });
+      expect(useClipboardStore.getState().records[0]?.id).toBe(2);
+      expect(useClipboardStore.getState().selectedIndex).toBe(0);
+      expect(useUIStore.getState().isPanelVisible).toBe(false);
+    });
+  });
 });

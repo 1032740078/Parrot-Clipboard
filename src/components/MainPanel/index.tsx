@@ -8,6 +8,7 @@ import { getErrorMessage } from "../../api/errorHandler";
 import { isTextRecord, toClipboardRecord } from "../../types/clipboard";
 import { useClipboardEvents } from "../../hooks/useClipboardEvents";
 import { useKeyboard } from "../../hooks/useKeyboard";
+import { executeRecordPaste } from "../../hooks/recordPaste";
 import { useClipboardStore, useSystemStore, useUIStore } from "../../stores";
 import { CardList } from "./CardList";
 import { EmptyState } from "./EmptyState";
@@ -23,6 +24,7 @@ export const MainPanel = () => {
   const selectedRecord = useClipboardStore((state) => state.getSelectedRecord());
   const isHydrating = useClipboardStore((state) => state.isHydrating);
   const hydrate = useClipboardStore((state) => state.hydrate);
+  const selectIndex = useClipboardStore((state) => state.selectIndex);
   const setHydrating = useClipboardStore((state) => state.setHydrating);
 
   const isPanelVisible = useUIStore((state) => state.isPanelVisible);
@@ -67,6 +69,36 @@ export const MainPanel = () => {
         duration: 2200,
       });
     }
+  };
+
+  const handleCardSelect = (index: number): void => {
+    selectIndex(index);
+    logger.debug("用户通过鼠标选择记录", {
+      selected_index: index,
+      record_id: records[index]?.id,
+    });
+  };
+
+  const handleCardDoubleClick = (recordId: number, index: number): void => {
+    const target = records[index];
+    if (!target || target.id !== recordId) {
+      return;
+    }
+
+    selectIndex(index);
+    void executeRecordPaste({
+      record: target,
+      hideReason: "paste_completed",
+      trigger: "mouse_double_click",
+      logContext: {
+        selected_index: index,
+      },
+    }).catch((error) => {
+      logger.error("处理主面板双击粘贴失败", {
+        record_id: target.id,
+        error: normalizeError(error),
+      });
+    });
   };
 
   return (
@@ -133,7 +165,14 @@ export const MainPanel = () => {
               ) : records.length === 0 ? (
                 <EmptyState />
               ) : (
-                <CardList records={records} selectedIndex={selectedIndex} />
+                <CardList
+                  onPasteRecord={(record, index) => {
+                    handleCardDoubleClick(record.id, index);
+                  }}
+                  onSelectRecord={handleCardSelect}
+                  records={records}
+                  selectedIndex={selectedIndex}
+                />
               )}
             </div>
 
@@ -141,7 +180,10 @@ export const MainPanel = () => {
               className="mt-3 flex items-center justify-between text-[11px] text-slate-300"
               data-testid="shortcut-bar"
             >
-              <span className={pasteBlockedByPermission ? "opacity-40" : ""} data-testid="paste-hint">
+              <span
+                className={pasteBlockedByPermission ? "opacity-40" : ""}
+                data-testid="paste-hint"
+              >
                 Enter 粘贴
               </span>
               <span

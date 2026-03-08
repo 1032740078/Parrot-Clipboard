@@ -5,6 +5,7 @@ import { MainPanel } from "../../components/MainPanel";
 import {
   __resetInvokeMock,
   __setInvokeHandler,
+  invokeCalls,
 } from "../../__mocks__/@tauri-apps/api/core";
 import { useClipboardStore } from "../../stores/useClipboardStore";
 import { useSystemStore } from "../../stores/useSystemStore";
@@ -59,5 +60,25 @@ describe("MainPanel permission guidance", () => {
     fireEvent.click(screen.getByRole("button", { name: "查看引导" }));
 
     expect(useUIStore.getState().permissionGuideVisible).toBe(true);
+  });
+
+  it("UT-PANEL-011 权限缺失时双击卡片不会触发粘贴并保持面板打开", async () => {
+    setInvokeForRecords();
+    render(<MainPanel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("image-card")).toBeInTheDocument();
+    });
+
+    fireEvent.doubleClick(screen.getByTestId("image-card"));
+
+    await waitFor(() => {
+      expect(useUIStore.getState().permissionGuideVisible).toBe(true);
+    });
+
+    expect(useClipboardStore.getState().selectedIndex).toBe(1);
+    expect(useUIStore.getState().isPanelVisible).toBe(true);
+    expect(useUIStore.getState().toast?.message).toBe("请先完成辅助功能授权后再执行粘贴");
+    expect(invokeCalls.some((call) => call.command === "paste_record")).toBe(false);
   });
 });
