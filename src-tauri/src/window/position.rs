@@ -90,14 +90,14 @@ mod tests {
     };
 
     #[test]
-    fn should_anchor_panel_to_bottom_of_work_area() {
-        let frame = calculate_panel_frame(0, 0, 1512, 945, 220.0);
+    fn should_anchor_panel_to_bottom_of_physical_screen_frame_when_dock_is_bottom() {
+        let frame = calculate_panel_frame(0, 0, 1512, 982, 220.0);
 
         assert_eq!(
             frame,
             PanelFrame {
                 x: 0,
-                y: 725,
+                y: 762,
                 width: 1512,
                 height: 220,
             }
@@ -105,18 +105,28 @@ mod tests {
     }
 
     #[test]
-    fn should_follow_shifted_work_area_when_dock_is_on_side() {
-        let frame = calculate_panel_frame(96, 0, 1416, 982, 220.0);
+    fn should_keep_full_width_when_dock_is_on_left() {
+        let frame = calculate_panel_frame(0, 0, 1512, 982, 220.0);
 
         assert_eq!(
             frame,
             PanelFrame {
-                x: 96,
+                x: 0,
                 y: 762,
-                width: 1416,
+                width: 1512,
                 height: 220,
             }
         );
+    }
+
+    #[test]
+    fn should_keep_panel_height_220_when_dock_is_on_right() {
+        let frame = calculate_panel_frame(1512, 0, 1728, 1117, 220.0);
+
+        assert_eq!(frame.height, 220);
+        assert_eq!(frame.x, 1512);
+        assert_eq!(frame.width, 1728);
+        assert_eq!(frame.y, 897);
     }
 
     #[test]

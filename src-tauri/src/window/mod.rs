@@ -196,7 +196,7 @@ impl TauriWindowManager {
     }
 
     #[cfg(target_os = "macos")]
-    fn resolve_target_visible_frame_macos(
+    fn resolve_target_display_frame_macos(
         &self,
     ) -> Result<Option<(CGDirectDisplayID, NSRect)>, AppError> {
         let display_id = match active_display_id_under_cursor() {
@@ -208,16 +208,16 @@ impl TauriWindowManager {
             }
         };
 
-        let visible_frame = macos_visible_frame_for_display(display_id)?;
+        let display_frame = macos_display_frame_for_display(display_id)?;
         tracing::debug!(
             display_id,
-            x = visible_frame.origin.x,
-            y = visible_frame.origin.y,
-            width = visible_frame.size.width,
-            height = visible_frame.size.height,
-            "resolved active visible frame from macOS display services"
+            x = display_frame.origin.x,
+            y = display_frame.origin.y,
+            width = display_frame.size.width,
+            height = display_frame.size.height,
+            "resolved active macOS display frame from NSScreen"
         );
-        Ok(Some((display_id, visible_frame)))
+        Ok(Some((display_id, display_frame)))
     }
 
     fn resize_and_position(&self, window: &tauri::WebviewWindow) -> Result<(), AppError> {
@@ -241,18 +241,18 @@ impl TauriWindowManager {
 
     #[cfg(target_os = "macos")]
     fn resize_and_position_macos(&self, window: &tauri::WebviewWindow) -> Result<bool, AppError> {
-        let Some((display_id, visible_frame)) = self.resolve_target_visible_frame_macos()? else {
+        let Some((display_id, display_frame)) = self.resolve_target_display_frame_macos()? else {
             return Ok(false);
         };
 
         let panel_height = self
             .panel_height
-            .clamp(0.0, visible_frame.size.height)
+            .clamp(0.0, display_frame.size.height)
             .round();
         let panel_frame = NSRect {
-            origin: visible_frame.origin,
+            origin: display_frame.origin,
             size: NSSize {
-                width: visible_frame.size.width,
+                width: display_frame.size.width,
                 height: panel_height,
             },
         };
@@ -471,11 +471,11 @@ fn active_display_id_under_cursor() -> Result<Option<CGDirectDisplayID>, AppErro
 }
 
 #[cfg(target_os = "macos")]
-fn macos_visible_frame_for_display(display_id: CGDirectDisplayID) -> Result<NSRect, AppError> {
+fn macos_display_frame_for_display(display_id: CGDirectDisplayID) -> Result<NSRect, AppError> {
     let screen = find_ns_screen_for_display(display_id)?;
-    let visible_frame: NSRect = unsafe { msg_send![screen, visibleFrame] };
+    let display_frame: NSRect = unsafe { msg_send![screen, frame] };
 
-    Ok(visible_frame)
+    Ok(display_frame)
 }
 
 #[cfg(target_os = "macos")]
@@ -555,6 +555,20 @@ fn ns_string(value: &str) -> Result<*mut Object, AppError> {
     Ok(string)
 }
 
+#[cfg(target_os = "macos")]
+fn to_work_area(monitor: &tauri::Monitor) -> WorkArea {
+    let position = monitor.position();
+    let size = monitor.size();
+
+    WorkArea {
+        x: position.x,
+        y: position.y,
+        width: size.width,
+        height: size.height,
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
 fn to_work_area(monitor: &tauri::Monitor) -> WorkArea {
     let work_area = monitor.work_area();
     WorkArea {
