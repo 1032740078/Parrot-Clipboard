@@ -99,11 +99,31 @@ const renderCard = (record: ClipboardRecord, index: number, isSelected: boolean)
 export const CardList = ({ records, selectedIndex }: CardListProps) => {
   const cardMotionProps = getCardMotionProps(prefersReducedMotion());
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const scrollFrameRef = useRef<number | null>(null);
+  const pendingScrollLeftRef = useRef(0);
   const [viewportWidth, setViewportWidth] = useState(DEFAULT_VIEWPORT_WIDTH_PX);
   const [scrollLeft, setScrollLeft] = useState(0);
 
   const shouldVirtualize = records.length > VIRTUALIZATION_THRESHOLD;
   const contentWidth = Math.max(records.length * ITEM_STRIDE_PX - CARD_GAP_PX, 0);
+
+  const scheduleScrollLeftSync = (nextScrollLeft: number): void => {
+    pendingScrollLeftRef.current = nextScrollLeft;
+
+    if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function") {
+      setScrollLeft(nextScrollLeft);
+      return;
+    }
+
+    if (scrollFrameRef.current !== null) {
+      return;
+    }
+
+    scrollFrameRef.current = window.requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+      setScrollLeft(pendingScrollLeftRef.current);
+    });
+  };
 
   useEffect(() => {
     const container = containerRef.current;
@@ -121,6 +141,10 @@ export const CardList = ({ records, selectedIndex }: CardListProps) => {
 
     return () => {
       window.removeEventListener("resize", syncMetrics);
+      if (scrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(scrollFrameRef.current);
+        scrollFrameRef.current = null;
+      }
     };
   }, [records.length]);
 
@@ -164,19 +188,29 @@ export const CardList = ({ records, selectedIndex }: CardListProps) => {
     return { startIndex, endIndex };
   }, [records.length, scrollLeft, shouldVirtualize, viewportWidth]);
 
-  const renderVisibleCards = (items: ClipboardRecord[], startIndex: number) => (
-    <AnimatePresence initial={false}>
-      {items.map((record, visibleIndex) => {
+  const renderVisibleCards = (items: ClipboardRecord[], startIndex: number) => {
+    if (shouldVirtualize) {
+      return items.map((record, visibleIndex) => {
         const index = startIndex + visibleIndex;
 
-        return (
-          <motion.div key={record.id} {...cardMotionProps}>
-            {renderCard(record, index, selectedIndex === index)}
-          </motion.div>
-        );
-      })}
-    </AnimatePresence>
-  );
+        return <div key={record.id}>{renderCard(record, index, selectedIndex === index)}</div>;
+      });
+    }
+
+    return (
+      <AnimatePresence initial={false}>
+        {items.map((record, visibleIndex) => {
+          const index = startIndex + visibleIndex;
+
+          return (
+            <motion.div key={record.id} {...cardMotionProps}>
+              {renderCard(record, index, selectedIndex === index)}
+            </motion.div>
+          );
+        })}
+      </AnimatePresence>
+    );
+  };
 
   const visibleRecords = shouldVirtualize
     ? records.slice(visibleRange.startIndex, visibleRange.endIndex + 1)
@@ -191,7 +225,7 @@ export const CardList = ({ records, selectedIndex }: CardListProps) => {
           return;
         }
 
-        setScrollLeft((event.currentTarget as HTMLDivElement).scrollLeft ?? 0);
+        scheduleScrollLeftSync((event.currentTarget as HTMLDivElement).scrollLeft ?? 0);
       }}
       onWheel={(event) => {
         const horizontalDelta = getShiftWheelHorizontalDelta(event);
