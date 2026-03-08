@@ -11,7 +11,7 @@ interface TextCardProps {
 const previewStyle: React.CSSProperties = {
   display: "-webkit-box",
   WebkitBoxOrient: "vertical",
-  WebkitLineClamp: 3,
+  WebkitLineClamp: 4,
   overflow: "hidden",
 };
 
@@ -25,7 +25,7 @@ export const TextCard = ({ record, isSelected, index }: TextCardProps) => {
   return (
     <article
       aria-selected={isSelected}
-      className={`relative flex h-44 w-card shrink-0 flex-col overflow-hidden rounded-xl border bg-white/10 backdrop-blur-md transition-[border-color,box-shadow] duration-[120ms] ease-out motion-reduce:transition-none ${wrapperClass}`}
+      className={`relative flex h-48 w-card shrink-0 flex-col overflow-hidden rounded-xl border bg-white/10 backdrop-blur-md transition-[border-color,box-shadow] duration-[120ms] ease-out motion-reduce:transition-none ${wrapperClass}`}
       data-testid="text-card"
     >
       <QuickSelectBadge index={index} />

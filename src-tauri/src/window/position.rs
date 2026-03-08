@@ -1,4 +1,4 @@
-pub const PANEL_HEIGHT_PX: f64 = 304.0;
+pub const PANEL_HEIGHT_PX: f64 = 336.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PanelFrame {
@@ -100,9 +100,9 @@ mod tests {
             frame,
             PanelFrame {
                 x: 0,
-                y: 678,
+                y: 646,
                 width: 1512,
-                height: 304,
+                height: 336,
             }
         );
     }
@@ -115,21 +115,21 @@ mod tests {
             frame,
             PanelFrame {
                 x: 0,
-                y: 678,
+                y: 646,
                 width: 1512,
-                height: 304,
+                height: 336,
             }
         );
     }
 
     #[test]
-    fn should_keep_panel_height_304_when_dock_is_on_right() {
+    fn should_keep_panel_height_336_when_dock_is_on_right() {
         let frame = calculate_panel_frame(1512, 0, 1728, 1117, PANEL_HEIGHT_PX);
 
-        assert_eq!(frame.height, 304);
+        assert_eq!(frame.height, 336);
         assert_eq!(frame.x, 1512);
         assert_eq!(frame.width, 1728);
-        assert_eq!(frame.y, 813);
+        assert_eq!(frame.y, 781);
     }
 
     #[test]
@@ -171,9 +171,9 @@ mod tests {
             frame,
             PanelFrame {
                 x: 1512,
-                y: 813,
+                y: 781,
                 width: 1728,
-                height: 304,
+                height: 336,
             }
         );
     }
@@ -241,9 +241,9 @@ mod tests {
             frame,
             PanelFrame {
                 x: 3_440,
-                y: 1_587,
+                y: 1_555,
                 width: 1_440,
-                height: 304,
+                height: 336,
             }
         );
     }

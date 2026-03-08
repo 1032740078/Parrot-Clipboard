@@ -22,7 +22,7 @@ export const FileCard = ({ record, isSelected, index }: FileCardProps) => {
   return (
     <article
       aria-selected={isSelected}
-      className={`relative flex h-44 w-card shrink-0 flex-col overflow-hidden rounded-xl border bg-white/10 backdrop-blur-md transition-[border-color,box-shadow] duration-[120ms] ease-out motion-reduce:transition-none ${wrapperClass}`}
+      className={`relative flex h-48 w-card shrink-0 flex-col overflow-hidden rounded-xl border bg-white/10 backdrop-blur-md transition-[border-color,box-shadow] duration-[120ms] ease-out motion-reduce:transition-none ${wrapperClass}`}
       data-testid="file-card"
     >
       <QuickSelectBadge index={index} />
@@ -35,7 +35,7 @@ export const FileCard = ({ record, isSelected, index }: FileCardProps) => {
         {formatRelativeTime(record.created_at)}
       </div>
 
-      <div className="mx-3 mt-2 flex h-24 items-center gap-3 rounded-lg bg-white/5 px-4 text-white">
+      <div className="mx-3 mt-2 flex h-28 items-center gap-3 rounded-lg bg-white/5 px-4 text-white">
         <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10 text-2xl">
           {icon}
         </div>

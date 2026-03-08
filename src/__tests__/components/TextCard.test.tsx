@@ -10,14 +10,14 @@ describe("TextCard", () => {
     expect(screen.getByText("短文本")).toBeInTheDocument();
   });
 
-  it("UT-CARD-002 长文本触发 3 行截断样式", () => {
+  it("UT-CARD-002 长文本触发 4 行截断样式", () => {
     const longText = "很长的文本".repeat(30);
     const { getByText } = render(
       <TextCard index={0} isSelected={false} record={buildRecord(1, longText, Date.now())} />
     );
 
     const content = getByText(longText);
-    expect((content as HTMLElement).style.webkitLineClamp).toBe("3");
+    expect((content as HTMLElement).style.webkitLineClamp).toBe("4");
   });
 
   it("UT-CARD-003 选中状态样式正确", () => {

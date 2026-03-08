@@ -169,7 +169,7 @@ export const CardList = ({ records, selectedIndex }: CardListProps) => {
       ref={containerRef}
     >
       {shouldVirtualize ? (
-        <div className="relative min-h-44" style={{ width: contentWidth }}>
+        <div className="relative min-h-48" style={{ width: contentWidth }}>
           <div
             className="absolute inset-y-0 left-0 flex gap-4"
             data-testid="virtualized-track"
