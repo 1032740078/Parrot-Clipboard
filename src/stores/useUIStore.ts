@@ -30,12 +30,43 @@ export interface PreviewOverlayState {
   errorMessage?: string;
 }
 
+export type ContextMenuActionKey = "preview" | "paste" | "paste_plain_text" | "delete";
+
+export interface ContextMenuActionState {
+  key: ContextMenuActionKey;
+  label: string;
+  disabled: boolean;
+  danger?: boolean;
+  separated?: boolean;
+}
+
+export type ContextMenuPlacement = "bottom-start" | "bottom-end";
+
+export type ContextMenuCloseReason =
+  | "click_outside"
+  | "action_completed"
+  | "escape"
+  | "record_deleted"
+  | "panel_hidden";
+
+export interface ContextMenuState {
+  recordId: number;
+  x: number;
+  y: number;
+  placement: ContextMenuPlacement;
+  collisionAdjusted: boolean;
+  openedAt: number;
+  actions: ContextMenuActionState[];
+}
+
 interface UIState {
   isPanelVisible: boolean;
   toast?: ToastState;
   clearHistoryDialog?: ClearHistoryDialogState;
   previewOverlay?: PreviewOverlayState;
   lastPreviewCloseReason?: PreviewOverlayCloseReason;
+  contextMenu?: ContextMenuState;
+  lastContextMenuCloseReason?: ContextMenuCloseReason;
   permissionGuideVisible: boolean;
   showPanel: () => void;
   hidePanel: () => void;
@@ -47,6 +78,8 @@ interface UIState {
   openPreviewOverlay: (recordId: number, trigger: PreviewOverlayTrigger) => void;
   setPreviewOverlayStatus: (status: PreviewOverlayStatus, errorMessage?: string) => void;
   closePreviewOverlay: (reason: PreviewOverlayCloseReason) => void;
+  openContextMenu: (contextMenu: Omit<ContextMenuState, "openedAt">) => void;
+  closeContextMenu: (reason: ContextMenuCloseReason) => void;
   openPermissionGuide: () => void;
   closePermissionGuide: () => void;
   reset: () => void;
@@ -58,6 +91,8 @@ export const useUIStore = create<UIState>((set) => ({
   clearHistoryDialog: undefined,
   previewOverlay: undefined,
   lastPreviewCloseReason: undefined,
+  contextMenu: undefined,
+  lastContextMenuCloseReason: undefined,
   permissionGuideVisible: false,
   showPanel: () => set({ isPanelVisible: true }),
   hidePanel: () =>
@@ -65,6 +100,8 @@ export const useUIStore = create<UIState>((set) => ({
       isPanelVisible: false,
       previewOverlay: undefined,
       lastPreviewCloseReason: state.previewOverlay ? "panel_hidden" : state.lastPreviewCloseReason,
+      contextMenu: undefined,
+      lastContextMenuCloseReason: state.contextMenu ? "panel_hidden" : state.lastContextMenuCloseReason,
     })),
   togglePanel: () =>
     set((state) => ({
@@ -99,6 +136,15 @@ export const useUIStore = create<UIState>((set) => ({
       };
     }),
   closePreviewOverlay: (reason) => set({ previewOverlay: undefined, lastPreviewCloseReason: reason }),
+  openContextMenu: (contextMenu) =>
+    set({
+      contextMenu: {
+        ...contextMenu,
+        openedAt: Date.now(),
+      },
+      lastContextMenuCloseReason: undefined,
+    }),
+  closeContextMenu: (reason) => set({ contextMenu: undefined, lastContextMenuCloseReason: reason }),
   openPermissionGuide: () => set({ permissionGuideVisible: true }),
   closePermissionGuide: () => set({ permissionGuideVisible: false }),
   reset: () =>
@@ -108,6 +154,8 @@ export const useUIStore = create<UIState>((set) => ({
       clearHistoryDialog: undefined,
       previewOverlay: undefined,
       lastPreviewCloseReason: undefined,
+      contextMenu: undefined,
+      lastContextMenuCloseReason: undefined,
       permissionGuideVisible: false,
     }),
 }));

@@ -78,10 +78,60 @@ describe("useUIStore", () => {
 
     store.showPanel();
     store.openPreviewOverlay(3, "context_menu");
+    store.openContextMenu({
+      recordId: 3,
+      x: 320,
+      y: 240,
+      placement: "bottom-start",
+      collisionAdjusted: false,
+      actions: [],
+    });
     store.hidePanel();
 
     expect(useUIStore.getState().isPanelVisible).toBe(false);
     expect(useUIStore.getState().previewOverlay).toBeUndefined();
     expect(useUIStore.getState().lastPreviewCloseReason).toBe("panel_hidden");
+    expect(useUIStore.getState().contextMenu).toBeUndefined();
+    expect(useUIStore.getState().lastContextMenuCloseReason).toBe("panel_hidden");
+  });
+
+  it("openContextMenu / closeContextMenu 可维护菜单状态与关闭原因", () => {
+    const now = Date.now();
+    const store = useUIStore.getState();
+
+    store.openContextMenu({
+      recordId: 12,
+      x: 480,
+      y: 128,
+      placement: "bottom-end",
+      collisionAdjusted: true,
+      actions: [
+        {
+          key: "preview",
+          label: "预览完整内容",
+          disabled: false,
+        },
+      ],
+    });
+
+    expect(useUIStore.getState().contextMenu).toMatchObject({
+      recordId: 12,
+      x: 480,
+      y: 128,
+      placement: "bottom-end",
+      collisionAdjusted: true,
+      actions: [
+        {
+          key: "preview",
+          label: "预览完整内容",
+          disabled: false,
+        },
+      ],
+    });
+    expect((useUIStore.getState().contextMenu?.openedAt ?? 0) >= now).toBe(true);
+
+    store.closeContextMenu("click_outside");
+    expect(useUIStore.getState().contextMenu).toBeUndefined();
+    expect(useUIStore.getState().lastContextMenuCloseReason).toBe("click_outside");
   });
 });
