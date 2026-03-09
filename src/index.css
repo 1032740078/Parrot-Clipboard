@@ -165,3 +165,22 @@ body {
     inset 0 1px 0 rgba(255, 255, 255, 0.12);
   backdrop-filter: blur(24px);
 }
+
+
+.panel-scroll-area {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.panel-scroll-area::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none;
+  background: transparent;
+}
+
+.panel-scroll-area::-webkit-scrollbar-track,
+.panel-scroll-area::-webkit-scrollbar-thumb,
+.panel-scroll-area::-webkit-scrollbar-corner {
+  background: transparent;
+}

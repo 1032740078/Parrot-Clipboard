@@ -394,7 +394,7 @@ export const CardList = ({
 
   return (
     <div
-      className="h-full overflow-x-auto overflow-y-hidden pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      className="panel-scroll-area h-full overflow-x-auto overflow-y-hidden -mb-4 -mr-4 pb-4 pr-4"
       data-testid="card-list"
       onScroll={(event) => {
         const nextScrollLeft = (event.currentTarget as HTMLDivElement).scrollLeft ?? 0;
@@ -430,7 +430,6 @@ export const CardList = ({
         setContainerScrollLeft(container, nextLeft);
       }}
       ref={containerRef}
-      style={{ msOverflowStyle: "none", scrollbarWidth: "none" }}
     >
       {shouldVirtualize ? (
         <div className="relative min-h-52" style={{ width: contentWidth }}>

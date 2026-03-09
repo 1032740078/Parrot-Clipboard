@@ -284,7 +284,7 @@ export const MainPanel = () => {
 
               <div className="min-h-0 flex-1 overflow-hidden">
                 {isHydrating ? (
-                  <div className="flex gap-4 overflow-x-auto overflow-y-hidden pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" data-testid="skeleton-list" style={{ msOverflowStyle: "none", scrollbarWidth: "none" }}>
+                  <div className="panel-scroll-area flex gap-4 overflow-x-auto overflow-y-hidden -mb-4 -mr-4 pb-4 pr-4" data-testid="skeleton-list">
                     {Array.from({ length: 3 }, (_, index) => (
                       <SkeletonCard key={`skeleton-${index}`} index={index} />
                     ))}

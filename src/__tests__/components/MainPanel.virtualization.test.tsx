@@ -240,4 +240,24 @@ describe("MainPanel virtualization", () => {
 
     expect(cardList.scrollLeft).toBe(160);
   });
+
+  it("UT-FE-LIST-106 横向滚动容器使用隐藏滚动条样式但仍保留滚动能力", async () => {
+    const records = buildLargeRecords(18);
+    setInvokeForRecords(records);
+
+    render(<MainPanel />);
+    const cardList = await attachScrollableViewport();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("card-list").className).toContain("panel-scroll-area");
+      expect(screen.getByTestId("card-list").className).toContain("-mb-4");
+      expect(screen.getByTestId("card-list").className).toContain("-mr-4");
+    });
+
+    scrollViewport(cardList, 160);
+
+    await waitFor(() => {
+      expect(cardList.scrollLeft).toBe(160);
+    });
+  });
 });
