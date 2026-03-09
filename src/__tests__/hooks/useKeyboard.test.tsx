@@ -82,6 +82,86 @@ describe("useKeyboard", () => {
     expect(useClipboardStore.getState().selectedIndex).toBe(1);
   });
 
+  it("Space 可打开当前选中记录的预览运行态", () => {
+    const store = useClipboardStore.getState();
+    store.hydrate([buildRecord(1, "A", 1000), buildRecord(2, "B", 999)]);
+    store.selectIndex(1);
+    useUIStore.getState().showPanel();
+
+    render(<HookContainer />);
+
+    fireEvent.keyDown(window, { key: " ", code: "Space" });
+
+    expect(useUIStore.getState().previewOverlay).toMatchObject({
+      recordId: 2,
+      trigger: "keyboard_space",
+      status: "loading",
+    });
+  });
+
+  it("无选中记录时按 Space 会静默忽略", () => {
+    useUIStore.getState().showPanel();
+
+    render(<HookContainer />);
+
+    fireEvent.keyDown(window, { key: " ", code: "Space" });
+
+    expect(useUIStore.getState().previewOverlay).toBeUndefined();
+  });
+
+  it("预览打开后再次按 Space 会关闭预览", () => {
+    const store = useClipboardStore.getState();
+    store.hydrate([buildRecord(1, "A", 1000)]);
+    store.selectIndex(0);
+    useUIStore.getState().showPanel();
+    useUIStore.getState().openPreviewOverlay(1, "keyboard_space");
+
+    render(<HookContainer />);
+
+    fireEvent.keyDown(window, { key: " ", code: "Space" });
+
+    expect(useUIStore.getState().previewOverlay).toBeUndefined();
+    expect(useUIStore.getState().lastPreviewCloseReason).toBe("space");
+  });
+
+  it("预览打开时 Esc 只关闭预览，不隐藏主面板", () => {
+    const store = useClipboardStore.getState();
+    store.hydrate([buildRecord(1, "A", 1000)]);
+    store.selectIndex(0);
+    useUIStore.getState().showPanel();
+    useUIStore.getState().openPreviewOverlay(1, "keyboard_space");
+
+    render(<HookContainer />);
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    expect(useUIStore.getState().previewOverlay).toBeUndefined();
+    expect(useUIStore.getState().lastPreviewCloseReason).toBe("escape");
+    expect(useUIStore.getState().isPanelVisible).toBe(true);
+    expect(invokeCalls.some((call) => call.command === "hide_panel")).toBe(false);
+  });
+
+  it("预览打开期间 Enter / Delete 不再执行主列表动作", async () => {
+    const store = useClipboardStore.getState();
+    store.hydrate([buildRecord(1, "A", 1000)]);
+    store.selectIndex(0);
+    useUIStore.getState().showPanel();
+    useUIStore.getState().openPreviewOverlay(1, "keyboard_space");
+
+    render(<HookContainer />);
+
+    fireEvent.keyDown(window, { key: "Enter" });
+    fireEvent.keyDown(window, { key: "Delete" });
+
+    await waitFor(() => {
+      expect(invokeCalls.some((call) => call.command === "paste_record")).toBe(false);
+      expect(invokeCalls.some((call) => call.command === "delete_record")).toBe(false);
+    });
+
+    expect(useClipboardStore.getState().records).toHaveLength(1);
+    expect(useUIStore.getState().previewOverlay?.recordId).toBe(1);
+  });
+
   it("UT-FE-KB-004 Delete 删除后焦点自动移动到下一条合理记录", async () => {
     const store = useClipboardStore.getState();
     store.hydrate([

@@ -187,6 +187,7 @@ export const MainPanel = () => {
               className="mt-3 flex items-center justify-between text-[11px] text-slate-300"
               data-testid="shortcut-bar"
             >
+              <span>空格 预览</span>
               <span
                 className={pasteBlockedByPermission ? "opacity-40" : ""}
                 data-testid="paste-hint"

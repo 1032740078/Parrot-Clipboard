@@ -106,7 +106,10 @@ export const useKeyboard = ({ enabled, visibleQuickSlotsRef }: UseKeyboardOption
   const removeRecord = useClipboardStore((state) => state.removeRecord);
 
   const clearHistoryDialog = useUIStore((state) => state.clearHistoryDialog);
+  const previewOverlay = useUIStore((state) => state.previewOverlay);
   const hidePanelState = useUIStore((state) => state.hidePanel);
+  const openPreviewOverlay = useUIStore((state) => state.openPreviewOverlay);
+  const closePreviewOverlay = useUIStore((state) => state.closePreviewOverlay);
   const showToast = useUIStore((state) => state.showToast);
 
   const setPanelVisible = useSystemStore((state) => state.setPanelVisible);
@@ -124,12 +127,53 @@ export const useKeyboard = ({ enabled, visibleQuickSlotsRef }: UseKeyboardOption
         return;
       }
 
-      const quickPasteIndex = resolveQuickPasteIndex(event, quickPasteEnabled);
-      if (quickPasteIndex !== null) {
-        if (isEditableTarget(event.target)) {
+      if (isEditableTarget(event.target)) {
+        return;
+      }
+
+      if (event.key === " ") {
+        event.preventDefault();
+
+        if (previewOverlay) {
+          closePreviewOverlay("space");
+          logger.debug("用户通过空格关闭预览", {
+            trigger_key: "Space",
+            record_id: previewOverlay.recordId,
+          });
           return;
         }
 
+        const selected =
+          selectedIndex >= 0 && selectedIndex < records.length ? records[selectedIndex] : undefined;
+
+        if (!selected) {
+          return;
+        }
+
+        openPreviewOverlay(selected.id, "keyboard_space");
+        logger.debug("用户通过空格打开预览", {
+          trigger_key: "Space",
+          selected_index: selectedIndex,
+          record_id: selected.id,
+        });
+        return;
+      }
+
+      if (previewOverlay) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          closePreviewOverlay("escape");
+          logger.debug("用户通过 Esc 关闭预览", {
+            trigger_key: "Escape",
+            record_id: previewOverlay.recordId,
+          });
+        }
+
+        return;
+      }
+
+      const quickPasteIndex = resolveQuickPasteIndex(event, quickPasteEnabled);
+      if (quickPasteIndex !== null) {
         const slot = quickPasteIndex + 1;
         const quickTarget = resolveVisibleQuickSlotTarget(
           records,
@@ -167,10 +211,6 @@ export const useKeyboard = ({ enabled, visibleQuickSlotsRef }: UseKeyboardOption
 
       const quickSelectIndex = resolveQuickSelectIndex(event);
       if (quickSelectIndex !== null) {
-        if (isEditableTarget(event.target)) {
-          return;
-        }
-
         const slot = quickSelectIndex + 1;
         const quickTarget = resolveVisibleQuickSlotTarget(
           records,
@@ -284,8 +324,11 @@ export const useKeyboard = ({ enabled, visibleQuickSlotsRef }: UseKeyboardOption
     };
   }, [
     clearHistoryDialog,
+    closePreviewOverlay,
     enabled,
     hidePanelState,
+    openPreviewOverlay,
+    previewOverlay,
     records,
     removeRecord,
     selectIndex,
