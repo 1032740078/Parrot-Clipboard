@@ -27,4 +27,19 @@ describe("TextCard", () => {
 
     expect(getByTestId("text-card").className.includes("border-brand")).toBe(true);
   });
+
+  it("UT-CARD-005 预览中状态显示专属徽标并暴露状态属性", () => {
+    render(
+      <TextCard
+        index={0}
+        isPreviewing={true}
+        isSelected={true}
+        record={buildRecord(1, "预览态", Date.now())}
+      />
+    );
+
+    expect(screen.getByTestId("previewing-badge")).toHaveTextContent("预览中");
+    expect(screen.getByTestId("text-card")).toHaveAttribute("data-previewing", "true");
+    expect(screen.getByTestId("text-card").className).toContain("ring-violet-300/45");
+  });
 });

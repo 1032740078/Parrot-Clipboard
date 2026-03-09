@@ -4,13 +4,16 @@ import { getRecordDetail } from "../../api/commands";
 import { logger, normalizeError } from "../../api/logger";
 import type { ClipboardRecord } from "../../types/clipboard";
 import { getRecordPreviewText } from "../../types/clipboard";
+import { PreviewStateBadge } from "./PreviewStateBadge";
 import { QuickSelectBadge } from "./QuickSelectBadge";
+import { getCardAppearanceClassName } from "./cardAppearance";
 import { toPreviewSrc } from "./previewAsset";
 import { formatRelativeTime } from "./time";
 
 interface ImageCardProps {
   record: ClipboardRecord;
   isSelected: boolean;
+  isPreviewing?: boolean;
   slot?: number | null;
   index?: number;
 }
@@ -24,10 +27,13 @@ type PreviewLoadState = {
 
 const originalPreviewCache = new Map<number, string | null>();
 
-export const ImageCard = ({ record, isSelected, slot, index }: ImageCardProps) => {
-  const wrapperClass = isSelected
-    ? "border-brand shadow-[0_0_0_2px_rgba(0,122,255,0.3)]"
-    : "border-white/15";
+export const ImageCard = ({
+  record,
+  isSelected,
+  isPreviewing = false,
+  slot,
+  index,
+}: ImageCardProps) => {
   const meta = record.image_meta;
   const previewText = getRecordPreviewText(record);
   const mimeLabel = meta?.mime_type.replace("image/", "").toUpperCase() ?? "IMAGE";
@@ -112,9 +118,14 @@ export const ImageCard = ({ record, isSelected, slot, index }: ImageCardProps) =
   return (
     <article
       aria-selected={isSelected}
-      className={`relative flex h-48 w-card shrink-0 flex-col overflow-hidden rounded-xl border bg-white/10 backdrop-blur-md transition-[border-color,box-shadow] duration-[120ms] ease-out motion-reduce:transition-none ${wrapperClass}`}
+      className={getCardAppearanceClassName({
+        isSelected,
+        isPreviewing,
+      })}
+      data-previewing={isPreviewing ? "true" : "false"}
       data-testid="image-card"
     >
+      <PreviewStateBadge visible={isPreviewing} />
       <QuickSelectBadge slot={displaySlot} />
 
       <header className="flex h-7 items-center bg-violet-500 px-3 text-[13px] font-semibold text-white">

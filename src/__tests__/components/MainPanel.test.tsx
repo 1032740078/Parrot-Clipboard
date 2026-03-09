@@ -486,4 +486,56 @@ describe("MainPanel", () => {
 
     expect(useUIStore.getState().lastContextMenuCloseReason).toBe("action_completed");
   });
+
+  it("UT-PANEL-017 预览打开时对应卡片进入预览中视觉态", async () => {
+    const record = buildRecord(21, "预览摘要", 2100);
+
+    __setInvokeHandler(async (command: string, args?: Record<string, unknown>) => {
+      if (command === "get_records") {
+        const limit = (args?.limit as number) ?? 20;
+        return [record].slice(0, limit);
+      }
+
+      if (command === "get_record_detail") {
+        return {
+          ...record,
+          text_content: "这是用于预览层的完整正文",
+          rich_content: null,
+          image_detail: null,
+          files_detail: null,
+        };
+      }
+
+      if (command === "show_about_window") {
+        return undefined;
+      }
+
+      return undefined;
+    });
+
+    render(<MainPanel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("text-card")).toBeInTheDocument();
+    });
+
+    fireEvent.keyDown(window, { key: " ", code: "Space" });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("preview-overlay")).toBeInTheDocument();
+      expect(screen.getByTestId("previewing-badge")).toHaveTextContent("预览中");
+    });
+
+    expect(screen.getByTestId("text-card")).toHaveAttribute("data-previewing", "true");
+    expect(screen.getByTestId("text-card").className).toContain("ring-violet-300/45");
+
+    fireEvent.click(screen.getByTestId("preview-overlay-mask"));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("preview-overlay")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("previewing-badge")).not.toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("text-card")).toHaveAttribute("data-previewing", "false");
+  });
 });

@@ -1,10 +1,13 @@
 import { getRecordPreviewText, type ClipboardRecord } from "../../types/clipboard";
+import { PreviewStateBadge } from "./PreviewStateBadge";
 import { QuickSelectBadge } from "./QuickSelectBadge";
+import { getCardAppearanceClassName } from "./cardAppearance";
 import { formatRelativeTime } from "./time";
 
 interface TextCardProps {
   record: ClipboardRecord;
   isSelected: boolean;
+  isPreviewing?: boolean;
   slot?: number | null;
   index?: number;
 }
@@ -16,10 +19,13 @@ const previewStyle: React.CSSProperties = {
   overflow: "hidden",
 };
 
-export const TextCard = ({ record, isSelected, slot, index }: TextCardProps) => {
-  const wrapperClass = isSelected
-    ? "border-brand shadow-[0_0_0_2px_rgba(0,122,255,0.3)]"
-    : "border-white/15";
+export const TextCard = ({
+  record,
+  isSelected,
+  isPreviewing = false,
+  slot,
+  index,
+}: TextCardProps) => {
   const previewText = getRecordPreviewText(record);
   const charCount = record.text_meta?.char_count ?? previewText.length;
   const displaySlot = slot ?? (typeof index === "number" ? index + 1 : null);
@@ -27,9 +33,14 @@ export const TextCard = ({ record, isSelected, slot, index }: TextCardProps) => 
   return (
     <article
       aria-selected={isSelected}
-      className={`relative flex h-48 w-card shrink-0 flex-col overflow-hidden rounded-xl border bg-white/10 backdrop-blur-md transition-[border-color,box-shadow] duration-[120ms] ease-out motion-reduce:transition-none ${wrapperClass}`}
+      className={getCardAppearanceClassName({
+        isSelected,
+        isPreviewing,
+      })}
+      data-previewing={isPreviewing ? "true" : "false"}
       data-testid="text-card"
     >
+      <PreviewStateBadge visible={isPreviewing} />
       <QuickSelectBadge slot={displaySlot} />
 
       <header className="flex h-7 items-center bg-brand px-3 text-[13px] font-semibold text-brand-foreground">

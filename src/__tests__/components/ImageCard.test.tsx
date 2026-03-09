@@ -123,7 +123,7 @@ describe("ImageCard", () => {
     });
   });
 
-  it("thumbnail_state=pending 时展示生成中占位态", () => {
+  it("UT-FE-IMG-205 thumbnail_state=pending 时展示生成中占位态", () => {
     render(
       <ImageCard
         index={0}
@@ -134,5 +134,19 @@ describe("ImageCard", () => {
 
     expect(screen.getByTestId("image-placeholder")).toBeInTheDocument();
     expect(screen.getByText("正在生成预览")).toBeInTheDocument();
+  });
+
+  it("UT-FE-IMG-206 预览中状态显示专属徽标", () => {
+    render(
+      <ImageCard
+        index={0}
+        isPreviewing={true}
+        isSelected={true}
+        record={buildImageRecord(8, "截图", 1000, "pending")}
+      />
+    );
+
+    expect(screen.getByTestId("previewing-badge")).toHaveTextContent("预览中");
+    expect(screen.getByTestId("image-card")).toHaveAttribute("data-previewing", "true");
   });
 });

@@ -15,6 +15,7 @@ import { TextCard } from "./TextCard";
 interface CardListProps {
   records: ClipboardRecord[];
   selectedIndex: number;
+  previewingRecordId?: number;
   onSelectRecord: (index: number) => void;
   onPasteRecord: (record: ClipboardRecord, index: number) => void;
   onOpenContextMenu: (record: ClipboardRecord, index: number, anchor: { x: number; y: number }) => void;
@@ -133,16 +134,42 @@ const calculateVisibleQuickSlotIndexes = (
   return absoluteIndexes;
 };
 
-const renderCard = (record: ClipboardRecord, isSelected: boolean, slot?: number | null) => {
+const renderCard = (
+  record: ClipboardRecord,
+  isSelected: boolean,
+  isPreviewing: boolean,
+  slot?: number | null
+) => {
   if (isImageRecord(record)) {
-    return <ImageCard isSelected={isSelected} record={record} slot={slot} />;
+    return (
+      <ImageCard
+        isPreviewing={isPreviewing}
+        isSelected={isSelected}
+        record={record}
+        slot={slot}
+      />
+    );
   }
 
   if (isFileRecord(record)) {
-    return <FileCard isSelected={isSelected} record={record} slot={slot} />;
+    return (
+      <FileCard
+        isPreviewing={isPreviewing}
+        isSelected={isSelected}
+        record={record}
+        slot={slot}
+      />
+    );
   }
 
-  return <TextCard isSelected={isSelected} record={record} slot={slot} />;
+  return (
+    <TextCard
+      isPreviewing={isPreviewing}
+      isSelected={isSelected}
+      record={record}
+      slot={slot}
+    />
+  );
 };
 
 const getCardRenderKey = (record: ClipboardRecord): string => {
@@ -156,6 +183,7 @@ const getCardRenderKey = (record: ClipboardRecord): string => {
 export const CardList = ({
   records,
   selectedIndex,
+  previewingRecordId,
   onSelectRecord,
   onPasteRecord,
   onOpenContextMenu,
@@ -316,7 +344,12 @@ export const CardList = ({
               onPasteRecord(record, index);
             }}
           >
-            {renderCard(record, selectedIndex === index, visibleSlotMap.get(index) ?? null)}
+            {renderCard(
+              record,
+              selectedIndex === index,
+              previewingRecordId === record.id,
+              visibleSlotMap.get(index) ?? null
+            )}
           </div>
         );
       });
@@ -342,7 +375,12 @@ export const CardList = ({
               }}
               {...cardMotionProps}
             >
-              {renderCard(record, selectedIndex === index, visibleSlotMap.get(index) ?? null)}
+              {renderCard(
+                record,
+                selectedIndex === index,
+                previewingRecordId === record.id,
+                visibleSlotMap.get(index) ?? null
+              )}
             </motion.div>
           );
         })}

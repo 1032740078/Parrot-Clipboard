@@ -34,6 +34,7 @@ export const MainPanel = () => {
   const setHydrating = useClipboardStore((state) => state.setHydrating);
 
   const contextMenu = useUIStore((state) => state.contextMenu);
+  const previewOverlay = useUIStore((state) => state.previewOverlay);
   const closeContextMenu = useUIStore((state) => state.closeContextMenu);
   const isPanelVisible = useUIStore((state) => state.isPanelVisible);
   const openPreviewOverlay = useUIStore((state) => state.openPreviewOverlay);
@@ -298,6 +299,7 @@ export const MainPanel = () => {
                     }}
                     onSelectRecord={handleCardSelect}
                     onVisibleQuickSlotsChange={handleVisibleQuickSlotsChange}
+                    previewingRecordId={previewOverlay?.recordId}
                     records={records}
                     selectedIndex={selectedIndex}
                   />

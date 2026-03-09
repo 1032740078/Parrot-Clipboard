@@ -12,4 +12,19 @@ describe("FileCard", () => {
     expect(screen.getByText("共 4 项")).toBeInTheDocument();
     expect(screen.getByText("含文件夹")).toBeInTheDocument();
   });
+
+  it("UT-FE-CARD-005 预览中状态显示徽标并保留文件摘要", () => {
+    render(
+      <FileCard
+        index={0}
+        isPreviewing={true}
+        isSelected={true}
+        record={buildFileRecord(2, "产品原型.fig", 1000, 2, false)}
+      />
+    );
+
+    expect(screen.getByTestId("previewing-badge")).toHaveTextContent("预览中");
+    expect(screen.getByText("产品原型.fig")).toBeInTheDocument();
+    expect(screen.getByTestId("file-card")).toHaveAttribute("data-previewing", "true");
+  });
 });
