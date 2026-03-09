@@ -2,6 +2,8 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { AboutWindow } from "./components/AboutWindow";
+import { PermissionGuideWindow } from "./components/PermissionGuideWindow";
+import { PreviewWindow } from "./components/PreviewWindow";
 import { logger, normalizeError } from "./api/logger";
 import { SettingsWindowPlaceholder } from "./components/SettingsWindowPlaceholder";
 import "./index.css";
@@ -44,6 +46,14 @@ const resolveRootApp = () => {
 
   if (params.get("window") === "settings") {
     return <SettingsWindowPlaceholder />;
+  }
+
+  if (params.get("window") === "preview") {
+    return <PreviewWindow />;
+  }
+
+  if (params.get("window") === "permission-guide") {
+    return <PermissionGuideWindow />;
   }
 
   return <App />;

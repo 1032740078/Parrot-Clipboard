@@ -102,7 +102,7 @@ fn write_detail_to_clipboard(
         ContentType::Image => {
             if mode != PasteMode::Original {
                 return Err(AppError::InvalidParam(
-                    "plain_text mode only supports text record".to_string(),
+                    "plain_text mode only supports text and file record".to_string(),
                 ));
             }
             let image_detail = detail
@@ -113,21 +113,29 @@ fn write_detail_to_clipboard(
             clipboard.write_image(&image)
         }
         ContentType::Files => {
-            if mode != PasteMode::Original {
-                return Err(AppError::InvalidParam(
-                    "plain_text mode only supports text record".to_string(),
-                ));
-            }
             let files_detail = detail
                 .files_detail
                 .as_ref()
                 .ok_or_else(|| AppError::ClipboardRead("files detail missing".to_string()))?;
-            let paths = files_detail
-                .items
-                .iter()
-                .map(|item| PathBuf::from(&item.path))
-                .collect::<Vec<_>>();
-            clipboard.write_file_list(&paths)
+            match mode {
+                PasteMode::Original => {
+                    let paths = files_detail
+                        .items
+                        .iter()
+                        .map(|item| PathBuf::from(&item.path))
+                        .collect::<Vec<_>>();
+                    clipboard.write_file_list(&paths)
+                }
+                PasteMode::PlainText => {
+                    let joined_paths = files_detail
+                        .items
+                        .iter()
+                        .map(|item| item.path.as_str())
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    clipboard.write_text(&joined_paths)
+                }
+            }
         }
     }
 }
@@ -221,6 +229,14 @@ mod tests {
         }
         fn get_detail(&self, id: RecordId) -> Result<Option<ClipboardRecordDetail>, AppError> {
             Ok(self.detail.clone().filter(|detail| detail.id == id.value()))
+        }
+        fn update_text(
+            &self,
+            _id: RecordId,
+            _text: String,
+            _updated_at: i64,
+        ) -> Result<ClipboardRecordDetail, AppError> {
+            unreachable!()
         }
         fn promote(
             &self,
@@ -704,6 +720,70 @@ mod tests {
             .paste_record(RecordId::new(2), PasteMode::PlainText)
             .await;
         assert!(matches!(result, Err(AppError::InvalidParam(_))));
+    }
+
+    #[tokio::test]
+    async fn ut_paste_006_files_plain_mode_writes_newline_joined_paths() {
+        let file_paths = sample_file_paths("paste-006/files-plain");
+        let repository = Arc::new(MockRepository {
+            detail: Some(files_detail_with_items(6, &file_paths)),
+            promoted_ids: Arc::new(Mutex::new(Vec::new())),
+        });
+        let trace = Arc::new(Mutex::new(Vec::<&'static str>::new()));
+        let clipboard = Arc::new(MockClipboard {
+            trace: trace.clone(),
+            written_texts: Arc::new(Mutex::new(Vec::new())),
+            written_images: Arc::new(Mutex::new(Vec::new())),
+            written_file_lists: Arc::new(Mutex::new(Vec::new())),
+        });
+        let promoted_ids = repository.promoted_ids.clone();
+        let service = PasteService::new(
+            repository,
+            Arc::new(MockMonitor::default()),
+            clipboard.clone(),
+            Arc::new(MockKeySimulator {
+                trace: trace.clone(),
+            }),
+            Arc::new(MockWindowManager {
+                trace: trace.clone(),
+            }),
+            Arc::new(
+                ImageStorageService::initialize_at(
+                    temp_dir("paste-006/original"),
+                    temp_dir("paste-006/thumbs"),
+                )
+                .expect("image storage should init"),
+            ),
+        );
+
+        service
+            .paste_record(RecordId::new(6), PasteMode::PlainText)
+            .await
+            .expect("files plain-text paste should succeed");
+
+        assert_eq!(
+            trace.lock().expect("trace lock poisoned").clone(),
+            vec!["write_text", "hide", "simulate_paste"]
+        );
+        assert_eq!(
+            clipboard
+                .written_texts
+                .lock()
+                .expect("written_texts lock poisoned")
+                .as_slice(),
+            &[file_paths
+                .iter()
+                .map(|path| path.to_string_lossy().to_string())
+                .collect::<Vec<_>>()
+                .join("\n")]
+        );
+        assert_eq!(
+            promoted_ids
+                .lock()
+                .expect("promoted lock poisoned")
+                .as_slice(),
+            &[6]
+        );
     }
 
     fn text_detail(id: u64, rich_content: Option<String>) -> ClipboardRecordDetail {

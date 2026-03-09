@@ -48,6 +48,18 @@ pub fn run() {
         .plugin(GlobalShortcutBuilder::new().build())
         .setup(|app| -> Result<(), Box<dyn Error>> {
             let app_handle = app.handle().clone();
+
+            #[cfg(target_os = "macos")]
+            {
+                app_handle
+                    .set_activation_policy(tauri::ActivationPolicy::Accessory)
+                    .map_err(std::io::Error::other)?;
+                app_handle
+                    .set_dock_visibility(false)
+                    .map_err(std::io::Error::other)?;
+                tracing::info!("macos dock icon hidden via accessory activation policy");
+            }
+
             let logging_state =
                 logging::init_logging(&app_handle).map_err(std::io::Error::other)?;
             tracing::info!("application setup started");
@@ -184,6 +196,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             ipc::commands::get_records,
             ipc::commands::get_record_detail,
+            ipc::commands::update_text_record,
             ipc::commands::delete_record,
             ipc::commands::paste_record,
             ipc::commands::hide_panel,
@@ -201,6 +214,10 @@ pub fn run() {
             ipc::commands::run_orphan_cleanup,
             ipc::commands::show_settings_window,
             ipc::commands::show_about_window,
+            ipc::commands::show_preview_window,
+            ipc::commands::close_preview_window_command,
+            ipc::commands::show_permission_guide_window,
+            ipc::commands::close_permission_guide_window_command,
             ipc::commands::get_platform_capabilities,
             ipc::commands::get_settings_snapshot,
             ipc::commands::update_general_settings,

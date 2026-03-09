@@ -20,7 +20,8 @@ export type PreviewOverlayCloseReason =
   | "click_mask"
   | "action_completed"
   | "record_deleted"
-  | "panel_hidden";
+  | "panel_hidden"
+  | "window_closed";
 
 export interface PreviewOverlayState {
   recordId: number;
@@ -98,8 +99,6 @@ export const useUIStore = create<UIState>((set) => ({
   hidePanel: () =>
     set((state) => ({
       isPanelVisible: false,
-      previewOverlay: undefined,
-      lastPreviewCloseReason: state.previewOverlay ? "panel_hidden" : state.lastPreviewCloseReason,
       contextMenu: undefined,
       lastContextMenuCloseReason: state.contextMenu ? "panel_hidden" : state.lastContextMenuCloseReason,
     })),

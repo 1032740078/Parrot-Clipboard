@@ -81,10 +81,12 @@ pub fn build_permission_status(capabilities: &PlatformCapabilities) -> Permissio
     let checked_at = now_ms();
 
     let (accessibility, reason) = match crate::platform::detect_accessibility_permission() {
-        Ok(Some(true)) => (PermissionAccessibilityState::Granted, None),
-        Ok(Some(false)) => (
+        Ok(Some(snapshot)) if snapshot.trusted => (PermissionAccessibilityState::Granted, None),
+        Ok(Some(snapshot)) => (
             PermissionAccessibilityState::Missing,
-            Some("macos_accessibility_not_granted".to_string()),
+            snapshot
+                .reason_code
+                .or_else(|| Some("macos_accessibility_not_granted".to_string())),
         ),
         Ok(None) => (
             PermissionAccessibilityState::Unsupported,

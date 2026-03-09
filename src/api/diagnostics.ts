@@ -48,6 +48,24 @@ export const showAboutWindow = async (): Promise<void> => {
   }
 };
 
+export const showPermissionGuideWindow = async (): Promise<void> => {
+  try {
+    await invoke<void>("show_permission_guide_window");
+  } catch (error) {
+    logger.error("打开权限引导窗口失败", { error: normalizeError(error) });
+    throw error;
+  }
+};
+
+export const closePermissionGuideWindow = async (): Promise<void> => {
+  try {
+    await invoke<void>("close_permission_guide_window_command");
+  } catch (error) {
+    logger.error("关闭权限引导窗口失败", { error: normalizeError(error) });
+    throw error;
+  }
+};
+
 export const runOrphanCleanup = async (): Promise<CleanupSummary> => {
   try {
     return await invoke<CleanupSummary>("run_orphan_cleanup");

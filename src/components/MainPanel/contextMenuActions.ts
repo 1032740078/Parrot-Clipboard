@@ -1,6 +1,10 @@
 import type { ClipboardRecord } from "../../types/clipboard";
-import { isTextRecord } from "../../types/clipboard";
+import { isFileRecord, isTextRecord } from "../../types/clipboard";
 import type { ContextMenuActionState } from "../../stores/useUIStore";
+
+const supportsPlainTextPaste = (record: ClipboardRecord): boolean => {
+  return isTextRecord(record) || isFileRecord(record);
+};
 
 export const buildCardContextMenuActions = (
   record: ClipboardRecord
@@ -18,7 +22,7 @@ export const buildCardContextMenuActions = (
   {
     key: "paste_plain_text",
     label: "纯文本粘贴",
-    disabled: !isTextRecord(record),
+    disabled: !supportsPlainTextPaste(record),
   },
   {
     key: "delete",

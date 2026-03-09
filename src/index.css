@@ -111,6 +111,14 @@ body {
   color: #0f172a !important;
 }
 
+:root[data-theme="light"] [class*="text-slate-100"] {
+  color: #1e293b !important;
+}
+
+:root[data-theme="light"] [class*="text-slate-200"] {
+  color: #334155 !important;
+}
+
 :root[data-theme="light"] [class*="text-slate-300"] {
   color: #475569 !important;
 }
@@ -121,6 +129,22 @@ body {
 
 :root[data-theme="light"] [class*="text-slate-500"] {
   color: #94a3b8 !important;
+}
+
+:root[data-theme="light"] [class*="text-sky-100"] {
+  color: #075985 !important;
+}
+
+:root[data-theme="light"] [class*="text-emerald-100"] {
+  color: #065f46 !important;
+}
+
+:root[data-theme="light"] [class*="text-amber-100"] {
+  color: #92400e !important;
+}
+
+:root[data-theme="light"] [class*="text-rose-100"] {
+  color: #9f1239 !important;
 }
 
 .glass-panel {

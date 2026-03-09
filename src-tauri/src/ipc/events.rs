@@ -22,6 +22,10 @@ pub const EVENT_LAUNCH_AT_LOGIN_CHANGED: &str = "system:launch-at-login-changed"
 pub const EVENT_SETTINGS_UPDATED: &str = "system:settings-updated";
 pub const EVENT_UPDATE_CHECK_FINISHED: &str = "system:update-check-finished";
 pub const EVENT_DIAGNOSTICS_UPDATED: &str = "system:diagnostics-updated";
+pub const EVENT_PREVIEW_WINDOW_REQUESTED: &str = "system:preview-window-requested";
+pub const EVENT_PREVIEW_WINDOW_VISIBILITY_CHANGED: &str = "system:preview-window-visibility-changed";
+pub const EVENT_PERMISSION_GUIDE_WINDOW_VISIBILITY_CHANGED: &str =
+    "system:permission-guide-window-visibility-changed";
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct NewRecordPayload {
@@ -89,6 +93,23 @@ pub struct LaunchAtLoginChangedPayload {
     pub changed_at: i64,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct PreviewWindowRequestedPayload {
+    pub record_id: u64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct PreviewWindowVisibilityChangedPayload {
+    pub visible: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub record_id: Option<u64>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct PermissionGuideWindowVisibilityChangedPayload {
+    pub visible: bool,
+}
+
 pub fn emit_launch_at_login_changed(
     app_handle: &AppHandle,
     launch_at_login: bool,
@@ -120,6 +141,60 @@ where
         .emit(EVENT_SETTINGS_UPDATED, snapshot)
         .map_err(|error| AppError::Window(format!("emit settings updated failed: {error}")))?;
     tracing::debug!("ipc settings updated event emitted");
+    Ok(())
+}
+
+pub fn emit_preview_window_requested(
+    app_handle: &AppHandle,
+    record_id: u64,
+) -> Result<(), AppError> {
+    let payload = PreviewWindowRequestedPayload { record_id };
+    app_handle
+        .emit_to(
+            crate::window::preview_window::PREVIEW_WINDOW_LABEL,
+            EVENT_PREVIEW_WINDOW_REQUESTED,
+            payload,
+        )
+        .map_err(|error| AppError::Window(format!("emit preview window requested failed: {error}")))?;
+    tracing::debug!(record_id, "ipc preview window requested event emitted");
+    Ok(())
+}
+
+pub fn emit_preview_window_visibility_changed(
+    app_handle: &AppHandle,
+    visible: bool,
+    record_id: Option<u64>,
+) -> Result<(), AppError> {
+    let payload = PreviewWindowVisibilityChangedPayload { visible, record_id };
+    app_handle
+        .emit(EVENT_PREVIEW_WINDOW_VISIBILITY_CHANGED, payload)
+        .map_err(|error| {
+            AppError::Window(format!("emit preview window visibility changed failed: {error}"))
+        })?;
+    tracing::debug!(
+        visible,
+        record_id,
+        "ipc preview window visibility changed event emitted"
+    );
+    Ok(())
+}
+
+pub fn emit_permission_guide_window_visibility_changed(
+    app_handle: &AppHandle,
+    visible: bool,
+) -> Result<(), AppError> {
+    let payload = PermissionGuideWindowVisibilityChangedPayload { visible };
+    app_handle
+        .emit(EVENT_PERMISSION_GUIDE_WINDOW_VISIBILITY_CHANGED, payload)
+        .map_err(|error| {
+            AppError::Window(format!(
+                "emit permission guide window visibility changed failed: {error}"
+            ))
+        })?;
+    tracing::debug!(
+        visible,
+        "ipc permission guide window visibility changed event emitted"
+    );
     Ok(())
 }
 

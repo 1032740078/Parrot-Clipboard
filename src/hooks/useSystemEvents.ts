@@ -6,6 +6,8 @@ import {
   onLaunchAtLoginChanged,
   onMonitoringChanged,
   onPanelVisibilityChanged,
+  onPermissionGuideWindowVisibilityChanged,
+  onPreviewWindowVisibilityChanged,
   onSettingsUpdated,
 } from "../api/events";
 import { logger, normalizeError } from "../api/logger";
@@ -21,8 +23,12 @@ export const useSystemEvents = (): void => {
 
   const showPanel = useUIStore((state) => state.showPanel);
   const hidePanel = useUIStore((state) => state.hidePanel);
+  const openPreviewOverlay = useUIStore((state) => state.openPreviewOverlay);
+  const closePreviewOverlay = useUIStore((state) => state.closePreviewOverlay);
   const openClearHistoryDialog = useUIStore((state) => state.openClearHistoryDialog);
   const closeClearHistoryDialog = useUIStore((state) => state.closeClearHistoryDialog);
+  const openPermissionGuide = useUIStore((state) => state.openPermissionGuide);
+  const closePermissionGuide = useUIStore((state) => state.closePermissionGuide);
   const showToast = useUIStore((state) => state.showToast);
 
   useEffect(() => {
@@ -112,6 +118,36 @@ export const useSystemEvents = (): void => {
             });
           })
         );
+
+        cleanups.push(
+          await onPreviewWindowVisibilityChanged((payload) => {
+            if (!isMounted) {
+              return;
+            }
+
+            if (payload.visible && payload.record_id) {
+              openPreviewOverlay(payload.record_id, "keyboard_space");
+              return;
+            }
+
+            closePreviewOverlay("window_closed");
+          })
+        );
+
+        cleanups.push(
+          await onPermissionGuideWindowVisibilityChanged((payload) => {
+            if (!isMounted) {
+              return;
+            }
+
+            if (payload.visible) {
+              openPermissionGuide();
+              return;
+            }
+
+            closePermissionGuide();
+          })
+        );
       } catch (error) {
         logger.error("订阅系统事件失败", { error: normalizeError(error) });
       }
@@ -131,8 +167,12 @@ export const useSystemEvents = (): void => {
     };
   }, [
     closeClearHistoryDialog,
+    closePermissionGuide,
+    closePreviewOverlay,
     hidePanel,
     openClearHistoryDialog,
+    openPermissionGuide,
+    openPreviewOverlay,
     resetClipboard,
     hydrateSettings,
     setLaunchAtLogin,

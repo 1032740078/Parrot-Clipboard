@@ -76,6 +76,12 @@ pub trait ClipboardRuntimeRepository: Send + Sync {
 
     fn list_summaries(&self, limit: usize) -> Result<Vec<ClipboardRecordSummary>, AppError>;
     fn get_detail(&self, id: RecordId) -> Result<Option<ClipboardRecordDetail>, AppError>;
+    fn update_text(
+        &self,
+        id: RecordId,
+        text: String,
+        updated_at: i64,
+    ) -> Result<ClipboardRecordDetail, AppError>;
     fn promote(&self, id: RecordId, promoted_at: i64) -> Result<ClipboardRecordSummary, AppError>;
     fn delete(&self, id: RecordId) -> Result<RecordId, AppError>;
     fn clear_history(&self) -> Result<ClearHistoryStats, AppError>;
@@ -213,6 +219,15 @@ impl ClipboardRuntimeRepository for SqliteClipboardRuntimeRepository {
         self.database.find_record_detail(id)
     }
 
+    fn update_text(
+        &self,
+        id: RecordId,
+        text: String,
+        updated_at: i64,
+    ) -> Result<ClipboardRecordDetail, AppError> {
+        update_text_record(&self.database, id, &text, updated_at)
+    }
+
     fn promote(&self, id: RecordId, promoted_at: i64) -> Result<ClipboardRecordSummary, AppError> {
         promote_record(&self.database, id, promoted_at)
     }
@@ -347,6 +362,52 @@ fn upsert_text_record(
         .ok_or_else(|| AppError::RecordNotFound(record_id.value()))?
         .into();
     Ok((CaptureAction::Added, record))
+}
+
+fn update_text_record(
+    database: &SqliteConnectionManager,
+    id: RecordId,
+    text: &str,
+    updated_at: i64,
+) -> Result<ClipboardRecordDetail, AppError> {
+    let detail = database
+        .find_record_detail(id)?
+        .ok_or_else(|| AppError::RecordNotFound(id.value()))?;
+
+    if detail.content_type != ContentType::Text {
+        return Err(AppError::InvalidParam("仅文本记录支持编辑".to_string()));
+    }
+
+    let content_hash = text_sha256_hex(text);
+
+    database.with_connection(|connection| {
+        connection
+            .execute(
+                "UPDATE clipboard_items SET content_hash = ?1, text_content = ?2, rich_content = NULL, preview_text = ?3, search_text = ?4, payload_bytes = ?5, last_used_at = ?6 WHERE id = ?7 AND content_type = 'text'",
+                params![
+                    content_hash,
+                    text,
+                    text,
+                    text,
+                    text.len() as i64,
+                    updated_at,
+                    id.value() as i64
+                ],
+            )
+            .map_err(|error| match error {
+                rusqlite::Error::SqliteFailure(failure, _)
+                    if failure.code == rusqlite::ErrorCode::ConstraintViolation =>
+                {
+                    AppError::InvalidParam("已存在相同文本记录，无法保存重复内容".to_string())
+                }
+                other => AppError::Db(format!("update text record content failed: {other}")),
+            })?;
+        Ok(())
+    })?;
+
+    database
+        .find_record_detail(id)?
+        .ok_or_else(|| AppError::RecordNotFound(id.value()))
 }
 
 fn insert_image_record(

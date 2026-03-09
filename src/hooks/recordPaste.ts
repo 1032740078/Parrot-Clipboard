@@ -1,8 +1,9 @@
 import { hidePanel, pasteRecordResult } from "../api/commands";
+import { showPermissionGuideWindow } from "../api/diagnostics";
 import { getErrorMessage } from "../api/errorHandler";
-import { logger } from "../api/logger";
+import { logger, normalizeError } from "../api/logger";
 import type { PanelVisibilityReason, PasteMode } from "../api/types";
-import { isTextRecord, type ClipboardRecord } from "../types/clipboard";
+import { isFileRecord, isTextRecord, type ClipboardRecord } from "../types/clipboard";
 import { useClipboardStore, useSystemStore, useUIStore } from "../stores";
 
 interface ExecuteRecordPasteOptions {
@@ -15,6 +16,10 @@ interface ExecuteRecordPasteOptions {
 }
 
 let pasteInFlight = false;
+
+const supportsPlainTextPaste = (record: ClipboardRecord): boolean => {
+  return isTextRecord(record) || isFileRecord(record);
+};
 
 const hasMissingAccessibilityPermission = (): boolean => {
   const { permissionStatus } = useSystemStore.getState();
@@ -34,6 +39,15 @@ export const executeRecordPaste = async ({
 
   if (hasMissingAccessibilityPermission()) {
     openPermissionGuide();
+    try {
+      await showPermissionGuideWindow();
+    } catch (error) {
+      logger.error("打开权限引导窗口失败", {
+        record_id: record.id,
+        trigger,
+        error: normalizeError(error),
+      });
+    }
     showToast({
       level: "info",
       message: "请先完成辅助功能授权后再执行粘贴",
@@ -48,10 +62,10 @@ export const executeRecordPaste = async ({
     return false;
   }
 
-  if (mode === "plain_text" && !isTextRecord(record)) {
+  if (mode === "plain_text" && !supportsPlainTextPaste(record)) {
     showToast({
       level: "info",
-      message: "仅文本记录支持纯文本粘贴",
+      message: "仅文本和文件记录支持纯文本粘贴",
       duration: 1600,
     });
     logger.info("阻止非文本记录的纯文本粘贴", {

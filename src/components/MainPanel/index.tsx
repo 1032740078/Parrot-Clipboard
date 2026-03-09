@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
-import { deleteRecord, getRecordSummaries } from "../../api/commands";
-import { showAboutWindow } from "../../api/diagnostics";
+import { deleteRecord, getRecordSummaries, showPreviewWindow } from "../../api/commands";
+import { showAboutWindow, showPermissionGuideWindow } from "../../api/diagnostics";
 import { logger, normalizeError } from "../../api/logger";
 import { getErrorMessage } from "../../api/errorHandler";
-import { isTextRecord, toClipboardRecord, type VisibleQuickSlot } from "../../types/clipboard";
+import {
+  isFileRecord,
+  isTextRecord,
+  toClipboardRecord,
+  type VisibleQuickSlot,
+} from "../../types/clipboard";
 import { useClipboardEvents } from "../../hooks/useClipboardEvents";
 import { useKeyboard } from "../../hooks/useKeyboard";
 import { executeRecordPaste } from "../../hooks/recordPaste";
@@ -18,7 +23,6 @@ import { buildCardContextMenuActions } from "./contextMenuActions";
 import { resolveContextMenuPosition } from "./contextMenuPosition";
 import { getPanelMotionVariants, prefersReducedMotion } from "./motion";
 import { PauseHint } from "./PauseHint";
-import { PreviewOverlay } from "./PreviewOverlay";
 import { SkeletonCard } from "./SkeletonCard";
 
 const INITIAL_RECORD_LIMIT = 200;
@@ -66,7 +70,9 @@ export const MainPanel = () => {
     void bootstrap();
   }, [hydrate, setHydrating]);
 
-  const plainTextEnabled = selectedRecord ? isTextRecord(selectedRecord) : false;
+  const plainTextEnabled = selectedRecord
+    ? isTextRecord(selectedRecord) || isFileRecord(selectedRecord)
+    : false;
   const panelMotionVariants = getPanelMotionVariants(prefersReducedMotion());
   const pasteBlockedByPermission =
     permissionStatus?.platform === "macos" && permissionStatus.accessibility === "missing";
@@ -166,6 +172,7 @@ export const MainPanel = () => {
     try {
       if (actionKey === "preview") {
         closeContextMenu("action_completed");
+        await showPreviewWindow(target.id);
         openPreviewOverlay(target.id, "context_menu");
         return;
       }
@@ -227,6 +234,19 @@ export const MainPanel = () => {
     }
   };
 
+  const handleOpenPermissionGuide = async (): Promise<void> => {
+    openPermissionGuide();
+    try {
+      await showPermissionGuideWindow();
+    } catch (error) {
+      showToast({
+        level: "error",
+        message: getErrorMessage(error),
+        duration: 2200,
+      });
+    }
+  };
+
   return (
     <AnimatePresence>
       {isPanelVisible ? (
@@ -272,7 +292,9 @@ export const MainPanel = () => {
                   </div>
                   <button
                     className="rounded-lg border border-amber-300/40 px-3 py-2 text-xs font-medium text-amber-50 transition hover:border-amber-200"
-                    onClick={openPermissionGuide}
+                    onClick={() => {
+                      void handleOpenPermissionGuide();
+                    }}
                     type="button"
                   >
                     查看引导
@@ -330,7 +352,6 @@ export const MainPanel = () => {
               </footer>
             </div>
           </motion.section>
-          <PreviewOverlay />
           <CardContextMenu
             onAction={(actionKey) => {
               void handleContextMenuAction(actionKey);

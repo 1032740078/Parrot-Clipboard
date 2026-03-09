@@ -900,6 +900,15 @@ mod tests {
             Ok(None)
         }
 
+        fn update_text(
+            &self,
+            _id: RecordId,
+            _text: String,
+            _updated_at: i64,
+        ) -> Result<ClipboardRecordDetail, AppError> {
+            unreachable!()
+        }
+
         fn promote(
             &self,
             _id: RecordId,

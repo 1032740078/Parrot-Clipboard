@@ -25,7 +25,14 @@ pub mod linux;
 pub mod windows;
 pub use capabilities::{PlatformCapabilities, PlatformCapabilityResolver};
 
-pub fn detect_accessibility_permission() -> Result<Option<bool>, AppError> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccessibilityPermissionSnapshot {
+    pub trusted: bool,
+    pub reason_code: Option<String>,
+}
+
+pub fn detect_accessibility_permission() -> Result<Option<AccessibilityPermissionSnapshot>, AppError>
+{
     #[cfg(target_os = "macos")]
     {
         return Ok(Some(macos::detect_accessibility_permission()));

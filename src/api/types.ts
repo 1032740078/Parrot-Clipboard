@@ -114,6 +114,19 @@ export interface LaunchAtLoginChangedPayload {
   changed_at: number;
 }
 
+export interface PreviewWindowRequestedPayload {
+  record_id: number;
+}
+
+export interface PreviewWindowVisibilityChangedPayload {
+  visible: boolean;
+  record_id?: number | null;
+}
+
+export interface PermissionGuideWindowVisibilityChangedPayload {
+  visible: boolean;
+}
+
 export interface GeneralSettingsPayload {
   theme: ThemeMode;
   language: string;

@@ -112,16 +112,6 @@ describe("Glass Tech Visual", () => {
         return [record].slice(0, limit);
       }
 
-      if (command === "get_record_detail") {
-        return {
-          ...record,
-          text_content: "用于视觉态验证的完整正文",
-          rich_content: null,
-          image_detail: null,
-          files_detail: null,
-        };
-      }
-
       return undefined;
     });
 
@@ -134,7 +124,6 @@ describe("Glass Tech Visual", () => {
     fireEvent.keyDown(window, { key: " ", code: "Space" });
 
     await waitFor(() => {
-      expect(screen.getByTestId("preview-overlay")).toBeInTheDocument();
       expect(screen.getByTestId("previewing-badge")).toHaveTextContent("预览中");
     });
 

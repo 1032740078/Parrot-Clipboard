@@ -20,7 +20,8 @@
     "release:verify-config": "node scripts/verify-release.mjs",
     "release:check": "pnpm run type-check && pnpm run lint && pnpm run test:coverage && cargo test --manifest-path src-tauri/Cargo.toml && pnpm run test:e2e && pnpm run release:verify-config",
     "release:build:local": "pnpm tauri build --no-sign --bundles app && bash scripts/package-macos-dmg.sh",
-    "tauri:dev": "sh -c 'export PATH=\"${CARGO_HOME:-$HOME/.cargo}/bin:$PATH\"; tauri dev'"
+    "tauri:dev": "sh -c 'export PATH=\"${CARGO_HOME:-$HOME/.cargo}/bin:$PATH\"; tauri dev'",
+    "release:build:mac-adhoc": "sh -c 'export PATH=\"${CARGO_HOME:-$HOME/.cargo}/bin:$PATH\"; unset APPLE_API_KEY APPLE_API_KEY_PATH APPLE_API_ISSUER; export APPLE_SIGNING_IDENTITY=\"-\"; pnpm tauri build --bundles app && bash scripts/package-macos-dmg.sh'"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

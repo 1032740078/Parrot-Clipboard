@@ -126,7 +126,7 @@ describe("MainPanel", () => {
     });
   });
 
-  it("UT-PANEL-004 Shift+Enter 对非文本记录禁用", async () => {
+  it("UT-PANEL-004 Shift+Enter 对文件记录触发纯文本粘贴", async () => {
     setInvokeForRecords(mixedFixtureRecords);
     render(<MainPanel />);
 
@@ -135,13 +135,18 @@ describe("MainPanel", () => {
     });
 
     fireEvent.keyDown(window, { key: "ArrowRight" });
+    fireEvent.keyDown(window, { key: "ArrowRight" });
     fireEvent.keyDown(window, { key: "Enter", shiftKey: true });
 
     await waitFor(() => {
-      expect(useUIStore.getState().toast?.message).toBe("仅文本记录支持纯文本粘贴");
+      expect(invokeCalls.find((call) => call.command === "paste_record")).toEqual({
+        command: "paste_record",
+        args: { id: 1, mode: "plain_text" },
+      });
     });
 
-    expect(screen.getByTestId("plain-text-hint").className.includes("opacity-40")).toBe(true);
+    expect(useUIStore.getState().toast?.message).toBe("已切换为纯文本粘贴");
+    expect(screen.getByTestId("plain-text-hint").className.includes("opacity-40")).toBe(false);
   });
 
   it("UT-PANEL-005 Delete 删除图片记录并移除卡片", async () => {
@@ -298,9 +303,8 @@ describe("MainPanel", () => {
     });
   });
 
-  it("UT-PANEL-011 Space 打开完整文本预览并支持遮罩关闭", async () => {
+  it("UT-PANEL-011 Space 打开独立预览窗口并支持快捷关闭", async () => {
     const record = buildRecord(11, "摘要文本", 1100);
-    const fullText = Array.from({ length: 12 }, (_, index) => `完整正文第 ${index + 1} 行`).join("\n");
 
     __setInvokeHandler(async (command: string, args?: Record<string, unknown>) => {
       if (command === "get_records") {
@@ -308,17 +312,11 @@ describe("MainPanel", () => {
         return [record].slice(0, limit);
       }
 
-      if (command === "get_record_detail") {
-        return {
-          ...record,
-          text_content: fullText,
-          rich_content: null,
-          image_detail: null,
-          files_detail: null,
-        };
+      if (command === "show_about_window") {
+        return undefined;
       }
 
-      if (command === "show_about_window") {
+      if (command === "show_preview_window" || command === "close_preview_window_command") {
         return undefined;
       }
 
@@ -334,21 +332,23 @@ describe("MainPanel", () => {
     fireEvent.keyDown(window, { key: " ", code: "Space" });
 
     await waitFor(() => {
-      expect(screen.getByTestId("preview-overlay-text-content")).toHaveTextContent(
-        "完整正文第 1 行"
-      );
-      expect(screen.getByTestId("preview-overlay-text-content")).toHaveTextContent(
-        "完整正文第 12 行"
-      );
+      expect(invokeCalls.find((call) => call.command === "show_preview_window")).toEqual({
+        command: "show_preview_window",
+        args: { recordId: 11 },
+      });
+      expect(screen.getByTestId("previewing-badge")).toHaveTextContent("预览中");
     });
 
-    fireEvent.click(screen.getByTestId("preview-overlay-mask"));
+    fireEvent.keyDown(window, { key: "Escape" });
 
     await waitFor(() => {
-      expect(screen.queryByTestId("preview-overlay")).not.toBeInTheDocument();
+      expect(
+        invokeCalls.some((call) => call.command === "close_preview_window_command")
+      ).toBe(true);
+      expect(screen.queryByTestId("previewing-badge")).not.toBeInTheDocument();
     });
 
-    expect(useUIStore.getState().lastPreviewCloseReason).toBe("click_mask");
+    expect(useUIStore.getState().lastPreviewCloseReason).toBe("escape");
   });
 
   it("UT-PANEL-012 右键未选中卡片时会先切换选中再弹出菜单", async () => {
@@ -458,6 +458,33 @@ describe("MainPanel", () => {
     expect(useUIStore.getState().toast?.message).toBe("已切换为纯文本粘贴");
   });
 
+  it("UT-PANEL-015B 右键文件卡片支持纯文本粘贴", async () => {
+    setInvokeForRecords(mixedFixtureRecords);
+
+    render(<MainPanel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("file-card")).toBeInTheDocument();
+    });
+
+    fireEvent.contextMenu(screen.getByTestId("file-card"), { clientX: 360, clientY: 240 });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("card-context-menu-item-paste_plain_text")).toBeEnabled();
+    });
+
+    fireEvent.click(screen.getByTestId("card-context-menu-item-paste_plain_text"));
+
+    await waitFor(() => {
+      expect(invokeCalls.find((call) => call.command === "paste_record")).toEqual({
+        command: "paste_record",
+        args: { id: 1, mode: "plain_text" },
+      });
+    });
+
+    expect(useUIStore.getState().toast?.message).toBe("已切换为纯文本粘贴");
+  });
+
   it("UT-PANEL-016 右键菜单支持删除记录并自动关闭菜单", async () => {
     setInvokeForRecords(mixedFixtureRecords);
 
@@ -496,17 +523,11 @@ describe("MainPanel", () => {
         return [record].slice(0, limit);
       }
 
-      if (command === "get_record_detail") {
-        return {
-          ...record,
-          text_content: "这是用于预览层的完整正文",
-          rich_content: null,
-          image_detail: null,
-          files_detail: null,
-        };
+      if (command === "show_about_window") {
+        return undefined;
       }
 
-      if (command === "show_about_window") {
+      if (command === "show_preview_window" || command === "close_preview_window_command") {
         return undefined;
       }
 
@@ -522,18 +543,23 @@ describe("MainPanel", () => {
     fireEvent.keyDown(window, { key: " ", code: "Space" });
 
     await waitFor(() => {
-      expect(screen.getByTestId("preview-overlay")).toBeInTheDocument();
       expect(screen.getByTestId("previewing-badge")).toHaveTextContent("预览中");
+      expect(invokeCalls.find((call) => call.command === "show_preview_window")).toEqual({
+        command: "show_preview_window",
+        args: { recordId: 21 },
+      });
     });
 
     expect(screen.getByTestId("text-card")).toHaveAttribute("data-previewing", "true");
     expect(screen.getByTestId("text-card").className).toContain("ring-violet-300/45");
 
-    fireEvent.click(screen.getByTestId("preview-overlay-mask"));
+    fireEvent.keyDown(window, { key: "Escape" });
 
     await waitFor(() => {
-      expect(screen.queryByTestId("preview-overlay")).not.toBeInTheDocument();
       expect(screen.queryByTestId("previewing-badge")).not.toBeInTheDocument();
+      expect(
+        invokeCalls.some((call) => call.command === "close_preview_window_command")
+      ).toBe(true);
     });
 
     expect(screen.getByTestId("text-card")).toHaveAttribute("data-previewing", "false");

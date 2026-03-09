@@ -24,7 +24,12 @@ use crate::{
     tray,
     updater::UpdateCheckResult,
     window::{
-        about_window::show_or_focus_about_window, settings_window::show_or_focus_settings_window,
+        about_window::show_or_focus_about_window,
+        permission_guide_window::{
+            close_permission_guide_window, show_or_focus_permission_guide_window,
+        },
+        preview_window::{close_preview_window, show_or_focus_preview_window},
+        settings_window::show_or_focus_settings_window,
     },
 };
 
@@ -99,6 +104,23 @@ pub fn get_record_detail(
         .repository
         .get_detail(RecordId::new(id))?
         .ok_or(AppError::RecordNotFound(id))
+}
+
+#[tauri::command]
+pub fn update_text_record(
+    id: u64,
+    text: String,
+    state: State<'_, AppState>,
+) -> Result<ClipboardRecordDetail, AppError> {
+    tracing::info!(record_id = id, "ipc update_text_record requested");
+    let detail = state
+        .repository
+        .update_text(RecordId::new(id), text, now_ms())?;
+    state
+        .event_emitter
+        .emit_record_updated(RecordUpdateReason::Promoted, detail.clone().into())?;
+    tracing::info!(record_id = id, "ipc update_text_record completed");
+    Ok(detail)
 }
 
 #[tauri::command]
@@ -634,6 +656,36 @@ pub fn show_settings_window(app_handle: tauri::AppHandle) -> Result<(), AppError
 pub fn show_about_window(app_handle: tauri::AppHandle) -> Result<(), AppError> {
     let action = show_or_focus_about_window(&app_handle)?;
     tracing::info!(?action, "ipc show_about_window completed");
+    Ok(())
+}
+
+#[tauri::command]
+pub fn show_preview_window(record_id: u64, app_handle: tauri::AppHandle) -> Result<(), AppError> {
+    let action = show_or_focus_preview_window(&app_handle, record_id)?;
+    tracing::info!(?action, record_id, "ipc show_preview_window completed");
+    Ok(())
+}
+
+#[tauri::command]
+pub fn close_preview_window_command(app_handle: tauri::AppHandle) -> Result<(), AppError> {
+    close_preview_window(&app_handle)?;
+    tracing::info!("ipc close_preview_window completed");
+    Ok(())
+}
+
+#[tauri::command]
+pub fn show_permission_guide_window(app_handle: tauri::AppHandle) -> Result<(), AppError> {
+    let action = show_or_focus_permission_guide_window(&app_handle)?;
+    tracing::info!(?action, "ipc show_permission_guide_window completed");
+    Ok(())
+}
+
+#[tauri::command]
+pub fn close_permission_guide_window_command(
+    app_handle: tauri::AppHandle,
+) -> Result<(), AppError> {
+    close_permission_guide_window(&app_handle)?;
+    tracing::info!("ipc close_permission_guide_window completed");
     Ok(())
 }
 

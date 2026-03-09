@@ -73,7 +73,7 @@ describe("useUIStore", () => {
     expect(useUIStore.getState().lastPreviewCloseReason).toBe("escape");
   });
 
-  it("hidePanel 会顺带关闭预览并记录关闭原因", () => {
+  it("hidePanel 不再主动关闭独立预览窗口状态，但仍会关闭右键菜单", () => {
     const store = useUIStore.getState();
 
     store.showPanel();
@@ -89,8 +89,11 @@ describe("useUIStore", () => {
     store.hidePanel();
 
     expect(useUIStore.getState().isPanelVisible).toBe(false);
-    expect(useUIStore.getState().previewOverlay).toBeUndefined();
-    expect(useUIStore.getState().lastPreviewCloseReason).toBe("panel_hidden");
+    expect(useUIStore.getState().previewOverlay).toMatchObject({
+      recordId: 3,
+      trigger: "context_menu",
+    });
+    expect(useUIStore.getState().lastPreviewCloseReason).toBeUndefined();
     expect(useUIStore.getState().contextMenu).toBeUndefined();
     expect(useUIStore.getState().lastContextMenuCloseReason).toBe("panel_hidden");
   });

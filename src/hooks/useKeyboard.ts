@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 
-import { deleteRecord, hidePanel } from "../api/commands";
+import { closePreviewWindow, deleteRecord, hidePanel, showPreviewWindow } from "../api/commands";
 import { getErrorMessage } from "../api/errorHandler";
 import { logger, normalizeError } from "../api/logger";
 import { type ClipboardRecord, type VisibleQuickSlot } from "../types/clipboard";
@@ -135,11 +135,21 @@ export const useKeyboard = ({ enabled, visibleQuickSlotsRef }: UseKeyboardOption
         event.preventDefault();
 
         if (previewOverlay) {
-          closePreviewOverlay("space");
-          logger.debug("用户通过空格关闭预览", {
-            trigger_key: "Space",
-            record_id: previewOverlay.recordId,
-          });
+          try {
+            await closePreviewWindow();
+            closePreviewOverlay("space");
+            logger.debug("用户通过空格关闭预览", {
+              trigger_key: "Space",
+              record_id: previewOverlay.recordId,
+            });
+          } catch (error) {
+            showToast({
+              level: "error",
+              message: getErrorMessage(error),
+              duration: 2200,
+            });
+            throw error;
+          }
           return;
         }
 
@@ -150,23 +160,43 @@ export const useKeyboard = ({ enabled, visibleQuickSlotsRef }: UseKeyboardOption
           return;
         }
 
-        openPreviewOverlay(selected.id, "keyboard_space");
-        logger.debug("用户通过空格打开预览", {
-          trigger_key: "Space",
-          selected_index: selectedIndex,
-          record_id: selected.id,
-        });
+        try {
+          await showPreviewWindow(selected.id);
+          openPreviewOverlay(selected.id, "keyboard_space");
+          logger.debug("用户通过空格打开预览", {
+            trigger_key: "Space",
+            selected_index: selectedIndex,
+            record_id: selected.id,
+          });
+        } catch (error) {
+          showToast({
+            level: "error",
+            message: getErrorMessage(error),
+            duration: 2200,
+          });
+          throw error;
+        }
         return;
       }
 
       if (previewOverlay) {
         if (event.key === "Escape") {
           event.preventDefault();
-          closePreviewOverlay("escape");
-          logger.debug("用户通过 Esc 关闭预览", {
-            trigger_key: "Escape",
-            record_id: previewOverlay.recordId,
-          });
+          try {
+            await closePreviewWindow();
+            closePreviewOverlay("escape");
+            logger.debug("用户通过 Esc 关闭预览", {
+              trigger_key: "Escape",
+              record_id: previewOverlay.recordId,
+            });
+          } catch (error) {
+            showToast({
+              level: "error",
+              message: getErrorMessage(error),
+              duration: 2200,
+            });
+            throw error;
+          }
         }
 
         return;

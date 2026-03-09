@@ -1,4 +1,9 @@
 import type { PermissionStatus } from "../../api/types";
+import {
+  formatPermissionReason,
+  resolvePermissionGuideDescription,
+  resolvePermissionGuideSteps,
+} from "./permissionReason";
 
 interface PermissionGuideDialogProps {
   visible: boolean;
@@ -8,22 +13,6 @@ interface PermissionGuideDialogProps {
   onOpenSettings: () => void;
   onRetry: () => void;
 }
-
-const resolveDescription = (permissionStatus?: PermissionStatus): string => {
-  if (!permissionStatus) {
-    return "当前正在检测辅助功能权限，请稍后重试。";
-  }
-
-  if (permissionStatus.platform !== "macos") {
-    return "当前平台暂不需要辅助功能授权，可继续正常浏览和管理历史记录。";
-  }
-
-  if (permissionStatus.accessibility === "granted") {
-    return "辅助功能权限已可用，粘贴相关操作应已恢复。";
-  }
-
-  return "未授予辅助功能权限时，Enter / Shift+Enter 等粘贴相关操作会受限，但浏览、选择和删除历史仍可继续。";
-};
 
 export const PermissionGuideDialog = ({
   visible,
@@ -36,6 +25,9 @@ export const PermissionGuideDialog = ({
   if (!visible) {
     return null;
   }
+
+  const reasonText = formatPermissionReason(permissionStatus?.reason);
+  const steps = resolvePermissionGuideSteps(permissionStatus);
 
   return (
     <div
@@ -63,18 +55,18 @@ export const PermissionGuideDialog = ({
         </div>
 
         <p className="mt-4 text-sm leading-6 text-slate-300">
-          {resolveDescription(permissionStatus)}
+          {resolvePermissionGuideDescription(permissionStatus)}
         </p>
 
         <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm text-slate-200">
-          <li>点击“打开系统设置”，进入辅助功能授权页面。</li>
-          <li>把“粘贴板记录管理工具”加入允许控制你的电脑的应用列表。</li>
-          <li>完成授权后返回应用，点击“重新检测”完成闭环。</li>
+          {steps.map((step) => (
+            <li key={step}>{step}</li>
+          ))}
         </ol>
 
-        {permissionStatus?.reason ? (
+        {reasonText ? (
           <p className="mt-4 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-400">
-            当前状态：{permissionStatus.reason}
+            当前状态：{reasonText}
           </p>
         ) : null}
 

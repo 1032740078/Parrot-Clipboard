@@ -108,22 +108,31 @@ export const useClipboardStore = create<ClipboardState>((set, get) => {
 
   const updateRecord = (record: ClipboardRecord) => {
     set((state) => {
+      const normalizedRecord =
+        record.content_type === "text" && typeof record.text_content !== "string"
+          ? {
+              ...record,
+              text_content: record.preview_text,
+            }
+          : record;
       const existingIndex = state.records.findIndex((item) => item.id === record.id);
       if (existingIndex === -1) {
-        const next = normalizeRecords([record, ...state.records]);
+        const next = normalizeRecords([normalizedRecord, ...state.records]);
         return {
           records: next,
           selectedIndex: resolveSelectedIndexAfterAdd(
             state.records,
             state.selectedIndex,
             next,
-            record.id
+            normalizedRecord.id
           ),
         };
       }
 
       const next = normalizeRecords(
-        state.records.map((item) => (item.id === record.id ? { ...item, ...record } : item))
+        state.records.map((item) =>
+          item.id === normalizedRecord.id ? { ...item, ...normalizedRecord } : item
+        )
       );
 
       return {
@@ -132,7 +141,7 @@ export const useClipboardStore = create<ClipboardState>((set, get) => {
           state.records,
           state.selectedIndex,
           next,
-          record.id
+          normalizedRecord.id
         ),
       };
     });

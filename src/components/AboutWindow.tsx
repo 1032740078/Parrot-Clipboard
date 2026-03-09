@@ -8,6 +8,7 @@ import { onDiagnosticsUpdated } from "../api/events";
 import { logger, normalizeError } from "../api/logger";
 import { getSettingsSnapshot } from "../api/settings";
 import { checkAppUpdate } from "../api/updater";
+import { formatPermissionReason } from "./common/permissionReason";
 import type {
   CleanupSummary,
   DiagnosticsSnapshot,
@@ -503,9 +504,9 @@ export const AboutWindow = () => {
                 <div>
                   <p className="text-slate-400">权限状态</p>
                   <p className="mt-1 text-white">{formatPermission(diagnosticsSnapshot)}</p>
-                  {diagnosticsSnapshot.permission.reason ? (
+                  {formatPermissionReason(diagnosticsSnapshot.permission.reason) ? (
                     <p className="mt-1 text-xs text-slate-400">
-                      原因：{diagnosticsSnapshot.permission.reason}
+                      原因：{formatPermissionReason(diagnosticsSnapshot.permission.reason)}
                     </p>
                   ) : null}
                 </div>

@@ -11,6 +11,9 @@ import type {
   NewRecordPayloadV2,
   MonitoringChangedPayload,
   PanelVisibilityChangedPayload,
+  PermissionGuideWindowVisibilityChangedPayload,
+  PreviewWindowRequestedPayload,
+  PreviewWindowVisibilityChangedPayload,
   RecordDeletedPayload,
   RecordUpdatedPayload,
   SettingsUpdatedPayload,
@@ -217,6 +220,63 @@ export const onDiagnosticsUpdated = async (
     });
   } catch (error) {
     logger.error("订阅诊断快照更新事件失败", { error: normalizeError(error) });
+    throw error;
+  }
+};
+
+export const onPreviewWindowRequested = async (
+  handler: (payload: PreviewWindowRequestedPayload) => void
+): Promise<() => void> => {
+  try {
+    return await listen<PreviewWindowRequestedPayload>("system:preview-window-requested", (event) => {
+      try {
+        handler(event.payload);
+      } catch (error) {
+        logger.error("处理预览窗口请求事件失败", { error: normalizeError(error) });
+      }
+    });
+  } catch (error) {
+    logger.error("订阅预览窗口请求事件失败", { error: normalizeError(error) });
+    throw error;
+  }
+};
+
+export const onPreviewWindowVisibilityChanged = async (
+  handler: (payload: PreviewWindowVisibilityChangedPayload) => void
+): Promise<() => void> => {
+  try {
+    return await listen<PreviewWindowVisibilityChangedPayload>(
+      "system:preview-window-visibility-changed",
+      (event) => {
+        try {
+          handler(event.payload);
+        } catch (error) {
+          logger.error("处理预览窗口显隐事件失败", { error: normalizeError(error) });
+        }
+      }
+    );
+  } catch (error) {
+    logger.error("订阅预览窗口显隐事件失败", { error: normalizeError(error) });
+    throw error;
+  }
+};
+
+export const onPermissionGuideWindowVisibilityChanged = async (
+  handler: (payload: PermissionGuideWindowVisibilityChangedPayload) => void
+): Promise<() => void> => {
+  try {
+    return await listen<PermissionGuideWindowVisibilityChangedPayload>(
+      "system:permission-guide-window-visibility-changed",
+      (event) => {
+        try {
+          handler(event.payload);
+        } catch (error) {
+          logger.error("处理权限引导窗口显隐事件失败", { error: normalizeError(error) });
+        }
+      }
+    );
+  } catch (error) {
+    logger.error("订阅权限引导窗口显隐事件失败", { error: normalizeError(error) });
     throw error;
   }
 };

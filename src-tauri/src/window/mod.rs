@@ -28,7 +28,9 @@ use objc::{
 };
 
 pub mod about_window;
+pub mod permission_guide_window;
 pub mod position;
+pub mod preview_window;
 pub mod settings_window;
 
 const PANEL_AUTO_HIDE_DELAY_MS: u64 = 40;
@@ -36,6 +38,7 @@ const PANEL_AUTO_HIDE_DELAY_MS: u64 = 40;
 trait PanelAutoHideRuntime {
     fn is_visible(&self) -> Result<bool, AppError>;
     fn is_focused(&self) -> Result<bool, AppError>;
+    fn has_auxiliary_window_focus(&self) -> Result<bool, AppError>;
     fn hide(&self) -> Result<(), AppError>;
     fn emit_focus_lost_hidden(&self) -> Result<(), AppError>;
     fn refresh_tray(&self) -> Result<(), AppError>;
@@ -68,6 +71,31 @@ impl PanelAutoHideRuntime for AppPanelAutoHideRuntime<'_> {
             .map_err(|error| AppError::Window(format!("query focused failed: {error}")))
     }
 
+    fn has_auxiliary_window_focus(&self) -> Result<bool, AppError> {
+        let labels = [
+            self::about_window::ABOUT_WINDOW_LABEL,
+            self::settings_window::SETTINGS_WINDOW_LABEL,
+            self::preview_window::PREVIEW_WINDOW_LABEL,
+            self::permission_guide_window::PERMISSION_GUIDE_WINDOW_LABEL,
+        ];
+
+        for label in labels {
+            let Some(window) = self.app_handle.get_webview_window(label) else {
+                continue;
+            };
+
+            let focused = window
+                .is_focused()
+                .map_err(|error| AppError::Window(format!("query auxiliary focused failed: {error}")))?;
+
+            if focused {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
+
     fn hide(&self) -> Result<(), AppError> {
         let state = self.app_handle.state::<AppState>();
         state.window_manager.hide()
@@ -88,7 +116,7 @@ impl PanelAutoHideRuntime for AppPanelAutoHideRuntime<'_> {
 }
 
 fn auto_hide_panel_on_focus_lost<R: PanelAutoHideRuntime>(runtime: &R) -> Result<bool, AppError> {
-    if !runtime.is_visible()? || runtime.is_focused()? {
+    if !runtime.is_visible()? || runtime.is_focused()? || runtime.has_auxiliary_window_focus()? {
         return Ok(false);
     }
 
@@ -693,14 +721,20 @@ mod tests {
     struct MockPanelAutoHideRuntime {
         visible_states: RefCell<VecDeque<bool>>,
         focused_states: RefCell<VecDeque<bool>>,
+        auxiliary_focused_states: RefCell<VecDeque<bool>>,
         calls: RefCell<Vec<&'static str>>,
     }
 
     impl MockPanelAutoHideRuntime {
-        fn new(visible_states: Vec<bool>, focused_states: Vec<bool>) -> Self {
+        fn new(
+            visible_states: Vec<bool>,
+            focused_states: Vec<bool>,
+            auxiliary_focused_states: Vec<bool>,
+        ) -> Self {
             Self {
                 visible_states: RefCell::new(VecDeque::from(visible_states)),
                 focused_states: RefCell::new(VecDeque::from(focused_states)),
+                auxiliary_focused_states: RefCell::new(VecDeque::from(auxiliary_focused_states)),
                 calls: RefCell::new(Vec::new()),
             }
         }
@@ -718,6 +752,14 @@ mod tests {
         fn is_focused(&self) -> Result<bool, AppError> {
             Ok(self
                 .focused_states
+                .borrow_mut()
+                .pop_front()
+                .unwrap_or(false))
+        }
+
+        fn has_auxiliary_window_focus(&self) -> Result<bool, AppError> {
+            Ok(self
+                .auxiliary_focused_states
                 .borrow_mut()
                 .pop_front()
                 .unwrap_or(false))
@@ -741,7 +783,7 @@ mod tests {
 
     #[test]
     fn auto_hides_panel_when_focus_is_lost_and_window_remains_visible() {
-        let runtime = MockPanelAutoHideRuntime::new(vec![true], vec![false]);
+        let runtime = MockPanelAutoHideRuntime::new(vec![true], vec![false], vec![false]);
 
         let handled = auto_hide_panel_on_focus_lost(&runtime).expect("auto hide should succeed");
 
@@ -754,7 +796,7 @@ mod tests {
 
     #[test]
     fn skips_auto_hide_when_window_is_already_hidden() {
-        let runtime = MockPanelAutoHideRuntime::new(vec![false], vec![]);
+        let runtime = MockPanelAutoHideRuntime::new(vec![false], vec![], vec![]);
 
         let handled = auto_hide_panel_on_focus_lost(&runtime).expect("skip should succeed");
 
@@ -764,7 +806,17 @@ mod tests {
 
     #[test]
     fn skips_auto_hide_when_window_has_regained_focus() {
-        let runtime = MockPanelAutoHideRuntime::new(vec![true], vec![true]);
+        let runtime = MockPanelAutoHideRuntime::new(vec![true], vec![true], vec![]);
+
+        let handled = auto_hide_panel_on_focus_lost(&runtime).expect("skip should succeed");
+
+        assert!(!handled);
+        assert!(runtime.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn skips_auto_hide_when_auxiliary_window_has_focus() {
+        let runtime = MockPanelAutoHideRuntime::new(vec![true], vec![false], vec![true]);
 
         let handled = auto_hide_panel_on_focus_lost(&runtime).expect("skip should succeed");
 

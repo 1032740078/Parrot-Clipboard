@@ -58,6 +58,36 @@ export const getRecordDetail = async (id: number): Promise<ClipboardRecordDetail
   }
 };
 
+export const updateTextRecord = async (
+  id: number,
+  text: string
+): Promise<ClipboardRecordDetail> => {
+  try {
+    return await invoke<ClipboardRecordDetail>("update_text_record", { id, text });
+  } catch (error) {
+    logger.error("更新文本记录失败", { id, error: normalizeError(error) });
+    throw error;
+  }
+};
+
+export const showPreviewWindow = async (recordId: number): Promise<void> => {
+  try {
+    await invoke<void>("show_preview_window", { recordId });
+  } catch (error) {
+    logger.error("打开预览窗口失败", { record_id: recordId, error: normalizeError(error) });
+    throw error;
+  }
+};
+
+export const closePreviewWindow = async (): Promise<void> => {
+  try {
+    await invoke<void>("close_preview_window_command");
+  } catch (error) {
+    logger.error("关闭预览窗口失败", { error: normalizeError(error) });
+    throw error;
+  }
+};
+
 export const deleteRecord = async (id: number): Promise<void> => {
   try {
     await invoke<void>("delete_record", { id });

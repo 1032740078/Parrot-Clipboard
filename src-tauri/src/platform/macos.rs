@@ -1,6 +1,13 @@
 #![allow(unexpected_cfgs)]
 
-use std::{path::PathBuf, process::Command, sync::Mutex, thread, time::Duration};
+use std::{
+    ffi::c_void,
+    path::{Path, PathBuf},
+    process::Command,
+    sync::Mutex,
+    thread,
+    time::Duration,
+};
 
 use arboard::{Clipboard, ImageData};
 use core_graphics::{
@@ -14,7 +21,8 @@ use crate::{
 };
 
 use super::{
-    ActiveApplication, PlatformActiveAppDetector, PlatformClipboard, PlatformKeySimulator,
+    AccessibilityPermissionSnapshot, ActiveApplication, PlatformActiveAppDetector,
+    PlatformClipboard, PlatformKeySimulator,
 };
 
 const KEY_V: u16 = 0x09;
@@ -30,7 +38,12 @@ const FRONTMOST_NAME_SCRIPT: &str =
 #[link(name = "ApplicationServices", kind = "framework")]
 unsafe extern "C" {
     fn AXIsProcessTrusted() -> bool;
+    fn AXIsProcessTrustedWithOptions(options: *const c_void) -> bool;
 }
+
+const ACCESSIBILITY_REASON_NOT_GRANTED: &str = "macos_accessibility_not_granted";
+const ACCESSIBILITY_REASON_UNSIGNED_OR_ADHOC: &str =
+    "macos_accessibility_not_granted_unsigned_or_adhoc_build";
 
 pub struct MacosPlatformClipboard {
     clipboard: Mutex<Clipboard>,
@@ -196,8 +209,27 @@ impl PlatformActiveAppDetector for MacosActiveAppDetector {
     }
 }
 
-pub fn detect_accessibility_permission() -> bool {
-    unsafe { AXIsProcessTrusted() }
+pub fn detect_accessibility_permission() -> AccessibilityPermissionSnapshot {
+    if unsafe { AXIsProcessTrustedWithOptions(std::ptr::null()) || AXIsProcessTrusted() } {
+        return AccessibilityPermissionSnapshot {
+            trusted: true,
+            reason_code: None,
+        };
+    }
+
+    let reason_code = match detect_signature_kind() {
+        SignatureKind::Unsigned | SignatureKind::Adhoc => {
+            Some(ACCESSIBILITY_REASON_UNSIGNED_OR_ADHOC.to_string())
+        }
+        SignatureKind::Signed | SignatureKind::Unknown => {
+            Some(ACCESSIBILITY_REASON_NOT_GRANTED.to_string())
+        }
+    };
+
+    AccessibilityPermissionSnapshot {
+        trusted: false,
+        reason_code,
+    }
 }
 
 pub fn open_accessibility_settings() -> Result<(), AppError> {
@@ -253,15 +285,93 @@ fn run_osascript(script: &str) -> Result<String, AppError> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SignatureKind {
+    Signed,
+    Adhoc,
+    Unsigned,
+    Unknown,
+}
+
+fn detect_signature_kind() -> SignatureKind {
+    let signing_target = resolve_codesign_target()
+        .or_else(|| std::env::current_exe().ok())
+        .filter(|path| path.exists());
+
+    let Some(signing_target) = signing_target else {
+        return SignatureKind::Unknown;
+    };
+
+    let output = match Command::new("codesign")
+        .args(["-dv", "--verbose=4"])
+        .arg(&signing_target)
+        .output()
+    {
+        Ok(output) => output,
+        Err(_) => return SignatureKind::Unknown,
+    };
+
+    let details = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    parse_signature_kind(details.trim())
+}
+
+fn resolve_codesign_target() -> Option<PathBuf> {
+    let current_executable = std::env::current_exe().ok()?;
+    resolve_bundle_path(&current_executable).or(Some(current_executable))
+}
+
+fn resolve_bundle_path(executable_path: &Path) -> Option<PathBuf> {
+    let contents_dir = executable_path.parent()?.parent()?;
+    if contents_dir.file_name()? != "Contents" {
+        return None;
+    }
+
+    let bundle_dir = contents_dir.parent()?;
+    if bundle_dir.extension()?.to_str()? != "app" {
+        return None;
+    }
+
+    Some(bundle_dir.to_path_buf())
+}
+
+fn parse_signature_kind(details: &str) -> SignatureKind {
+    let normalized = details.to_ascii_lowercase();
+
+    if normalized.contains("signature=adhoc") {
+        return SignatureKind::Adhoc;
+    }
+
+    if normalized.contains("code object is not signed at all")
+        || normalized.contains("not signed at all")
+    {
+        return SignatureKind::Unsigned;
+    }
+
+    if normalized.contains("signature=") {
+        return SignatureKind::Signed;
+    }
+
+    SignatureKind::Unknown
+}
+
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc};
+    use std::{
+        cell::RefCell,
+        path::{Path, PathBuf},
+        rc::Rc,
+    };
 
     use crate::error::AppError;
 
     use super::{
-        open_accessibility_settings_with_launcher, AccessibilitySettingsLauncher,
-        ACCESSIBILITY_SETTINGS_URL,
+        open_accessibility_settings_with_launcher, parse_signature_kind, resolve_bundle_path,
+        AccessibilitySettingsLauncher, SignatureKind, ACCESSIBILITY_SETTINGS_URL,
     };
 
     #[derive(Default, Clone)]
@@ -310,6 +420,38 @@ mod tests {
         assert_eq!(
             state.borrow().targets,
             vec![ACCESSIBILITY_SETTINGS_URL.to_string()]
+        );
+    }
+
+    #[test]
+    fn parse_signature_kind_distinguishes_signed_states() {
+        assert_eq!(
+            parse_signature_kind("Signature=adhoc"),
+            SignatureKind::Adhoc
+        );
+        assert_eq!(
+            parse_signature_kind("codesign: code object is not signed at all"),
+            SignatureKind::Unsigned
+        );
+        assert_eq!(
+            parse_signature_kind("Signature=size=4"),
+            SignatureKind::Signed
+        );
+        assert_eq!(
+            parse_signature_kind("Identifier=com.robin.clipboard"),
+            SignatureKind::Unknown
+        );
+    }
+
+    #[test]
+    fn resolve_bundle_path_returns_app_root_for_bundle_executable() {
+        let bundle = resolve_bundle_path(Path::new(
+            "/Applications/Clipboard Manager.app/Contents/MacOS/clipboard-manager",
+        ));
+
+        assert_eq!(
+            bundle,
+            Some(PathBuf::from("/Applications/Clipboard Manager.app"))
         );
     }
 }

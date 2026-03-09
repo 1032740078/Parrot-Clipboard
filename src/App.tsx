@@ -1,13 +1,16 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { clearHistory, getRuntimeStatus } from "./api/commands";
-import { getPermissionStatus, openAccessibilitySettings } from "./api/diagnostics";
+import {
+  closePermissionGuideWindow,
+  getPermissionStatus,
+  showPermissionGuideWindow,
+} from "./api/diagnostics";
 import { getSettingsSnapshot } from "./api/settings";
 import { getErrorMessage } from "./api/errorHandler";
 import { logger, normalizeError } from "./api/logger";
 import { MainPanel } from "./components/MainPanel";
 import { ConfirmDialog } from "./components/common/ConfirmDialog";
-import { PermissionGuideDialog } from "./components/common/PermissionGuideDialog";
 import { Toast } from "./components/common/Toast";
 import { useSystemEvents } from "./hooks/useSystemEvents";
 import { useThemeSync } from "./hooks/useThemeSync";
@@ -22,18 +25,38 @@ function App() {
   const closeClearHistoryDialog = useUIStore((state) => state.closeClearHistoryDialog);
   const closePermissionGuide = useUIStore((state) => state.closePermissionGuide);
   const openPermissionGuide = useUIStore((state) => state.openPermissionGuide);
-  const permissionGuideVisible = useUIStore((state) => state.permissionGuideVisible);
   const showToast = useUIStore((state) => state.showToast);
 
   const hydrateRuntimeStatus = useSystemStore((state) => state.hydrateRuntimeStatus);
-  const permissionStatus = useSystemStore((state) => state.permissionStatus);
   const setPermissionStatus = useSystemStore((state) => state.setPermissionStatus);
   const setTrayAvailable = useSystemStore((state) => state.setTrayAvailable);
   const hydrateSettings = useSettingsStore((state) => state.hydrateSettings);
   const themeMode = useSettingsStore((state) => state.themeMode);
 
   const [isClearingHistory, setIsClearingHistory] = useState(false);
-  const [isCheckingPermission, setIsCheckingPermission] = useState(false);
+
+  const syncPermission = useCallback(
+    async (autoOpenGuide: boolean): Promise<void> => {
+      try {
+        const status = await getPermissionStatus();
+        setPermissionStatus(status);
+
+        if (status.platform === "macos" && status.accessibility === "missing") {
+          if (autoOpenGuide) {
+            openPermissionGuide();
+            await showPermissionGuideWindow();
+          }
+          return;
+        }
+
+        closePermissionGuide();
+        await closePermissionGuideWindow();
+      } catch (error) {
+        logger.error("读取权限状态失败", { error: normalizeError(error) });
+      }
+    },
+    [closePermissionGuide, openPermissionGuide, setPermissionStatus]
+  );
 
   useSystemEvents();
   useThemeSync(themeMode);
@@ -87,7 +110,9 @@ function App() {
       }
     };
 
-    const syncPermission = async (autoOpenGuide: boolean): Promise<void> => {
+    void syncRuntimeStatus();
+    void syncSettings();
+    void (async () => {
       try {
         const status = await getPermissionStatus();
         if (!isMounted) {
@@ -96,21 +121,17 @@ function App() {
 
         setPermissionStatus(status);
         if (status.platform === "macos" && status.accessibility === "missing") {
-          if (autoOpenGuide) {
-            openPermissionGuide();
-          }
+          openPermissionGuide();
+          await showPermissionGuideWindow();
           return;
         }
 
         closePermissionGuide();
+        await closePermissionGuideWindow();
       } catch (error) {
         logger.error("读取权限状态失败", { error: normalizeError(error) });
       }
-    };
-
-    void syncRuntimeStatus();
-    void syncSettings();
-    void syncPermission(true);
+    })();
 
     return () => {
       isMounted = false;
@@ -125,6 +146,18 @@ function App() {
     setTrayAvailable,
     showPanel,
   ]);
+
+  useEffect(() => {
+    const handleWindowFocus = () => {
+      void syncPermission(false);
+    };
+
+    window.addEventListener("focus", handleWindowFocus);
+
+    return () => {
+      window.removeEventListener("focus", handleWindowFocus);
+    };
+  }, [syncPermission]);
 
   const handleConfirmClearHistory = async (): Promise<void> => {
     if (!clearHistoryDialog) {
@@ -145,60 +178,6 @@ function App() {
     }
   };
 
-  const handleOpenAccessibilitySettings = async (): Promise<void> => {
-    try {
-      await openAccessibilitySettings();
-      showToast({
-        level: "info",
-        message: "已打开系统设置，请完成授权后返回应用重试",
-        duration: 2200,
-      });
-    } catch (error) {
-      showToast({
-        level: "error",
-        message: getErrorMessage(error),
-        duration: 2200,
-      });
-    }
-  };
-
-  const handleRetryPermission = async (): Promise<void> => {
-    setIsCheckingPermission(true);
-    try {
-      const status = await getPermissionStatus();
-      setPermissionStatus(status);
-
-      if (status.platform === "macos" && status.accessibility === "granted") {
-        closePermissionGuide();
-        showToast({
-          level: "info",
-          message: "辅助功能权限已就绪，可继续执行粘贴",
-          duration: 1800,
-        });
-        return;
-      }
-
-      if (status.platform === "macos" && status.accessibility === "missing") {
-        showToast({
-          level: "info",
-          message: "尚未检测到辅助功能权限，请完成授权后再重试",
-          duration: 2200,
-        });
-        return;
-      }
-
-      closePermissionGuide();
-    } catch (error) {
-      showToast({
-        level: "error",
-        message: getErrorMessage(error),
-        duration: 2200,
-      });
-    } finally {
-      setIsCheckingPermission(false);
-    }
-  };
-
   return (
     <main className="min-h-screen bg-[var(--app-bg)] text-[var(--app-fg)] transition-colors">
       <MainPanel />
@@ -211,18 +190,6 @@ function App() {
         onConfirm={handleConfirmClearHistory}
         title="确认清空全部历史？"
         visible={Boolean(clearHistoryDialog)}
-      />
-      <PermissionGuideDialog
-        checking={isCheckingPermission}
-        onLater={closePermissionGuide}
-        onOpenSettings={() => {
-          void handleOpenAccessibilitySettings();
-        }}
-        onRetry={() => {
-          void handleRetryPermission();
-        }}
-        permissionStatus={permissionStatus}
-        visible={permissionGuideVisible}
       />
       <Toast
         duration={toast?.duration}

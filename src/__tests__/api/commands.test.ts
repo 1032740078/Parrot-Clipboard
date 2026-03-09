@@ -19,6 +19,7 @@ import {
   pasteRecord,
   pasteRecordResult,
   setMonitoring,
+  updateTextRecord,
 } from "../../api/commands";
 
 const summaryRecord = {
@@ -94,10 +95,18 @@ describe("api/commands", () => {
     ]);
   });
 
-  it("getRecordDetail / pasteRecordResult 调用新契约命令并返回 DTO", async () => {
+  it("getRecordDetail / updateTextRecord / pasteRecordResult 调用新契约命令并返回 DTO", async () => {
     __setInvokeHandler(async (command) => {
       if (command === "get_record_detail") {
         return detailRecord;
+      }
+
+      if (command === "update_text_record") {
+        return {
+          ...detailRecord,
+          preview_text: "B-updated",
+          text_content: "B-updated",
+        };
       }
 
       if (command === "paste_record") {
@@ -108,10 +117,16 @@ describe("api/commands", () => {
     });
 
     await expect(getRecordDetail(2)).resolves.toEqual(detailRecord);
+    await expect(updateTextRecord(2, "B-updated")).resolves.toEqual({
+      ...detailRecord,
+      preview_text: "B-updated",
+      text_content: "B-updated",
+    });
     await expect(pasteRecordResult(2, "original")).resolves.toEqual(pasteResult);
 
     expect(invokeCalls).toEqual([
       { command: "get_record_detail", args: { id: 2 } },
+      { command: "update_text_record", args: { id: 2, text: "B-updated" } },
       { command: "paste_record", args: { id: 2, mode: "original" } },
     ]);
   });
@@ -242,6 +257,7 @@ describe("api/commands", () => {
     await expect(getRecords(1)).rejects.toThrow("boom");
     await expect(getRecordSummaries(1)).rejects.toThrow("boom");
     await expect(getRecordDetail(1)).rejects.toThrow("boom");
+    await expect(updateTextRecord(1, "x")).rejects.toThrow("boom");
     await expect(pasteRecord(1)).rejects.toThrow("boom");
     await expect(pasteRecordResult(1)).rejects.toThrow("boom");
   });

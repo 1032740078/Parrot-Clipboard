@@ -10,7 +10,7 @@ import { useKeyboard } from "../../hooks/useKeyboard";
 import { useClipboardStore } from "../../stores/useClipboardStore";
 import { useSystemStore } from "../../stores/useSystemStore";
 import { useUIStore } from "../../stores/useUIStore";
-import { buildImageRecord, buildRecord } from "../fixtures/clipboardRecords";
+import { buildFileRecord, buildImageRecord, buildRecord } from "../fixtures/clipboardRecords";
 
 const HookContainer = () => {
   useKeyboard({ enabled: true });
@@ -82,7 +82,7 @@ describe("useKeyboard", () => {
     expect(useClipboardStore.getState().selectedIndex).toBe(1);
   });
 
-  it("Space 可打开当前选中记录的预览运行态", () => {
+  it("Space 可打开当前选中记录的预览运行态", async () => {
     const store = useClipboardStore.getState();
     store.hydrate([buildRecord(1, "A", 1000), buildRecord(2, "B", 999)]);
     store.selectIndex(1);
@@ -92,10 +92,16 @@ describe("useKeyboard", () => {
 
     fireEvent.keyDown(window, { key: " ", code: "Space" });
 
-    expect(useUIStore.getState().previewOverlay).toMatchObject({
-      recordId: 2,
-      trigger: "keyboard_space",
-      status: "loading",
+    await waitFor(() => {
+      expect(useUIStore.getState().previewOverlay).toMatchObject({
+        recordId: 2,
+        trigger: "keyboard_space",
+        status: "loading",
+      });
+      expect(invokeCalls.find((call) => call.command === "show_preview_window")).toEqual({
+        command: "show_preview_window",
+        args: { recordId: 2 },
+      });
     });
   });
 
@@ -109,7 +115,7 @@ describe("useKeyboard", () => {
     expect(useUIStore.getState().previewOverlay).toBeUndefined();
   });
 
-  it("预览打开后再次按 Space 会关闭预览", () => {
+  it("预览打开后再次按 Space 会关闭预览", async () => {
     const store = useClipboardStore.getState();
     store.hydrate([buildRecord(1, "A", 1000)]);
     store.selectIndex(0);
@@ -120,11 +126,16 @@ describe("useKeyboard", () => {
 
     fireEvent.keyDown(window, { key: " ", code: "Space" });
 
-    expect(useUIStore.getState().previewOverlay).toBeUndefined();
-    expect(useUIStore.getState().lastPreviewCloseReason).toBe("space");
+    await waitFor(() => {
+      expect(useUIStore.getState().previewOverlay).toBeUndefined();
+      expect(useUIStore.getState().lastPreviewCloseReason).toBe("space");
+      expect(invokeCalls.some((call) => call.command === "close_preview_window_command")).toBe(
+        true
+      );
+    });
   });
 
-  it("预览打开时 Esc 只关闭预览，不隐藏主面板", () => {
+  it("预览打开时 Esc 只关闭预览，不隐藏主面板", async () => {
     const store = useClipboardStore.getState();
     store.hydrate([buildRecord(1, "A", 1000)]);
     store.selectIndex(0);
@@ -135,10 +146,15 @@ describe("useKeyboard", () => {
 
     fireEvent.keyDown(window, { key: "Escape" });
 
-    expect(useUIStore.getState().previewOverlay).toBeUndefined();
-    expect(useUIStore.getState().lastPreviewCloseReason).toBe("escape");
-    expect(useUIStore.getState().isPanelVisible).toBe(true);
-    expect(invokeCalls.some((call) => call.command === "hide_panel")).toBe(false);
+    await waitFor(() => {
+      expect(useUIStore.getState().previewOverlay).toBeUndefined();
+      expect(useUIStore.getState().lastPreviewCloseReason).toBe("escape");
+      expect(useUIStore.getState().isPanelVisible).toBe(true);
+      expect(invokeCalls.some((call) => call.command === "hide_panel")).toBe(false);
+      expect(invokeCalls.some((call) => call.command === "close_preview_window_command")).toBe(
+        true
+      );
+    });
   });
 
   it("预览打开期间 Enter / Delete 不再执行主列表动作", async () => {
@@ -369,7 +385,41 @@ describe("useKeyboard", () => {
     expect(useUIStore.getState().isPanelVisible).toBe(false);
   });
 
-  it("Shift+Enter 对非文本记录禁用并保持面板打开", async () => {
+  it("Shift+Enter 对文件记录触发 plain_text 粘贴并显示提示", async () => {
+    const store = useClipboardStore.getState();
+    const record = buildFileRecord(1, "需求文档.md", 1000, 2, true);
+    store.hydrate([record]);
+    store.selectIndex(0);
+    useUIStore.getState().showPanel();
+
+    __setInvokeHandler(async (command) => {
+      if (command === "paste_record") {
+        return {
+          record,
+          paste_mode: "plain_text",
+          executed_at: 1100,
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<HookContainer />);
+
+    fireEvent.keyDown(window, { key: "Enter", shiftKey: true });
+
+    await waitFor(() => {
+      expect(invokeCalls.find((call) => call.command === "paste_record")).toEqual({
+        command: "paste_record",
+        args: { id: 1, mode: "plain_text" },
+      });
+    });
+
+    expect(useUIStore.getState().toast?.message).toBe("已切换为纯文本粘贴");
+    expect(useUIStore.getState().isPanelVisible).toBe(false);
+  });
+
+  it("Shift+Enter 对图片记录禁用并保持面板打开", async () => {
     const store = useClipboardStore.getState();
     store.hydrate([buildImageRecord(1, "截图", 1000)]);
     store.selectIndex(0);
@@ -383,7 +433,7 @@ describe("useKeyboard", () => {
       expect(invokeCalls.some((call) => call.command === "paste_record")).toBe(false);
     });
 
-    expect(useUIStore.getState().toast?.message).toBe("仅文本记录支持纯文本粘贴");
+    expect(useUIStore.getState().toast?.message).toBe("仅文本和文件记录支持纯文本粘贴");
     expect(useUIStore.getState().isPanelVisible).toBe(true);
   });
 

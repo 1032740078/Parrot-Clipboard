@@ -1,67 +1,83 @@
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
-use crate::error::AppError;
+use crate::{
+    error::AppError,
+    ipc::events::emit_permission_guide_window_visibility_changed,
+};
 
-pub const SETTINGS_WINDOW_LABEL: &str = "settings";
-const SETTINGS_WINDOW_URL: &str = "index.html?window=settings";
-const SETTINGS_WINDOW_TITLE: &str = "设置";
-const SETTINGS_WINDOW_WIDTH: f64 = 1120.0;
-const SETTINGS_WINDOW_HEIGHT: f64 = 720.0;
-const SETTINGS_WINDOW_MIN_WIDTH: f64 = 960.0;
-const SETTINGS_WINDOW_MIN_HEIGHT: f64 = 560.0;
+pub const PERMISSION_GUIDE_WINDOW_LABEL: &str = "permission-guide";
+const PERMISSION_GUIDE_WINDOW_URL: &str = "index.html?window=permission-guide";
+const PERMISSION_GUIDE_WINDOW_TITLE: &str = "权限引导";
+const PERMISSION_GUIDE_WINDOW_WIDTH: f64 = 620.0;
+const PERMISSION_GUIDE_WINDOW_HEIGHT: f64 = 560.0;
+const PERMISSION_GUIDE_WINDOW_MIN_WIDTH: f64 = 560.0;
+const PERMISSION_GUIDE_WINDOW_MIN_HEIGHT: f64 = 480.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SettingsWindowOpenAction {
+pub enum PermissionGuideWindowOpenAction {
     Created,
     ActivatedExisting,
 }
 
-trait SettingsWindowRuntime {
+trait PermissionGuideWindowRuntime {
     fn window_exists(&self) -> bool;
     fn create_window(&self) -> Result<(), AppError>;
     fn restore_window(&self) -> Result<(), AppError>;
     fn show_window(&self) -> Result<(), AppError>;
     fn focus_window(&self) -> Result<(), AppError>;
+    fn notify_visibility_changed(&self, visible: bool) -> Result<(), AppError>;
 }
 
-struct TauriSettingsWindowRuntime {
+struct TauriPermissionGuideWindowRuntime {
     app_handle: AppHandle,
 }
 
-impl TauriSettingsWindowRuntime {
+impl TauriPermissionGuideWindowRuntime {
     fn new(app_handle: AppHandle) -> Self {
         Self { app_handle }
     }
 
     fn window(&self) -> Result<tauri::WebviewWindow, AppError> {
         self.app_handle
-            .get_webview_window(SETTINGS_WINDOW_LABEL)
-            .ok_or_else(|| AppError::Window("settings window not found".to_string()))
+            .get_webview_window(PERMISSION_GUIDE_WINDOW_LABEL)
+            .ok_or_else(|| AppError::Window("permission guide window not found".to_string()))
     }
 }
 
-impl SettingsWindowRuntime for TauriSettingsWindowRuntime {
+impl PermissionGuideWindowRuntime for TauriPermissionGuideWindowRuntime {
     fn window_exists(&self) -> bool {
         self.app_handle
-            .get_webview_window(SETTINGS_WINDOW_LABEL)
+            .get_webview_window(PERMISSION_GUIDE_WINDOW_LABEL)
             .is_some()
     }
 
     fn create_window(&self) -> Result<(), AppError> {
-        WebviewWindowBuilder::new(
+        let app_handle = self.app_handle.clone();
+        let window = WebviewWindowBuilder::new(
             &self.app_handle,
-            SETTINGS_WINDOW_LABEL,
-            WebviewUrl::App(SETTINGS_WINDOW_URL.into()),
+            PERMISSION_GUIDE_WINDOW_LABEL,
+            WebviewUrl::App(PERMISSION_GUIDE_WINDOW_URL.into()),
         )
-        .title(SETTINGS_WINDOW_TITLE)
-        .inner_size(SETTINGS_WINDOW_WIDTH, SETTINGS_WINDOW_HEIGHT)
-        .min_inner_size(SETTINGS_WINDOW_MIN_WIDTH, SETTINGS_WINDOW_MIN_HEIGHT)
+        .title(PERMISSION_GUIDE_WINDOW_TITLE)
+        .inner_size(PERMISSION_GUIDE_WINDOW_WIDTH, PERMISSION_GUIDE_WINDOW_HEIGHT)
+        .min_inner_size(
+            PERMISSION_GUIDE_WINDOW_MIN_WIDTH,
+            PERMISSION_GUIDE_WINDOW_MIN_HEIGHT,
+        )
         .resizable(true)
         .skip_taskbar(false)
         .visible(false)
         .center()
         .build()
-        .map_err(|error| AppError::Window(format!("build settings window failed: {error}")))?;
+        .map_err(|error| {
+            AppError::Window(format!("build permission guide window failed: {error}"))
+        })?;
+
+        window.on_window_event(move |event| {
+            if matches!(event, WindowEvent::Destroyed) {
+                let _ = emit_permission_guide_window_visibility_changed(&app_handle, false);
+            }
+        });
 
         Ok(())
     }
@@ -81,38 +97,53 @@ impl SettingsWindowRuntime for TauriSettingsWindowRuntime {
     }
 
     fn show_window(&self) -> Result<(), AppError> {
-        self.window()?
-            .show()
-            .map_err(|error| AppError::Window(format!("show settings window failed: {error}")))
+        self.window()?.show().map_err(|error| {
+            AppError::Window(format!("show permission guide window failed: {error}"))
+        })
     }
 
     fn focus_window(&self) -> Result<(), AppError> {
-        self.window()?
-            .set_focus()
-            .map_err(|error| AppError::Window(format!("focus settings window failed: {error}")))
+        self.window()?.set_focus().map_err(|error| {
+            AppError::Window(format!("focus permission guide window failed: {error}"))
+        })
+    }
+
+    fn notify_visibility_changed(&self, visible: bool) -> Result<(), AppError> {
+        emit_permission_guide_window_visibility_changed(&self.app_handle, visible)
     }
 }
 
-pub fn show_or_focus_settings_window(
+pub fn show_or_focus_permission_guide_window(
     app_handle: &AppHandle,
-) -> Result<SettingsWindowOpenAction, AppError> {
-    let runtime = TauriSettingsWindowRuntime::new(app_handle.clone());
+) -> Result<PermissionGuideWindowOpenAction, AppError> {
+    let runtime = TauriPermissionGuideWindowRuntime::new(app_handle.clone());
     show_or_focus_with_runtime(&runtime)
 }
 
+pub fn close_permission_guide_window(app_handle: &AppHandle) -> Result<(), AppError> {
+    if let Some(window) = app_handle.get_webview_window(PERMISSION_GUIDE_WINDOW_LABEL) {
+        window.close().map_err(|error| {
+            AppError::Window(format!("close permission guide window failed: {error}"))
+        })?;
+    }
+
+    Ok(())
+}
+
 fn show_or_focus_with_runtime(
-    runtime: &dyn SettingsWindowRuntime,
-) -> Result<SettingsWindowOpenAction, AppError> {
+    runtime: &dyn PermissionGuideWindowRuntime,
+) -> Result<PermissionGuideWindowOpenAction, AppError> {
     let action = if runtime.window_exists() {
-        SettingsWindowOpenAction::ActivatedExisting
+        PermissionGuideWindowOpenAction::ActivatedExisting
     } else {
         runtime.create_window()?;
-        SettingsWindowOpenAction::Created
+        PermissionGuideWindowOpenAction::Created
     };
 
     runtime.restore_window()?;
     runtime.show_window()?;
     runtime.focus_window()?;
+    runtime.notify_visibility_changed(true)?;
 
     Ok(action)
 }
@@ -123,7 +154,9 @@ mod tests {
 
     use crate::error::AppError;
 
-    use super::{show_or_focus_with_runtime, SettingsWindowOpenAction, SettingsWindowRuntime};
+    use super::{
+        show_or_focus_with_runtime, PermissionGuideWindowOpenAction, PermissionGuideWindowRuntime,
+    };
 
     #[derive(Default, Clone)]
     struct RuntimeState {
@@ -152,7 +185,7 @@ mod tests {
         }
     }
 
-    impl SettingsWindowRuntime for MockRuntime {
+    impl PermissionGuideWindowRuntime for MockRuntime {
         fn window_exists(&self) -> bool {
             self.state.borrow_mut().calls.push("window_exists");
             self.state.borrow().existing
@@ -163,6 +196,7 @@ mod tests {
             if self.state.borrow().fail_on_create {
                 return Err(AppError::Window("create failed".to_string()));
             }
+
             Ok(())
         }
 
@@ -180,15 +214,20 @@ mod tests {
             self.state.borrow_mut().calls.push("focus_window");
             Ok(())
         }
+
+        fn notify_visibility_changed(&self, _visible: bool) -> Result<(), AppError> {
+            self.state.borrow_mut().calls.push("notify_visibility_changed");
+            Ok(())
+        }
     }
 
     #[test]
-    fn creates_settings_window_when_missing() {
+    fn creates_permission_guide_window_when_missing() {
         let (runtime, state) = MockRuntime::new(false);
 
         let action = show_or_focus_with_runtime(&runtime).expect("window should open");
 
-        assert_eq!(action, SettingsWindowOpenAction::Created);
+        assert_eq!(action, PermissionGuideWindowOpenAction::Created);
         assert_eq!(
             state.borrow().calls,
             vec![
@@ -196,37 +235,28 @@ mod tests {
                 "create_window",
                 "restore_window",
                 "show_window",
-                "focus_window"
+                "focus_window",
+                "notify_visibility_changed",
             ]
         );
     }
 
     #[test]
-    fn focuses_existing_settings_window_when_already_open() {
+    fn focuses_existing_permission_guide_window() {
         let (runtime, state) = MockRuntime::new(true);
 
         let action = show_or_focus_with_runtime(&runtime).expect("window should focus");
 
-        assert_eq!(action, SettingsWindowOpenAction::ActivatedExisting);
+        assert_eq!(action, PermissionGuideWindowOpenAction::ActivatedExisting);
         assert_eq!(
             state.borrow().calls,
             vec![
                 "window_exists",
                 "restore_window",
                 "show_window",
-                "focus_window"
+                "focus_window",
+                "notify_visibility_changed",
             ]
         );
-    }
-
-    #[test]
-    fn propagates_create_error() {
-        let (runtime, state) = MockRuntime::new(false);
-        state.borrow_mut().fail_on_create = true;
-
-        let error = show_or_focus_with_runtime(&runtime).expect_err("create should fail");
-
-        assert_eq!(error.to_string(), "create failed");
-        assert_eq!(state.borrow().calls, vec!["window_exists", "create_window"]);
     }
 }

@@ -15,11 +15,11 @@ describe("contextMenuActions", () => {
     ]);
   });
 
-  it("UT-CONTEXT-202 图片与文件卡片会禁用纯文本粘贴", () => {
+  it("UT-CONTEXT-202 图片卡片禁用纯文本粘贴，文件卡片允许纯文本粘贴", () => {
     const imageActions = buildCardContextMenuActions(buildImageRecord(2, "截图", 1000));
     const fileActions = buildCardContextMenuActions(buildFileRecord(3, "需求文档.md", 1000));
 
     expect(imageActions.find((action) => action.key === "paste_plain_text")?.disabled).toBe(true);
-    expect(fileActions.find((action) => action.key === "paste_plain_text")?.disabled).toBe(true);
+    expect(fileActions.find((action) => action.key === "paste_plain_text")?.disabled).toBe(false);
   });
 });
