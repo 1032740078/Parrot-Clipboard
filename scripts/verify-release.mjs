@@ -57,6 +57,28 @@ if (!tauriConfig.bundle?.active) {
   errors.push("Tauri bundle.active 必须为 true。");
 }
 
+if (!tauriConfig.app?.security?.assetProtocol?.enable) {
+  errors.push("Tauri assetProtocol 必须启用，否则图片预览无法通过 convertFileSrc 加载。");
+}
+
+const assetProtocolScope = Array.isArray(tauriConfig.app?.security?.assetProtocol?.scope)
+  ? tauriConfig.app.security.assetProtocol.scope
+  : [];
+
+if (
+  !assetProtocolScope.some((scope) => typeof scope === "string" && scope.includes("$APPDATA/images/"))
+) {
+  errors.push("Tauri assetProtocol scope 必须覆盖 $APPDATA/images/**。");
+}
+
+if (
+  !assetProtocolScope.some(
+    (scope) => typeof scope === "string" && scope.includes("$APPLOCALDATA/images/")
+  )
+) {
+  warnings.push("建议 Tauri assetProtocol scope 同时覆盖 $APPLOCALDATA/images/**，确保不同平台目录映射稳定。");
+}
+
 const windowsSignCommand = tauriConfig.bundle?.windows?.signCommand;
 if (!(typeof windowsSignCommand === "string" ? windowsSignCommand : windowsSignCommand?.script)) {
   errors.push("缺少 Windows 自定义签名命令配置。");
