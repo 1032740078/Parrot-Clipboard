@@ -1,7 +1,7 @@
 import { getRecordPreviewText, type ClipboardRecord } from "../../types/clipboard";
 import { PreviewStateBadge } from "./PreviewStateBadge";
 import { QuickSelectBadge } from "./QuickSelectBadge";
-import { getCardAppearanceClassName } from "./cardAppearance";
+import { CARD_HEADER_BASE_CLASS_NAME, getCardAppearanceClassName } from "./cardAppearance";
 import { formatRelativeTime } from "./time";
 
 interface TextCardProps {
@@ -43,7 +43,7 @@ export const TextCard = ({
       <PreviewStateBadge visible={isPreviewing} />
       <QuickSelectBadge slot={displaySlot} />
 
-      <header className="flex h-7 items-center bg-brand px-3 text-[13px] font-semibold text-brand-foreground">
+      <header className={`${CARD_HEADER_BASE_CLASS_NAME} bg-brand text-brand-foreground`}>
         文本
       </header>
 

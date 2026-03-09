@@ -6,7 +6,7 @@ import type { ClipboardRecord } from "../../types/clipboard";
 import { getRecordPreviewText } from "../../types/clipboard";
 import { PreviewStateBadge } from "./PreviewStateBadge";
 import { QuickSelectBadge } from "./QuickSelectBadge";
-import { getCardAppearanceClassName } from "./cardAppearance";
+import { CARD_HEADER_BASE_CLASS_NAME, getCardAppearanceClassName } from "./cardAppearance";
 import { toPreviewSrc } from "./previewAsset";
 import { formatRelativeTime } from "./time";
 
@@ -128,7 +128,7 @@ export const ImageCard = ({
       <PreviewStateBadge visible={isPreviewing} />
       <QuickSelectBadge slot={displaySlot} />
 
-      <header className="flex h-7 items-center bg-violet-500 px-3 text-[13px] font-semibold text-white">
+      <header className={`${CARD_HEADER_BASE_CLASS_NAME} bg-violet-500 text-white`}>
         图片
       </header>
 

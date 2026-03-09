@@ -2,7 +2,7 @@ import type { ClipboardRecord } from "../../types/clipboard";
 import { getRecordPreviewText } from "../../types/clipboard";
 import { PreviewStateBadge } from "./PreviewStateBadge";
 import { QuickSelectBadge } from "./QuickSelectBadge";
-import { getCardAppearanceClassName } from "./cardAppearance";
+import { CARD_HEADER_BASE_CLASS_NAME, getCardAppearanceClassName } from "./cardAppearance";
 import { formatRelativeTime } from "./time";
 
 interface FileCardProps {
@@ -40,7 +40,7 @@ export const FileCard = ({
       <PreviewStateBadge visible={isPreviewing} />
       <QuickSelectBadge slot={displaySlot} />
 
-      <header className="flex h-7 items-center bg-emerald-500 px-3 text-[13px] font-semibold text-white">
+      <header className={`${CARD_HEADER_BASE_CLASS_NAME} bg-emerald-500 text-white`}>
         文件
       </header>
 

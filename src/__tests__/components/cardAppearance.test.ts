@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { getCardAppearanceClassName } from "../../components/MainPanel/cardAppearance";
+import { CARD_HEADER_BASE_CLASS_NAME, getCardAppearanceClassName } from "../../components/MainPanel/cardAppearance";
 
 describe("cardAppearance", () => {
   it("UT-VISUAL-304 默认态保留 hover 反馈与玻璃卡片基底", () => {
@@ -34,5 +34,15 @@ describe("cardAppearance", () => {
     expect(className).toContain("ring-1");
     expect(className).toContain("ring-violet-300/45");
     expect(className).toContain("rgba(196,181,253,0.3)");
+  });
+
+  it("UT-VISUAL-309 卡片圆角收敛且标题栏高度统一提升", () => {
+    const className = getCardAppearanceClassName({
+      isSelected: false,
+      isPreviewing: false,
+    });
+
+    expect(className).toContain("rounded-[18px]");
+    expect(CARD_HEADER_BASE_CLASS_NAME).toContain("h-8");
   });
 });
