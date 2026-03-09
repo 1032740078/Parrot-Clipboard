@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useMemo, useRef, useState, type WheelEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type WheelEvent } from "react";
 
 import {
   isFileRecord,
@@ -17,6 +17,7 @@ interface CardListProps {
   selectedIndex: number;
   onSelectRecord: (index: number) => void;
   onPasteRecord: (record: ClipboardRecord, index: number) => void;
+  onOpenContextMenu: (record: ClipboardRecord, index: number, anchor: { x: number; y: number }) => void;
   onVisibleQuickSlotsChange: (slots: VisibleQuickSlot[]) => void;
 }
 
@@ -157,6 +158,7 @@ export const CardList = ({
   selectedIndex,
   onSelectRecord,
   onPasteRecord,
+  onOpenContextMenu,
   onVisibleQuickSlotsChange,
 }: CardListProps) => {
   const cardMotionProps = getCardMotionProps(prefersReducedMotion());
@@ -283,6 +285,18 @@ export const CardList = ({
     onVisibleQuickSlotsChange(visibleQuickSlots);
   }, [onVisibleQuickSlotsChange, visibleQuickSlots]);
 
+  const handleCardContextMenu = (
+    event: MouseEvent<HTMLDivElement>,
+    record: ClipboardRecord,
+    index: number
+  ): void => {
+    event.preventDefault();
+    onOpenContextMenu(record, index, {
+      x: event.clientX,
+      y: event.clientY,
+    });
+  };
+
   const renderVisibleCards = (items: ClipboardRecord[], startIndex: number) => {
     if (shouldVirtualize) {
       return items.map((record, visibleIndex) => {
@@ -294,6 +308,9 @@ export const CardList = ({
             key={getCardRenderKey(record)}
             onClick={() => {
               onSelectRecord(index);
+            }}
+            onContextMenu={(event) => {
+              handleCardContextMenu(event, record, index);
             }}
             onDoubleClick={() => {
               onPasteRecord(record, index);
@@ -316,6 +333,9 @@ export const CardList = ({
               key={getCardRenderKey(record)}
               onClick={() => {
                 onSelectRecord(index);
+              }}
+              onContextMenu={(event) => {
+                handleCardContextMenu(event, record, index);
               }}
               onDoubleClick={() => {
                 onPasteRecord(record, index);

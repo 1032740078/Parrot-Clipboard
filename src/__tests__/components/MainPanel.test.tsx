@@ -347,4 +347,55 @@ describe("MainPanel", () => {
 
     expect(useUIStore.getState().lastPreviewCloseReason).toBe("click_mask");
   });
+
+  it("UT-PANEL-012 右键未选中卡片时会先切换选中再弹出菜单", async () => {
+    setInvokeForRecords(mixedFixtureRecords);
+
+    render(<MainPanel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("image-card")).toBeInTheDocument();
+    });
+
+    fireEvent.contextMenu(screen.getByTestId("image-card"), { clientX: 560, clientY: 320 });
+
+    await waitFor(() => {
+      expect(useClipboardStore.getState().selectedIndex).toBe(1);
+      expect(useUIStore.getState().contextMenu?.recordId).toBe(2);
+      expect(screen.getByTestId("card-context-menu")).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("card-context-menu-item-preview")).toBeInTheDocument();
+    expect(screen.getByTestId("card-context-menu-item-paste_plain_text")).toBeDisabled();
+    expect(screen.getByTestId("card-context-menu").getAttribute("data-placement")).toBe(
+      "bottom-start"
+    );
+  });
+
+  it("UT-PANEL-013 连续右键不同卡片时菜单目标始终跟随最新卡片", async () => {
+    setInvokeForRecords(mixedFixtureRecords);
+
+    render(<MainPanel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("file-card")).toBeInTheDocument();
+    });
+
+    fireEvent.contextMenu(screen.getByTestId("file-card"), { clientX: 1240, clientY: 680 });
+
+    await waitFor(() => {
+      expect(useUIStore.getState().contextMenu?.recordId).toBe(1);
+      expect(useUIStore.getState().contextMenu?.collisionAdjusted).toBe(true);
+    });
+
+    fireEvent.contextMenu(screen.getByTestId("text-card"), { clientX: 240, clientY: 180 });
+
+    await waitFor(() => {
+      expect(useClipboardStore.getState().selectedIndex).toBe(0);
+      expect(useUIStore.getState().contextMenu?.recordId).toBe(3);
+      expect(useUIStore.getState().contextMenu?.placement).toBe("bottom-start");
+    });
+
+    expect(screen.getAllByTestId("card-context-menu")).toHaveLength(1);
+  });
 });

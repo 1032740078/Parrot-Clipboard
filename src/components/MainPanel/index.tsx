@@ -10,8 +10,11 @@ import { useClipboardEvents } from "../../hooks/useClipboardEvents";
 import { useKeyboard } from "../../hooks/useKeyboard";
 import { executeRecordPaste } from "../../hooks/recordPaste";
 import { useClipboardStore, useSystemStore, useUIStore } from "../../stores";
+import { CardContextMenu } from "./CardContextMenu";
 import { CardList } from "./CardList";
 import { EmptyState } from "./EmptyState";
+import { buildCardContextMenuActions } from "./contextMenuActions";
+import { resolveContextMenuPosition } from "./contextMenuPosition";
 import { getPanelMotionVariants, prefersReducedMotion } from "./motion";
 import { PauseHint } from "./PauseHint";
 import { PreviewOverlay } from "./PreviewOverlay";
@@ -29,6 +32,7 @@ export const MainPanel = () => {
   const setHydrating = useClipboardStore((state) => state.setHydrating);
 
   const isPanelVisible = useUIStore((state) => state.isPanelVisible);
+  const openContextMenu = useUIStore((state) => state.openContextMenu);
   const openPermissionGuide = useUIStore((state) => state.openPermissionGuide);
   const showToast = useUIStore((state) => state.showToast);
   const monitoring = useSystemStore((state) => state.monitoring);
@@ -108,6 +112,40 @@ export const MainPanel = () => {
     visibleQuickSlotsRef.current = slots;
   }, []);
 
+  const handleOpenCardContextMenu = (
+    record: (typeof records)[number],
+    index: number,
+    anchor: { x: number; y: number }
+  ): void => {
+    selectIndex(index);
+
+    const actions = buildCardContextMenuActions(record);
+    const position = resolveContextMenuPosition(
+      anchor,
+      window.innerWidth,
+      window.innerHeight,
+      actions.length
+    );
+
+    openContextMenu({
+      recordId: record.id,
+      x: position.x,
+      y: position.y,
+      placement: position.placement,
+      collisionAdjusted: position.collisionAdjusted,
+      actions,
+    });
+
+    logger.debug("用户通过右键打开卡片菜单", {
+      record_id: record.id,
+      selected_index: index,
+      anchor_x: anchor.x,
+      anchor_y: anchor.y,
+      collision_adjusted: position.collisionAdjusted,
+      placement: position.placement,
+    });
+  };
+
   return (
     <AnimatePresence>
       {isPanelVisible ? (
@@ -174,6 +212,7 @@ export const MainPanel = () => {
                   <EmptyState />
                 ) : (
                   <CardList
+                    onOpenContextMenu={handleOpenCardContextMenu}
                     onPasteRecord={(record, index) => {
                       handleCardDoubleClick(record.id, index);
                     }}
@@ -210,6 +249,7 @@ export const MainPanel = () => {
             </div>
           </motion.section>
           <PreviewOverlay />
+          <CardContextMenu />
         </>
       ) : null}
     </AnimatePresence>
