@@ -19,7 +19,8 @@
     "test:e2e": "sh -c 'node e2e/start-vite-server.mjs >/tmp/clipboard-record-manager-e2e.log 2>&1 & SERVER_PID=$!; trap \"kill $SERVER_PID\" EXIT; until curl -sf http://127.0.0.1:4173 >/dev/null; do sleep 0.2; done; playwright test --config=e2e/playwright.config.ts'",
     "release:verify-config": "node scripts/verify-release.mjs",
     "release:check": "pnpm run type-check && pnpm run lint && pnpm run test:coverage && cargo test --manifest-path src-tauri/Cargo.toml && pnpm run test:e2e && pnpm run release:verify-config",
-    "release:build:local": "pnpm tauri build --no-sign --bundles app && bash scripts/package-macos-dmg.sh"
+    "release:build:local": "pnpm tauri build --no-sign --bundles app && bash scripts/package-macos-dmg.sh",
+    "tauri:dev": "sh -c 'export PATH=\"${CARGO_HOME:-$HOME/.cargo}/bin:$PATH\"; tauri dev'"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

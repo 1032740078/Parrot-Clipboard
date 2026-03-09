@@ -124,7 +124,10 @@ export const PreviewOverlay = () => {
             </div>
           </header>
 
-          <div className="max-h-[68vh] min-h-[320px] overflow-y-auto px-6 py-6">
+          <div
+            className="scrollbar-hidden max-h-[68vh] min-h-[320px] overflow-y-auto px-6 py-6"
+            data-testid="preview-overlay-scroll-area"
+          >
             {previewOverlay.status === "loading" ? (
               <div
                 className="flex min-h-[260px] items-center justify-center rounded-3xl border border-dashed border-white/15 bg-white/5 text-sm text-slate-300"

@@ -75,6 +75,20 @@ describe("App", () => {
     });
   });
 
+  it("UT-APP-004 主窗口挂载时会锁定根层滚动并在卸载时清理", async () => {
+    const { unmount } = render(<App />);
+
+    await waitFor(() => {
+      expect(document.documentElement.classList.contains("app-shell-window")).toBe(true);
+      expect(document.body.classList.contains("app-shell-window")).toBe(true);
+    });
+
+    unmount();
+
+    expect(document.documentElement.classList.contains("app-shell-window")).toBe(false);
+    expect(document.body.classList.contains("app-shell-window")).toBe(false);
+  });
+
   it("UT-FE-STATE-003 监听暂停态下展示弱提示且不影响历史列表", async () => {
     render(<App />);
 

@@ -89,6 +89,13 @@ describe("PreviewOverlay", () => {
         "第 16 行完整文本"
       );
     });
+
+    expect(screen.getByTestId("preview-overlay-scroll-area").className).toContain(
+      "scrollbar-hidden"
+    );
+    expect(screen.getByTestId("preview-overlay-scroll-area").className).toContain(
+      "overflow-y-auto"
+    );
   });
 
   it("UT-PREVIEW-302 图片预览会展示原图与尺寸信息", async () => {

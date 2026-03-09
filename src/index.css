@@ -75,6 +75,16 @@ body,
   min-height: 100%;
 }
 
+html.app-shell-window,
+body.app-shell-window {
+  overflow: hidden;
+}
+
+body.app-shell-window #root {
+  min-height: 100vh;
+  overflow: hidden;
+}
+
 body {
   margin: 0;
   min-width: 320px;
@@ -167,20 +177,41 @@ body {
 }
 
 
+.scrollbar-hidden,
 .panel-scroll-area {
   -ms-overflow-style: none;
   scrollbar-width: none;
+  scrollbar-color: transparent transparent;
 }
 
+.scrollbar-hidden::-webkit-scrollbar,
 .panel-scroll-area::-webkit-scrollbar {
   width: 0 !important;
   height: 0 !important;
-  display: none;
+  display: none !important;
+  -webkit-appearance: none;
   background: transparent;
 }
 
+.scrollbar-hidden::-webkit-scrollbar:horizontal,
+.scrollbar-hidden::-webkit-scrollbar:vertical,
+.panel-scroll-area::-webkit-scrollbar:horizontal,
+.panel-scroll-area::-webkit-scrollbar:vertical {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+  -webkit-appearance: none;
+  background: transparent;
+}
+
+.scrollbar-hidden::-webkit-scrollbar-button,
+.scrollbar-hidden::-webkit-scrollbar-track,
+.scrollbar-hidden::-webkit-scrollbar-thumb,
+.scrollbar-hidden::-webkit-scrollbar-corner,
 .panel-scroll-area::-webkit-scrollbar-track,
 .panel-scroll-area::-webkit-scrollbar-thumb,
-.panel-scroll-area::-webkit-scrollbar-corner {
+.panel-scroll-area::-webkit-scrollbar-corner,
+.panel-scroll-area::-webkit-scrollbar-button {
   background: transparent;
+  border: 0;
 }

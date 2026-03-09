@@ -39,6 +39,16 @@ function App() {
   useThemeSync(themeMode);
 
   useEffect(() => {
+    document.documentElement.classList.add("app-shell-window");
+    document.body.classList.add("app-shell-window");
+
+    return () => {
+      document.documentElement.classList.remove("app-shell-window");
+      document.body.classList.remove("app-shell-window");
+    };
+  }, []);
+
+  useEffect(() => {
     let isMounted = true;
 
     const syncRuntimeStatus = async (): Promise<void> => {
