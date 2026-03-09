@@ -241,6 +241,24 @@ describe("MainPanel virtualization", () => {
     expect(cardList.scrollLeft).toBe(160);
   });
 
+  it("UT-FE-LIST-105B 普通鼠标滚轮也会直接驱动横向滚动", async () => {
+    const records = buildLargeRecords(10);
+    setInvokeForRecords(records);
+
+    render(<MainPanel />);
+    const cardList = await attachScrollableViewport();
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("text-card")).toHaveLength(10);
+    });
+
+    fireEvent.wheel(cardList, { deltaY: 120 });
+
+    await waitFor(() => {
+      expect(cardList.scrollLeft).toBe(120);
+    });
+  });
+
   it("UT-FE-LIST-106 横向滚动容器使用隐藏滚动条样式但仍保留滚动能力", async () => {
     const records = buildLargeRecords(18);
     setInvokeForRecords(records);

@@ -66,16 +66,16 @@ const calculateNextWheelScrollLeft = (
   return Math.min(Math.max(currentLeft + horizontalDelta, 0), maxScrollLeft);
 };
 
-const getShiftWheelHorizontalDelta = (event: WheelEvent<HTMLDivElement>): number => {
-  if (!event.shiftKey || event.deltaY === 0) {
-    return 0;
-  }
-
+const getHorizontalWheelDelta = (event: WheelEvent<HTMLDivElement>): number => {
   if (event.deltaX !== 0) {
-    return 0;
+    return event.deltaX;
   }
 
-  return event.deltaY;
+  if (event.deltaY !== 0) {
+    return event.deltaY;
+  }
+
+  return 0;
 };
 
 const calculateNextScrollLeft = (
@@ -407,7 +407,7 @@ export const CardList = ({
         scheduleScrollLeftSync(nextScrollLeft);
       }}
       onWheel={(event) => {
-        const horizontalDelta = getShiftWheelHorizontalDelta(event);
+        const horizontalDelta = getHorizontalWheelDelta(event);
         if (horizontalDelta === 0) {
           return;
         }
