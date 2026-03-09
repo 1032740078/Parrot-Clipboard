@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
-import { getRecordSummaries } from "../../api/commands";
+import { deleteRecord, getRecordSummaries } from "../../api/commands";
 import { showAboutWindow } from "../../api/diagnostics";
 import { logger, normalizeError } from "../../api/logger";
 import { getErrorMessage } from "../../api/errorHandler";
@@ -10,6 +10,7 @@ import { useClipboardEvents } from "../../hooks/useClipboardEvents";
 import { useKeyboard } from "../../hooks/useKeyboard";
 import { executeRecordPaste } from "../../hooks/recordPaste";
 import { useClipboardStore, useSystemStore, useUIStore } from "../../stores";
+import type { ContextMenuActionKey } from "../../stores/useUIStore";
 import { CardContextMenu } from "./CardContextMenu";
 import { CardList } from "./CardList";
 import { EmptyState } from "./EmptyState";
@@ -28,10 +29,14 @@ export const MainPanel = () => {
   const selectedRecord = useClipboardStore((state) => state.getSelectedRecord());
   const isHydrating = useClipboardStore((state) => state.isHydrating);
   const hydrate = useClipboardStore((state) => state.hydrate);
+  const removeRecord = useClipboardStore((state) => state.removeRecord);
   const selectIndex = useClipboardStore((state) => state.selectIndex);
   const setHydrating = useClipboardStore((state) => state.setHydrating);
 
+  const contextMenu = useUIStore((state) => state.contextMenu);
+  const closeContextMenu = useUIStore((state) => state.closeContextMenu);
   const isPanelVisible = useUIStore((state) => state.isPanelVisible);
+  const openPreviewOverlay = useUIStore((state) => state.openPreviewOverlay);
   const openContextMenu = useUIStore((state) => state.openContextMenu);
   const openPermissionGuide = useUIStore((state) => state.openPermissionGuide);
   const showToast = useUIStore((state) => state.showToast);
@@ -146,6 +151,81 @@ export const MainPanel = () => {
     });
   };
 
+  const handleContextMenuAction = async (actionKey: ContextMenuActionKey): Promise<void> => {
+    if (!contextMenu) {
+      return;
+    }
+
+    const target = records.find((record) => record.id === contextMenu.recordId);
+    if (!target) {
+      closeContextMenu("record_deleted");
+      return;
+    }
+
+    try {
+      if (actionKey === "preview") {
+        closeContextMenu("action_completed");
+        openPreviewOverlay(target.id, "context_menu");
+        return;
+      }
+
+      if (actionKey === "paste") {
+        const didPaste = await executeRecordPaste({
+          record: target,
+          hideReason: "paste_completed",
+          trigger: "context_menu_paste",
+          logContext: {
+            record_id: target.id,
+          },
+        });
+
+        if (didPaste) {
+          closeContextMenu("action_completed");
+        }
+        return;
+      }
+
+      if (actionKey === "paste_plain_text") {
+        const didPaste = await executeRecordPaste({
+          record: target,
+          mode: "plain_text",
+          hideReason: "paste_completed",
+          successToastMessage: "已切换为纯文本粘贴",
+          trigger: "context_menu_plain_text_paste",
+          logContext: {
+            record_id: target.id,
+          },
+        });
+
+        if (didPaste) {
+          closeContextMenu("action_completed");
+        }
+        return;
+      }
+
+      await deleteRecord(target.id);
+      removeRecord(target.id);
+      closeContextMenu("action_completed");
+      logger.info("用户通过右键菜单删除记录", {
+        record_id: target.id,
+      });
+    } catch (error) {
+      if (actionKey === "delete") {
+        showToast({
+          level: "error",
+          message: getErrorMessage(error),
+          duration: 2200,
+        });
+      }
+
+      logger.error("处理右键菜单动作失败", {
+        action_key: actionKey,
+        record_id: target.id,
+        error: normalizeError(error),
+      });
+    }
+  };
+
   return (
     <AnimatePresence>
       {isPanelVisible ? (
@@ -249,7 +329,11 @@ export const MainPanel = () => {
             </div>
           </motion.section>
           <PreviewOverlay />
-          <CardContextMenu />
+          <CardContextMenu
+            onAction={(actionKey) => {
+              void handleContextMenuAction(actionKey);
+            }}
+          />
         </>
       ) : null}
     </AnimatePresence>

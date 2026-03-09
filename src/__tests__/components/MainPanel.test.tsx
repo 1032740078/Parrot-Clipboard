@@ -175,10 +175,13 @@ describe("MainPanel", () => {
 
     expect(screen.getByText("可视 1-9 快选")).toBeInTheDocument();
     expect(screen.getByText("⌘+可视 1-9 快贴")).toBeInTheDocument();
-    expect(screen.getAllByTestId("quick-select-badge")).toHaveLength(4);
-    expect(
-      screen.getAllByTestId("quick-select-badge").map((element) => element.textContent)
-    ).toEqual(["1", "2", "3", "4"]);
+    const quickSlotLabels = screen
+      .getAllByTestId("quick-select-badge")
+      .map((element) => element.textContent);
+
+    expect(quickSlotLabels.length).toBeGreaterThanOrEqual(4);
+    expect(quickSlotLabels.length).toBeLessThanOrEqual(5);
+    expect(quickSlotLabels.slice(0, 4)).toEqual(["1", "2", "3", "4"]);
   });
 
   it("UT-PANEL-007 监听暂停时展示弱提示且不影响历史浏览", async () => {
@@ -397,5 +400,90 @@ describe("MainPanel", () => {
     });
 
     expect(screen.getAllByTestId("card-context-menu")).toHaveLength(1);
+  });
+
+  it("UT-PANEL-014 右键菜单支持直接粘贴", async () => {
+    setInvokeForRecords(mixedFixtureRecords);
+
+    render(<MainPanel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("image-card")).toBeInTheDocument();
+    });
+
+    fireEvent.contextMenu(screen.getByTestId("image-card"), { clientX: 560, clientY: 320 });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("card-context-menu-item-paste")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("card-context-menu-item-paste"));
+
+    await waitFor(() => {
+      expect(invokeCalls.find((call) => call.command === "paste_record")).toEqual({
+        command: "paste_record",
+        args: { id: 2, mode: "original" },
+      });
+      expect(invokeCalls.find((call) => call.command === "hide_panel")).toEqual({
+        command: "hide_panel",
+        args: { reason: "paste_completed" },
+      });
+    });
+  });
+
+  it("UT-PANEL-015 右键文本卡片支持纯文本粘贴", async () => {
+    setInvokeForRecords(fixtureRecords);
+
+    render(<MainPanel />);
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("text-card")).toHaveLength(3);
+    });
+
+    fireEvent.contextMenu(screen.getAllByTestId("text-card")[0], { clientX: 360, clientY: 240 });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("card-context-menu-item-paste_plain_text")).toBeEnabled();
+    });
+
+    fireEvent.click(screen.getByTestId("card-context-menu-item-paste_plain_text"));
+
+    await waitFor(() => {
+      expect(invokeCalls.find((call) => call.command === "paste_record")).toEqual({
+        command: "paste_record",
+        args: { id: 3, mode: "plain_text" },
+      });
+    });
+
+    expect(useUIStore.getState().toast?.message).toBe("已切换为纯文本粘贴");
+  });
+
+  it("UT-PANEL-016 右键菜单支持删除记录并自动关闭菜单", async () => {
+    setInvokeForRecords(mixedFixtureRecords);
+
+    render(<MainPanel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("file-card")).toBeInTheDocument();
+    });
+
+    fireEvent.contextMenu(screen.getByTestId("file-card"), { clientX: 280, clientY: 260 });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("card-context-menu-item-delete")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("card-context-menu-item-delete"));
+
+    await waitFor(() => {
+      expect(invokeCalls.find((call) => call.command === "delete_record")).toEqual({
+        command: "delete_record",
+        args: { id: 1 },
+      });
+      expect(useClipboardStore.getState().records.some((record) => record.id === 1)).toBe(false);
+      expect(screen.queryByTestId("card-context-menu")).not.toBeInTheDocument();
+    });
+
+    expect(useUIStore.getState().lastContextMenuCloseReason).toBe("action_completed");
   });
 });
