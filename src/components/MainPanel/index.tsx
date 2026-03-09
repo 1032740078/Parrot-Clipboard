@@ -232,7 +232,7 @@ export const MainPanel = () => {
         <>
           <motion.section
             animate="visible"
-            className="fixed inset-x-0 bottom-0 z-50 h-panel border-t border-panel-border bg-panel-bg p-4 shadow-panel backdrop-blur-xl"
+            className="glass-panel fixed inset-x-4 bottom-4 z-50 h-panel rounded-[28px] p-4 backdrop-blur-2xl"
             data-testid="main-panel"
             exit="exit"
             initial="hidden"

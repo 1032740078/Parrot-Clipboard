@@ -30,14 +30,14 @@ export const Toast = ({
     };
   }, [duration, level, onClose, visible]);
 
-  const backgroundClass = level === "error" ? "bg-[rgba(127,29,29,0.92)]" : "bg-[rgba(15,23,42,0.88)]";
+  const levelClass = level === "error" ? "text-rose-100" : "text-white";
 
   return (
     <AnimatePresence>
       {visible ? (
         <motion.div
           animate={{ opacity: 1, y: 0 }}
-          className={`fixed bottom-12 left-1/2 z-[60] -translate-x-1/2 rounded-lg px-4 py-2 text-sm text-white shadow-lg ${backgroundClass}`}
+          className={`glass-toast fixed bottom-12 left-1/2 z-[72] -translate-x-1/2 rounded-2xl px-4 py-2 text-sm shadow-lg ${levelClass}`}
           data-testid="toast"
           exit={{ opacity: 0, y: 8 }}
           initial={{ opacity: 0, y: 8 }}

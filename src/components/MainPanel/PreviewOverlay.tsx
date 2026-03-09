@@ -97,7 +97,7 @@ export const PreviewOverlay = () => {
 
         <motion.section
           aria-modal="true"
-          className="relative z-[66] flex w-full max-w-4xl flex-col overflow-hidden rounded-[28px] border border-white/15 bg-slate-950/82 shadow-[0_28px_120px_rgba(15,23,42,0.55)] backdrop-blur-2xl"
+          className="glass-floating-surface relative z-[66] flex w-full max-w-4xl flex-col overflow-hidden rounded-[28px] backdrop-blur-2xl"
           data-testid="preview-overlay-card"
           onClick={(event) => {
             event.stopPropagation();

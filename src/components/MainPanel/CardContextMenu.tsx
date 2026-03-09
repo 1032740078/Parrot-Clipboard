@@ -1,11 +1,12 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useRef } from "react";
 
+import type { ContextMenuActionKey } from "../../stores/useUIStore";
 import { useUIStore } from "../../stores";
 import { prefersReducedMotion } from "./motion";
 
 interface CardContextMenuProps {
-  onAction?: (actionKey: NonNullable<ReturnType<typeof useUIStore.getState>["contextMenu"]>["actions"][number]["key"]) => void;
+  onAction?: (actionKey: ContextMenuActionKey) => void;
 }
 
 const menuVariants = {
@@ -77,7 +78,7 @@ export const CardContextMenu = ({ onAction }: CardContextMenuProps) => {
     <AnimatePresence>
       <motion.div
         animate="visible"
-        className="fixed z-[68] w-[220px] overflow-hidden rounded-2xl border border-white/15 bg-slate-950/88 p-2 shadow-[0_18px_64px_rgba(15,23,42,0.5)] backdrop-blur-2xl"
+        className="glass-floating-surface fixed z-[68] w-[220px] overflow-hidden rounded-2xl p-2 backdrop-blur-2xl"
         data-placement={contextMenu.placement}
         data-testid="card-context-menu"
         exit="exit"
