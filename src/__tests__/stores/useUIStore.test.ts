@@ -42,4 +42,46 @@ describe("useUIStore", () => {
     store.closeClearHistoryDialog();
     expect(useUIStore.getState().clearHistoryDialog).toBeUndefined();
   });
+
+  it("openPreviewOverlay / setPreviewOverlayStatus / closePreviewOverlay 可维护预览运行态", () => {
+    const now = Date.now();
+    const store = useUIStore.getState();
+
+    store.openPreviewOverlay(7, "keyboard_space");
+
+    expect(useUIStore.getState().previewOverlay).toMatchObject({
+      recordId: 7,
+      trigger: "keyboard_space",
+      status: "loading",
+    });
+    expect((useUIStore.getState().previewOverlay?.openedAt ?? 0) >= now).toBe(true);
+
+    store.setPreviewOverlayStatus("ready");
+    expect(useUIStore.getState().previewOverlay?.status).toBe("ready");
+    expect(useUIStore.getState().previewOverlay?.errorMessage).toBeUndefined();
+
+    store.setPreviewOverlayStatus("error", "详情加载失败");
+    expect(useUIStore.getState().previewOverlay).toMatchObject({
+      recordId: 7,
+      trigger: "keyboard_space",
+      status: "error",
+      errorMessage: "详情加载失败",
+    });
+
+    store.closePreviewOverlay("escape");
+    expect(useUIStore.getState().previewOverlay).toBeUndefined();
+    expect(useUIStore.getState().lastPreviewCloseReason).toBe("escape");
+  });
+
+  it("hidePanel 会顺带关闭预览并记录关闭原因", () => {
+    const store = useUIStore.getState();
+
+    store.showPanel();
+    store.openPreviewOverlay(3, "context_menu");
+    store.hidePanel();
+
+    expect(useUIStore.getState().isPanelVisible).toBe(false);
+    expect(useUIStore.getState().previewOverlay).toBeUndefined();
+    expect(useUIStore.getState().lastPreviewCloseReason).toBe("panel_hidden");
+  });
 });
