@@ -12,6 +12,7 @@ describe("cardAppearance", () => {
     expect(className).toContain("hover:-translate-y-0.5");
     expect(className).toContain("hover:border-sky-300/35");
     expect(className).toContain("border-white/10");
+    expect(className).toContain("h-52");
   });
 
   it("UT-VISUAL-305 选中态保留高亮边框与聚焦阴影", () => {

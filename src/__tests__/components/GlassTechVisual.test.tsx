@@ -39,11 +39,14 @@ describe("Glass Tech Visual", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("main-panel")).toBeInTheDocument();
+      expect(screen.getByTestId("card-list")).toBeInTheDocument();
     });
 
     expect(screen.getByTestId("main-panel").className).toContain("glass-panel");
     expect(screen.getByTestId("main-panel").className).toContain("inset-x-4");
     expect(screen.getByTestId("main-panel").className).toContain("bottom-4");
+    expect(screen.getByTestId("main-panel").className).toContain("pt-6");
+    expect(screen.getByTestId("card-list").style.scrollbarWidth).toBe("none");
   });
 
   it("UT-VISUAL-302 预览层与菜单层复用统一玻璃浮层类名", async () => {

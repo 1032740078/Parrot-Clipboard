@@ -48,7 +48,7 @@ export const FileCard = ({
         {formatRelativeTime(record.created_at)}
       </div>
 
-      <div className="mx-3 mt-2 flex h-28 items-center gap-3 rounded-lg bg-white/5 px-4 text-white">
+      <div className="mx-3 mt-2 flex h-32 items-center gap-3 rounded-lg bg-white/5 px-4 text-white">
         <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10 text-2xl">
           {icon}
         </div>

@@ -136,7 +136,7 @@ export const ImageCard = ({
         {formatRelativeTime(record.created_at)}
       </div>
 
-      <div className="mx-3 mt-2 flex h-28 items-center justify-center overflow-hidden rounded-lg bg-white/10">
+      <div className="mx-3 mt-2 flex h-32 items-center justify-center overflow-hidden rounded-lg bg-white/10">
         {previewSourceKind === "thumbnail" && thumbnailSrc ? (
           <img
             alt={previewText}

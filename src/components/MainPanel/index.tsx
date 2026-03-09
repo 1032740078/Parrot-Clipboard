@@ -233,7 +233,7 @@ export const MainPanel = () => {
         <>
           <motion.section
             animate="visible"
-            className="glass-panel fixed inset-x-4 bottom-4 z-50 h-panel rounded-[28px] p-4 backdrop-blur-2xl"
+            className="glass-panel fixed inset-x-4 bottom-4 z-50 h-panel rounded-[28px] px-4 pb-4 pt-6 backdrop-blur-2xl"
             data-testid="main-panel"
             exit="exit"
             initial="hidden"
@@ -284,7 +284,7 @@ export const MainPanel = () => {
 
               <div className="min-h-0 flex-1 overflow-hidden">
                 {isHydrating ? (
-                  <div className="flex gap-4 overflow-x-auto pb-2" data-testid="skeleton-list">
+                  <div className="flex gap-4 overflow-x-auto overflow-y-hidden pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" data-testid="skeleton-list" style={{ msOverflowStyle: "none", scrollbarWidth: "none" }}>
                     {Array.from({ length: 3 }, (_, index) => (
                       <SkeletonCard key={`skeleton-${index}`} index={index} />
                     ))}
