@@ -1831,3 +1831,85 @@ test("BDD-NFR-22 图片预览解析失败不会阻塞主面板渲染", async ({ 
   await expect(page.getByTestId("text-card")).toBeVisible();
   await expect(page.getByTestId("image-placeholder")).toContainText("预览不可用");
 });
+
+
+test("BDD-31-01 空格预览会同步标记当前卡片并支持 Esc 关闭", async ({ page }) => {
+  const previewRecord = {
+    ...buildTextRecord(1, "日报摘要", 3_000),
+    preview_text: "日报摘要",
+    text_content: "第一段完整正文\n第二段完整正文",
+  };
+
+  await gotoWithScenario(page, {
+    route: "/",
+    records: [previewRecord, buildTextRecord(2, "第二条记录", 2_000)],
+  });
+
+  const firstCard = page.getByTestId("text-card").first();
+  await expect(firstCard).toHaveAttribute("data-previewing", "false");
+
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: " ",
+        code: "Space",
+        bubbles: true,
+        cancelable: true,
+      })
+    );
+  });
+
+  await expect(page.getByTestId("preview-overlay")).toBeVisible();
+  await expect(page.getByTestId("preview-overlay-text-content")).toContainText("第一段完整正文");
+  await expect(firstCard).toHaveAttribute("data-previewing", "true");
+  await expect(firstCard.getByTestId("previewing-badge")).toContainText("预览中");
+
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Escape",
+        code: "Escape",
+        bubbles: true,
+        cancelable: true,
+      })
+    );
+  });
+
+  await expect(page.getByTestId("preview-overlay")).toHaveCount(0);
+  await expect(firstCard).toHaveAttribute("data-previewing", "false");
+});
+
+test("BDD-31-02 右键菜单可对目标卡片直接打开完整预览", async ({ page }) => {
+  const firstRecord = {
+    ...buildTextRecord(1, "第一条摘要", 3_000),
+    preview_text: "第一条摘要",
+    text_content: "第一条完整正文",
+  };
+  const secondRecord = {
+    ...buildTextRecord(2, "第二条摘要", 2_000),
+    preview_text: "第二条摘要",
+    text_content: "第二条完整正文",
+  };
+
+  await gotoWithScenario(page, {
+    route: "/",
+    records: [firstRecord, secondRecord],
+  });
+
+  const secondCard = page.getByTestId("text-card").nth(1);
+  await secondCard.click({ button: "right", position: { x: 120, y: 96 } });
+
+  await expect(secondCard).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("card-context-menu")).toBeVisible();
+
+  await page.getByTestId("card-context-menu-item-preview").click();
+
+  await expect(page.getByTestId("card-context-menu")).toHaveCount(0);
+  await expect(page.getByTestId("preview-overlay")).toBeVisible();
+  await expect(page.getByTestId("preview-overlay-text-content")).toContainText("第二条完整正文");
+  await expect(secondCard).toHaveAttribute("data-previewing", "true");
+  await expect(secondCard.getByTestId("previewing-badge")).toContainText("预览中");
+
+  const invokeCalls = await getInvokeCalls(page);
+  expect(invokeCalls.some((call) => call.command === "get_record_detail" && call.args?.id === 2)).toBe(true);
+});

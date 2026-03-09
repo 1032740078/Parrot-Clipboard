@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { PreviewOverlay } from "../../components/MainPanel/PreviewOverlay";
@@ -96,5 +96,44 @@ describe("Glass Tech Visual", () => {
 
     expect(screen.getByTestId("toast").className).toContain("glass-toast");
     expect(screen.getByTestId("toast").className).toContain("z-[72]");
+  });
+
+  it("UT-VISUAL-307 打开完整预览时目标卡片进入预览中视觉态", async () => {
+    const record = buildRecord(7, "摘要文本", 1000);
+    useUIStore.getState().showPanel();
+    __setInvokeHandler(async (command, args) => {
+      if (command === "get_records") {
+        const limit = (args?.limit as number) ?? 20;
+        return [record].slice(0, limit);
+      }
+
+      if (command === "get_record_detail") {
+        return {
+          ...record,
+          text_content: "用于视觉态验证的完整正文",
+          rich_content: null,
+          image_detail: null,
+          files_detail: null,
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<MainPanel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("text-card")).toBeInTheDocument();
+    });
+
+    fireEvent.keyDown(window, { key: " ", code: "Space" });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("preview-overlay")).toBeInTheDocument();
+      expect(screen.getByTestId("previewing-badge")).toHaveTextContent("预览中");
+    });
+
+    expect(screen.getByTestId("text-card").className).toContain("ring-violet-300/45");
+    expect(screen.getByTestId("text-card")).toHaveAttribute("data-previewing", "true");
   });
 });
