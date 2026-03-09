@@ -294,4 +294,57 @@ describe("MainPanel", () => {
       expect(useUIStore.getState().isPanelVisible).toBe(false);
     });
   });
+
+  it("UT-PANEL-011 Space 打开完整文本预览并支持遮罩关闭", async () => {
+    const record = buildRecord(11, "摘要文本", 1100);
+    const fullText = Array.from({ length: 12 }, (_, index) => `完整正文第 ${index + 1} 行`).join("\n");
+
+    __setInvokeHandler(async (command: string, args?: Record<string, unknown>) => {
+      if (command === "get_records") {
+        const limit = (args?.limit as number) ?? 20;
+        return [record].slice(0, limit);
+      }
+
+      if (command === "get_record_detail") {
+        return {
+          ...record,
+          text_content: fullText,
+          rich_content: null,
+          image_detail: null,
+          files_detail: null,
+        };
+      }
+
+      if (command === "show_about_window") {
+        return undefined;
+      }
+
+      return undefined;
+    });
+
+    render(<MainPanel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("text-card")).toBeInTheDocument();
+    });
+
+    fireEvent.keyDown(window, { key: " ", code: "Space" });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("preview-overlay-text-content")).toHaveTextContent(
+        "完整正文第 1 行"
+      );
+      expect(screen.getByTestId("preview-overlay-text-content")).toHaveTextContent(
+        "完整正文第 12 行"
+      );
+    });
+
+    fireEvent.click(screen.getByTestId("preview-overlay-mask"));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("preview-overlay")).not.toBeInTheDocument();
+    });
+
+    expect(useUIStore.getState().lastPreviewCloseReason).toBe("click_mask");
+  });
 });

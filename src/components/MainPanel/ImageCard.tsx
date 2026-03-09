@@ -1,4 +1,3 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useState } from "react";
 
 import { getRecordDetail } from "../../api/commands";
@@ -6,6 +5,7 @@ import { logger, normalizeError } from "../../api/logger";
 import type { ClipboardRecord } from "../../types/clipboard";
 import { getRecordPreviewText } from "../../types/clipboard";
 import { QuickSelectBadge } from "./QuickSelectBadge";
+import { toPreviewSrc } from "./previewAsset";
 import { formatRelativeTime } from "./time";
 
 interface ImageCardProps {
@@ -23,18 +23,6 @@ type PreviewLoadState = {
 };
 
 const originalPreviewCache = new Map<number, string | null>();
-
-const toPreviewSrc = (path?: string | null): string | null => {
-  if (!path) {
-    return null;
-  }
-
-  try {
-    return convertFileSrc(path);
-  } catch {
-    return path;
-  }
-};
 
 export const ImageCard = ({ record, isSelected, slot, index }: ImageCardProps) => {
   const wrapperClass = isSelected
