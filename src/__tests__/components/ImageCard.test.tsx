@@ -53,6 +53,30 @@ describe("ImageCard", () => {
     expect(screen.getByTestId("image-thumbnail").getAttribute("src")).toContain("thumb-2.png");
     expect(screen.getByText("PNG")).toBeInTheDocument();
     expect(screen.getByText("1280×720")).toBeInTheDocument();
+    expect(screen.getAllByTestId("quick-select-badge")).toHaveLength(1);
+  });
+
+  it("UT-FE-IMG-208 超宽截图会优先解析原图，并在卡片中走 object-contain", async () => {
+    __setInvokeHandler(async (command) => {
+      if (command === "get_record_detail") {
+        return buildImageDetail(10, "/tmp/original-10.png");
+      }
+
+      return undefined;
+    });
+
+    render(
+      <ImageCard
+        index={1}
+        isSelected={true}
+        record={buildImageRecord(10, "终端截图", 1000, "ready", { width: 2400, height: 320 })}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("image-original").getAttribute("src")).toContain("original-10.png");
+    });
+    expect(screen.getByTestId("image-original").className).toContain("object-contain");
   });
 
   it("UT-FE-IMG-202 缩略图不可用时回退显示原图预览", async () => {
@@ -148,5 +172,20 @@ describe("ImageCard", () => {
 
     expect(screen.getByTestId("previewing-badge")).toHaveTextContent("预览中");
     expect(screen.getByTestId("image-card")).toHaveAttribute("data-previewing", "true");
+  });
+
+  it("UT-FE-IMG-207 OCR 识别期间显示识别中文字样", () => {
+    render(
+      <ImageCard
+        index={0}
+        isRecognizingText={true}
+        isSelected={true}
+        record={buildImageRecord(9, "截图", 1000, "ready")}
+      />
+    );
+
+    expect(screen.getByTestId("image-ocr-pending")).toHaveTextContent("识别文字中");
+    expect(screen.getByTestId("image-ocr-pending-icon")).toBeInTheDocument();
+    expect(screen.getByTestId("image-ocr-pending-text")).toHaveClass("image-ocr-status-text");
   });
 });

@@ -23,7 +23,8 @@ pub const EVENT_SETTINGS_UPDATED: &str = "system:settings-updated";
 pub const EVENT_UPDATE_CHECK_FINISHED: &str = "system:update-check-finished";
 pub const EVENT_DIAGNOSTICS_UPDATED: &str = "system:diagnostics-updated";
 pub const EVENT_PREVIEW_WINDOW_REQUESTED: &str = "system:preview-window-requested";
-pub const EVENT_PREVIEW_WINDOW_VISIBILITY_CHANGED: &str = "system:preview-window-visibility-changed";
+pub const EVENT_PREVIEW_WINDOW_VISIBILITY_CHANGED: &str =
+    "system:preview-window-visibility-changed";
 pub const EVENT_PERMISSION_GUIDE_WINDOW_VISIBILITY_CHANGED: &str =
     "system:permission-guide-window-visibility-changed";
 
@@ -155,7 +156,9 @@ pub fn emit_preview_window_requested(
             EVENT_PREVIEW_WINDOW_REQUESTED,
             payload,
         )
-        .map_err(|error| AppError::Window(format!("emit preview window requested failed: {error}")))?;
+        .map_err(|error| {
+            AppError::Window(format!("emit preview window requested failed: {error}"))
+        })?;
     tracing::debug!(record_id, "ipc preview window requested event emitted");
     Ok(())
 }
@@ -169,7 +172,9 @@ pub fn emit_preview_window_visibility_changed(
     app_handle
         .emit(EVENT_PREVIEW_WINDOW_VISIBILITY_CHANGED, payload)
         .map_err(|error| {
-            AppError::Window(format!("emit preview window visibility changed failed: {error}"))
+            AppError::Window(format!(
+                "emit preview window visibility changed failed: {error}"
+            ))
         })?;
     tracing::debug!(
         visible,

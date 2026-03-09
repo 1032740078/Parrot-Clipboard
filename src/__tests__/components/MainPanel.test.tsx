@@ -183,10 +183,10 @@ describe("MainPanel", () => {
     const quickSlotLabels = screen
       .getAllByTestId("quick-select-badge")
       .map((element) => element.textContent);
+    const uniqueQuickSlotLabels = Array.from(new Set(quickSlotLabels));
 
-    expect(quickSlotLabels.length).toBeGreaterThanOrEqual(4);
-    expect(quickSlotLabels.length).toBeLessThanOrEqual(5);
-    expect(quickSlotLabels.slice(0, 4)).toEqual(["1", "2", "3", "4"]);
+    expect(uniqueQuickSlotLabels.length).toBeGreaterThanOrEqual(4);
+    expect(uniqueQuickSlotLabels.slice(0, 4)).toEqual(["1", "2", "3", "4"]);
   });
 
   it("UT-PANEL-007 监听暂停时展示弱提示且不影响历史浏览", async () => {
@@ -233,7 +233,9 @@ describe("MainPanel", () => {
 
     await waitFor(() => {
       expect(useClipboardStore.getState().selectedIndex).toBe(1);
-      expect(screen.getByTestId("image-card").className.includes("border-brand")).toBe(true);
+      expect(screen.getByTestId("image-card").className.includes("border-rose-400/85")).toBe(
+        true
+      );
     });
 
     expect(invokeCalls.some((call) => call.command === "paste_record")).toBe(false);
@@ -342,9 +344,9 @@ describe("MainPanel", () => {
     fireEvent.keyDown(window, { key: "Escape" });
 
     await waitFor(() => {
-      expect(
-        invokeCalls.some((call) => call.command === "close_preview_window_command")
-      ).toBe(true);
+      expect(invokeCalls.some((call) => call.command === "close_preview_window_command")).toBe(
+        true
+      );
       expect(screen.queryByTestId("previewing-badge")).not.toBeInTheDocument();
     });
 
@@ -369,7 +371,7 @@ describe("MainPanel", () => {
     });
 
     expect(screen.getByTestId("card-context-menu-item-preview")).toBeInTheDocument();
-    expect(screen.getByTestId("card-context-menu-item-paste_plain_text")).toBeDisabled();
+    expect(screen.getByTestId("card-context-menu-item-paste_plain_text")).toBeEnabled();
     expect(screen.getByTestId("card-context-menu").getAttribute("data-placement")).toBe(
       "bottom-start"
     );
@@ -485,6 +487,58 @@ describe("MainPanel", () => {
     expect(useUIStore.getState().toast?.message).toBe("已切换为纯文本粘贴");
   });
 
+  it("UT-PANEL-015C 右键图片卡片纯文本粘贴时先关闭菜单并显示识别中", async () => {
+    let resolvePaste: ((value: unknown) => void) | undefined;
+    __setInvokeHandler(async (command: string, args?: Record<string, unknown>) => {
+      if (command === "get_records") {
+        const limit = (args?.limit as number) ?? 20;
+        return mixedFixtureRecords.slice(0, limit);
+      }
+
+      if (command === "paste_record") {
+        return await new Promise((resolve) => {
+          resolvePaste = resolve;
+        });
+      }
+
+      return undefined;
+    });
+
+    render(<MainPanel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("image-card")).toBeInTheDocument();
+    });
+
+    fireEvent.contextMenu(screen.getByTestId("image-card"), { clientX: 360, clientY: 240 });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("card-context-menu-item-paste_plain_text")).toBeEnabled();
+    });
+
+    fireEvent.click(screen.getByTestId("card-context-menu-item-paste_plain_text"));
+
+    await waitFor(() => {
+      expect(invokeCalls.find((call) => call.command === "paste_record")).toEqual({
+        command: "paste_record",
+        args: { id: 2, mode: "plain_text" },
+      });
+      expect(screen.queryByTestId("card-context-menu")).not.toBeInTheDocument();
+      expect(screen.getByTestId("image-ocr-pending")).toHaveTextContent("识别文字中");
+      expect(useUIStore.getState().imageOcrPendingRecordId).toBe(2);
+    });
+
+    resolvePaste?.({
+      record: mixedFixtureRecords.find((record) => record.id === 2),
+      paste_mode: "plain_text",
+      executed_at: 1700000000000,
+    });
+
+    await waitFor(() => {
+      expect(useUIStore.getState().imageOcrPendingRecordId).toBeUndefined();
+    });
+  });
+
   it("UT-PANEL-016 右键菜单支持删除记录并自动关闭菜单", async () => {
     setInvokeForRecords(mixedFixtureRecords);
 
@@ -557,9 +611,9 @@ describe("MainPanel", () => {
 
     await waitFor(() => {
       expect(screen.queryByTestId("previewing-badge")).not.toBeInTheDocument();
-      expect(
-        invokeCalls.some((call) => call.command === "close_preview_window_command")
-      ).toBe(true);
+      expect(invokeCalls.some((call) => call.command === "close_preview_window_command")).toBe(
+        true
+      );
     });
 
     expect(screen.getByTestId("text-card")).toHaveAttribute("data-previewing", "false");

@@ -3,7 +3,12 @@ import { showPermissionGuideWindow } from "../api/diagnostics";
 import { getErrorMessage } from "../api/errorHandler";
 import { logger, normalizeError } from "../api/logger";
 import type { PanelVisibilityReason, PasteMode } from "../api/types";
-import { isFileRecord, isTextRecord, type ClipboardRecord } from "../types/clipboard";
+import {
+  isFileRecord,
+  isImageRecord,
+  isTextRecord,
+  type ClipboardRecord,
+} from "../types/clipboard";
 import { useClipboardStore, useSystemStore, useUIStore } from "../stores";
 
 interface ExecuteRecordPasteOptions {
@@ -18,7 +23,7 @@ interface ExecuteRecordPasteOptions {
 let pasteInFlight = false;
 
 const supportsPlainTextPaste = (record: ClipboardRecord): boolean => {
-  return isTextRecord(record) || isFileRecord(record);
+  return isTextRecord(record) || isFileRecord(record) || isImageRecord(record);
 };
 
 const hasMissingAccessibilityPermission = (): boolean => {
@@ -35,7 +40,14 @@ export const executeRecordPaste = async ({
   trigger,
   logContext,
 }: ExecuteRecordPasteOptions): Promise<boolean> => {
-  const { openPermissionGuide, showToast, hidePanel: hidePanelState } = useUIStore.getState();
+  const {
+    openPermissionGuide,
+    showToast,
+    hidePanel: hidePanelState,
+    startImageOcrPending,
+    clearImageOcrPending,
+  } = useUIStore.getState();
+  const isImagePlainTextPaste = mode === "plain_text" && isImageRecord(record);
 
   if (hasMissingAccessibilityPermission()) {
     openPermissionGuide();
@@ -65,7 +77,7 @@ export const executeRecordPaste = async ({
   if (mode === "plain_text" && !supportsPlainTextPaste(record)) {
     showToast({
       level: "info",
-      message: "仅文本和文件记录支持纯文本粘贴",
+      message: "仅文本、文件和图片记录支持纯文本粘贴",
       duration: 1600,
     });
     logger.info("阻止非文本记录的纯文本粘贴", {
@@ -88,6 +100,9 @@ export const executeRecordPaste = async ({
   }
 
   pasteInFlight = true;
+  if (isImagePlainTextPaste) {
+    startImageOcrPending(record.id);
+  }
 
   try {
     const result = await pasteRecordResult(record.id, mode);
@@ -120,6 +135,9 @@ export const executeRecordPaste = async ({
     });
     throw error;
   } finally {
+    if (isImagePlainTextPaste) {
+      clearImageOcrPending();
+    }
     pasteInFlight = false;
   }
 };

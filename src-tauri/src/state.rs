@@ -13,7 +13,7 @@ use crate::{
     logging::LoggingState,
     paste::PasteService,
     persistence::{MigrationStatus, SqliteConnectionManager},
-    window::WindowManager,
+    window::{panel_auto_hide::PanelAutoHideCoordinator, WindowManager},
 };
 
 pub struct AppState {
@@ -27,6 +27,7 @@ pub struct AppState {
     pub paste_service: Arc<PasteService>,
     pub window_manager: Arc<dyn WindowManager>,
     pub event_emitter: Arc<dyn DomainEventEmitter>,
+    pub panel_auto_hide: Arc<PanelAutoHideCoordinator>,
     pub logging_state: LoggingState,
     pub migration_status: MigrationStatus,
 }

@@ -38,10 +38,10 @@ export const FileCard = ({
       data-testid="file-card"
     >
       <PreviewStateBadge visible={isPreviewing} />
-      <QuickSelectBadge slot={displaySlot} />
 
       <header className={`${CARD_HEADER_BASE_CLASS_NAME} bg-emerald-500 text-white`}>
-        文件
+        <QuickSelectBadge slot={displaySlot} />
+        <span>文件</span>
       </header>
 
       <div className="px-3 pt-2 text-xs text-[#8E8E93]">

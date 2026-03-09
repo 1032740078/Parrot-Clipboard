@@ -180,11 +180,7 @@ describe("useKeyboard", () => {
 
   it("UT-FE-KB-004 Delete 删除后焦点自动移动到下一条合理记录", async () => {
     const store = useClipboardStore.getState();
-    store.hydrate([
-      buildRecord(1, "A", 1000),
-      buildRecord(2, "B", 999),
-      buildRecord(3, "C", 998),
-    ]);
+    store.hydrate([buildRecord(1, "A", 1000), buildRecord(2, "B", 999), buildRecord(3, "C", 998)]);
     store.selectIndex(1);
     useUIStore.getState().showPanel();
 
@@ -419,22 +415,39 @@ describe("useKeyboard", () => {
     expect(useUIStore.getState().isPanelVisible).toBe(false);
   });
 
-  it("Shift+Enter 对图片记录禁用并保持面板打开", async () => {
+  it("Shift+Enter 对图片记录触发 plain_text 粘贴", async () => {
     const store = useClipboardStore.getState();
-    store.hydrate([buildImageRecord(1, "截图", 1000)]);
+    const record = buildImageRecord(1, "截图", 1000);
+    store.hydrate([record]);
     store.selectIndex(0);
     useUIStore.getState().showPanel();
+
+    __setInvokeHandler(async (command) => {
+      if (command === "paste_record") {
+        return {
+          record,
+          paste_mode: "plain_text",
+          executed_at: 1100,
+        };
+      }
+
+      return undefined;
+    });
 
     render(<HookContainer />);
 
     fireEvent.keyDown(window, { key: "Enter", shiftKey: true });
 
     await waitFor(() => {
-      expect(invokeCalls.some((call) => call.command === "paste_record")).toBe(false);
+      expect(invokeCalls.find((call) => call.command === "paste_record")).toEqual({
+        command: "paste_record",
+        args: { id: 1, mode: "plain_text" },
+      });
     });
 
-    expect(useUIStore.getState().toast?.message).toBe("仅文本和文件记录支持纯文本粘贴");
-    expect(useUIStore.getState().isPanelVisible).toBe(true);
+    expect(useUIStore.getState().toast?.message).toBe("已切换为纯文本粘贴");
+    expect(useUIStore.getState().isPanelVisible).toBe(false);
+    expect(useUIStore.getState().imageOcrPendingRecordId).toBeUndefined();
   });
 
   it("Delete 失败时展示错误提示并保持面板打开", async () => {

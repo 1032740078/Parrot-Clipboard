@@ -76,7 +76,7 @@ pub fn register_toggle_shortcut(
                         }
                     }
                     Err(error) => {
-                    tracing::error!(error = %error, "toggle window failed");
+                        tracing::error!(error = %error, "toggle window failed");
                     }
                 }
             }

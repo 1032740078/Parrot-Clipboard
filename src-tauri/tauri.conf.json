@@ -28,10 +28,7 @@
       "csp": null,
       "assetProtocol": {
         "enable": true,
-        "scope": [
-          "$APPDATA/images/**",
-          "$APPLOCALDATA/images/**"
-        ]
+        "scope": ["$APPDATA/images/**", "$APPLOCALDATA/images/**"]
       }
     }
   },

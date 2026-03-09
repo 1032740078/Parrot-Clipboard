@@ -173,12 +173,7 @@ pub fn hide_panel(
     match state.window_manager.hide() {
         Ok(()) => {
             let reason = reason.unwrap_or(PanelVisibilityReasonPayload::Escape);
-            emit_panel_visibility_changed(
-                &app_handle,
-                false,
-                reason,
-                None,
-            )?;
+            emit_panel_visibility_changed(&app_handle, false, reason, None)?;
             tray::refresh(&app_handle)?;
             Ok(())
         }
@@ -681,9 +676,7 @@ pub fn show_permission_guide_window(app_handle: tauri::AppHandle) -> Result<(), 
 }
 
 #[tauri::command]
-pub fn close_permission_guide_window_command(
-    app_handle: tauri::AppHandle,
-) -> Result<(), AppError> {
+pub fn close_permission_guide_window_command(app_handle: tauri::AppHandle) -> Result<(), AppError> {
     close_permission_guide_window(&app_handle)?;
     tracing::info!("ipc close_permission_guide_window completed");
     Ok(())

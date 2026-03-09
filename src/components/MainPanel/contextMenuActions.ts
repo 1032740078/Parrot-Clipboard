@@ -1,14 +1,12 @@
 import type { ClipboardRecord } from "../../types/clipboard";
-import { isFileRecord, isTextRecord } from "../../types/clipboard";
+import { isFileRecord, isImageRecord, isTextRecord } from "../../types/clipboard";
 import type { ContextMenuActionState } from "../../stores/useUIStore";
 
 const supportsPlainTextPaste = (record: ClipboardRecord): boolean => {
-  return isTextRecord(record) || isFileRecord(record);
+  return isTextRecord(record) || isFileRecord(record) || isImageRecord(record);
 };
 
-export const buildCardContextMenuActions = (
-  record: ClipboardRecord
-): ContextMenuActionState[] => [
+export const buildCardContextMenuActions = (record: ClipboardRecord): ContextMenuActionState[] => [
   {
     key: "preview",
     label: "预览完整内容",

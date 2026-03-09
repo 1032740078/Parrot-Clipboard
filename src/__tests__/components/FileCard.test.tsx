@@ -11,6 +11,7 @@ describe("FileCard", () => {
     expect(screen.getByText("需求文档.md")).toBeInTheDocument();
     expect(screen.getByText("共 4 项")).toBeInTheDocument();
     expect(screen.getByText("含文件夹")).toBeInTheDocument();
+    expect(screen.getAllByTestId("quick-select-badge")).toHaveLength(1);
   });
 
   it("UT-FE-CARD-005 预览中状态显示徽标并保留文件摘要", () => {

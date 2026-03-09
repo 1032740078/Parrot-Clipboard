@@ -21,8 +21,11 @@ describe("cardAppearance", () => {
       isPreviewing: false,
     });
 
-    expect(className).toContain("border-brand");
-    expect(className).toContain("shadow-[0_0_0_1px_rgba(125,211,252,0.26),0_22px_46px_rgba(8,47,73,0.34)]");
+    expect(className).toContain("border-2");
+    expect(className).toContain("border-rose-400/85");
+    expect(className).toContain(
+      "shadow-[0_0_0_2px_rgba(251,113,133,0.34),0_22px_46px_rgba(127,29,29,0.3)]"
+    );
   });
 
   it("UT-VISUAL-306 预览中态追加独立 ring 与冷色光晕", () => {
@@ -31,7 +34,7 @@ describe("cardAppearance", () => {
       isPreviewing: true,
     });
 
-    expect(className).toContain("border-brand");
+    expect(className).toContain("border-rose-400/85");
     expect(className).toContain("ring-1");
     expect(className).toContain("ring-violet-300/45");
     expect(className).toContain("rgba(196,181,253,0.3)");
@@ -43,7 +46,7 @@ describe("cardAppearance", () => {
       isPreviewing: false,
     });
 
-    expect(className).toContain("rounded-[18px]");
+    expect(className).toContain("rounded-[8px]");
     expect(CARD_HEADER_BASE_CLASS_NAME).toContain("h-8");
   });
 });

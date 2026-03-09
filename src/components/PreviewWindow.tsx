@@ -241,7 +241,7 @@ export const PreviewWindow = () => {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" || event.code === "Space") {
         event.preventDefault();
         void requestCloseWindow();
       }

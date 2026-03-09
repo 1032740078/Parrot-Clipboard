@@ -2,17 +2,34 @@ interface PreviewStateBadgeProps {
   visible: boolean;
 }
 
+const PreviewStateIcon = () => (
+  <svg
+    aria-hidden="true"
+    className="preview-state-status-icon"
+    fill="none"
+    viewBox="0 0 24 24"
+  >
+    <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+    <circle cx="12" cy="12" r="3.2" />
+  </svg>
+);
+
 export const PreviewStateBadge = ({ visible }: PreviewStateBadgeProps) => {
   if (!visible) {
     return null;
   }
 
   return (
-    <span
-      className="absolute left-3 top-3 z-10 inline-flex h-6 items-center justify-center rounded-full border border-violet-300/35 bg-violet-400/12 px-2 text-[11px] font-semibold text-violet-100"
+    <div
+      className="preview-state-overlay absolute inset-0 z-10 flex items-center justify-center pointer-events-none"
       data-testid="previewing-badge"
     >
-      预览中
-    </span>
+      <span className="preview-state-status" data-testid="previewing-badge-pill">
+        <span className="preview-state-status-icon-shell" data-testid="previewing-badge-icon">
+          <PreviewStateIcon />
+        </span>
+        <span className="preview-state-status-text">预览中</span>
+      </span>
+    </div>
   );
 };

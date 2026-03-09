@@ -7,6 +7,7 @@ import { logger, normalizeError } from "../../api/logger";
 import { getErrorMessage } from "../../api/errorHandler";
 import {
   isFileRecord,
+  isImageRecord,
   isTextRecord,
   toClipboardRecord,
   type VisibleQuickSlot,
@@ -41,6 +42,7 @@ export const MainPanel = () => {
   const previewOverlay = useUIStore((state) => state.previewOverlay);
   const closeContextMenu = useUIStore((state) => state.closeContextMenu);
   const isPanelVisible = useUIStore((state) => state.isPanelVisible);
+  const imageOcrPendingRecordId = useUIStore((state) => state.imageOcrPendingRecordId);
   const openPreviewOverlay = useUIStore((state) => state.openPreviewOverlay);
   const openContextMenu = useUIStore((state) => state.openContextMenu);
   const openPermissionGuide = useUIStore((state) => state.openPermissionGuide);
@@ -71,7 +73,7 @@ export const MainPanel = () => {
   }, [hydrate, setHydrating]);
 
   const plainTextEnabled = selectedRecord
-    ? isTextRecord(selectedRecord) || isFileRecord(selectedRecord)
+    ? isTextRecord(selectedRecord) || isFileRecord(selectedRecord) || isImageRecord(selectedRecord)
     : false;
   const panelMotionVariants = getPanelMotionVariants(prefersReducedMotion());
   const pasteBlockedByPermission =
@@ -194,6 +196,10 @@ export const MainPanel = () => {
       }
 
       if (actionKey === "paste_plain_text") {
+        if (isImageRecord(target) && !pasteBlockedByPermission) {
+          closeContextMenu("action_completed");
+        }
+
         const didPaste = await executeRecordPaste({
           record: target,
           mode: "plain_text",
@@ -306,7 +312,10 @@ export const MainPanel = () => {
 
               <div className="min-h-0 flex-1 overflow-hidden">
                 {isHydrating ? (
-                  <div className="panel-scroll-area flex gap-4 overflow-x-auto overflow-y-hidden -mb-4 -mr-4 pb-4 pr-4" data-testid="skeleton-list">
+                  <div
+                    className="panel-scroll-area flex gap-4 overflow-x-auto overflow-y-hidden -mb-4 -mr-4 pb-4 pr-4"
+                    data-testid="skeleton-list"
+                  >
                     {Array.from({ length: 3 }, (_, index) => (
                       <SkeletonCard key={`skeleton-${index}`} index={index} />
                     ))}
@@ -321,6 +330,7 @@ export const MainPanel = () => {
                     }}
                     onSelectRecord={handleCardSelect}
                     onVisibleQuickSlotsChange={handleVisibleQuickSlotsChange}
+                    pendingOcrRecordId={imageOcrPendingRecordId}
                     previewingRecordId={previewOverlay?.recordId}
                     records={records}
                     selectedIndex={selectedIndex}

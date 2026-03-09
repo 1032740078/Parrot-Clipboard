@@ -55,6 +55,37 @@ describe("PreviewWindow", () => {
     });
   });
 
+  it("再次按空格会关闭当前预览窗口", async () => {
+    const record = buildRecord(9, "摘要文本", 1000);
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "get_record_detail") {
+        return {
+          ...record,
+          id: args?.id ?? 9,
+          text_content: "完整正文",
+          rich_content: null,
+          image_detail: null,
+          files_detail: null,
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<PreviewWindow />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "预览文本编辑器" })).toHaveValue("完整正文");
+    });
+
+    fireEvent.keyDown(window, { key: " ", code: "Space" });
+
+    await waitFor(() => {
+      expect(__getMockCloseCallCount()).toBe(1);
+    });
+  });
+
   it("文本预览会直接渲染可编辑文本框并自动保存修改", async () => {
     const record = buildRecord(9, "摘要文本", 1000);
 

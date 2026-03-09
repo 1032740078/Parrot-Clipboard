@@ -8,6 +8,7 @@ describe("TextCard", () => {
   it("UT-CARD-001 短文本正常渲染", () => {
     render(<TextCard index={0} isSelected={false} record={buildRecord(1, "短文本", Date.now())} />);
     expect(screen.getByText("短文本")).toBeInTheDocument();
+    expect(screen.getAllByTestId("quick-select-badge")).toHaveLength(1);
   });
 
   it("UT-CARD-002 长文本触发 4 行截断样式", () => {
@@ -25,7 +26,7 @@ describe("TextCard", () => {
       <TextCard index={0} isSelected={true} record={buildRecord(1, "选中", Date.now())} />
     );
 
-    expect(getByTestId("text-card").className.includes("border-brand")).toBe(true);
+    expect(getByTestId("text-card").className.includes("border-rose-400/85")).toBe(true);
   });
 
   it("UT-CARD-005 预览中状态显示专属徽标并暴露状态属性", () => {

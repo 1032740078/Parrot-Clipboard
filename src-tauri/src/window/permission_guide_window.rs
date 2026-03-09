@@ -1,9 +1,6 @@
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
-use crate::{
-    error::AppError,
-    ipc::events::emit_permission_guide_window_visibility_changed,
-};
+use crate::{error::AppError, ipc::events::emit_permission_guide_window_visibility_changed};
 
 pub const PERMISSION_GUIDE_WINDOW_LABEL: &str = "permission-guide";
 const PERMISSION_GUIDE_WINDOW_URL: &str = "index.html?window=permission-guide";
@@ -59,7 +56,10 @@ impl PermissionGuideWindowRuntime for TauriPermissionGuideWindowRuntime {
             WebviewUrl::App(PERMISSION_GUIDE_WINDOW_URL.into()),
         )
         .title(PERMISSION_GUIDE_WINDOW_TITLE)
-        .inner_size(PERMISSION_GUIDE_WINDOW_WIDTH, PERMISSION_GUIDE_WINDOW_HEIGHT)
+        .inner_size(
+            PERMISSION_GUIDE_WINDOW_WIDTH,
+            PERMISSION_GUIDE_WINDOW_HEIGHT,
+        )
         .min_inner_size(
             PERMISSION_GUIDE_WINDOW_MIN_WIDTH,
             PERMISSION_GUIDE_WINDOW_MIN_HEIGHT,
@@ -216,7 +216,10 @@ mod tests {
         }
 
         fn notify_visibility_changed(&self, _visible: bool) -> Result<(), AppError> {
-            self.state.borrow_mut().calls.push("notify_visibility_changed");
+            self.state
+                .borrow_mut()
+                .calls
+                .push("notify_visibility_changed");
             Ok(())
         }
     }

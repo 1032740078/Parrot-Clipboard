@@ -41,10 +41,10 @@ export const TextCard = ({
       data-testid="text-card"
     >
       <PreviewStateBadge visible={isPreviewing} />
-      <QuickSelectBadge slot={displaySlot} />
 
       <header className={`${CARD_HEADER_BASE_CLASS_NAME} bg-brand text-brand-foreground`}>
-        文本
+        <QuickSelectBadge slot={displaySlot} />
+        <span>文本</span>
       </header>
 
       <div className="px-3 pt-2 text-xs text-[#8E8E93]">

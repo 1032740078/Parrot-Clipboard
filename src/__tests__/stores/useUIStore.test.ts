@@ -15,8 +15,24 @@ describe("useUIStore", () => {
   it("UT-UI-002 hidePanel 设置 isPanelVisible=false", () => {
     const store = useUIStore.getState();
     store.showPanel();
+    store.startImageOcrPending(7);
     store.hidePanel();
     expect(useUIStore.getState().isPanelVisible).toBe(false);
+    expect(useUIStore.getState().imageOcrPendingRecordId).toBeUndefined();
+  });
+
+  it("图片 OCR 运行态可设置并在 hidePanel/reset 时清理", () => {
+    const store = useUIStore.getState();
+
+    store.startImageOcrPending(12);
+    expect(useUIStore.getState().imageOcrPendingRecordId).toBe(12);
+
+    store.hidePanel();
+    expect(useUIStore.getState().imageOcrPendingRecordId).toBeUndefined();
+
+    store.startImageOcrPending(15);
+    store.reset();
+    expect(useUIStore.getState().imageOcrPendingRecordId).toBeUndefined();
   });
 
   it("togglePanel 能切换状态", () => {
@@ -33,6 +49,16 @@ describe("useUIStore", () => {
     expect(useUIStore.getState().toast?.message).toBe("已切换为纯文本粘贴");
     store.hideToast();
     expect(useUIStore.getState().toast).toBeUndefined();
+  });
+
+  it("startImageOcrPending / clearImageOcrPending 可维护图片 OCR 进行态", () => {
+    const store = useUIStore.getState();
+
+    store.startImageOcrPending(12);
+    expect(useUIStore.getState().imageOcrPendingRecordId).toBe(12);
+
+    store.clearImageOcrPending();
+    expect(useUIStore.getState().imageOcrPendingRecordId).toBeUndefined();
   });
 
   it("openClearHistoryDialog / closeClearHistoryDialog 可维护确认弹窗状态", () => {

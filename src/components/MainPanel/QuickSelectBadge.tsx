@@ -9,7 +9,7 @@ export const QuickSelectBadge = ({ slot }: QuickSelectBadgeProps) => {
 
   return (
     <span
-      className="absolute right-3 top-[2px] z-10 inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-white/15 bg-slate-950/75 px-2 text-[11px] font-semibold text-slate-100"
+      className="mr-2 inline-flex h-5 min-w-5 items-center justify-center rounded-md border border-white/15 bg-slate-950/75 px-1.5 text-[11px] font-semibold text-slate-100"
       data-testid="quick-select-badge"
     >
       {slot}

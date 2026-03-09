@@ -22,7 +22,8 @@ export const buildImageRecord = (
   id: number,
   title: string,
   createdAt: number,
-  thumbnailState: "pending" | "ready" | "failed" = "ready"
+  thumbnailState: "pending" | "ready" | "failed" = "ready",
+  dimensions: { width: number; height: number } = { width: 1280, height: 720 }
 ): ClipboardRecord => ({
   id,
   content_type: "image",
@@ -33,8 +34,8 @@ export const buildImageRecord = (
   text_meta: null,
   image_meta: {
     mime_type: "image/png",
-    pixel_width: 1280,
-    pixel_height: 720,
+    pixel_width: dimensions.width,
+    pixel_height: dimensions.height,
     thumbnail_path: thumbnailState === "ready" ? `/tmp/thumb-${id}.png` : null,
     thumbnail_state: thumbnailState,
   },

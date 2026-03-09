@@ -8,8 +8,9 @@ use crate::{
     },
     error::AppError,
     image::ImageStorageService,
+    ocr::ImageTextRecognizer,
     platform::{PlatformClipboard, PlatformKeySimulator},
-    window::WindowManager,
+    window::{panel_auto_hide::PanelAutoHideCoordinator, WindowManager},
 };
 
 pub mod text_strip;
@@ -23,6 +24,8 @@ pub struct PasteService {
     platform_key_sim: Arc<dyn PlatformKeySimulator>,
     window_manager: Arc<dyn WindowManager>,
     image_storage: Arc<ImageStorageService>,
+    image_text_recognizer: Arc<dyn ImageTextRecognizer>,
+    panel_auto_hide: Arc<PanelAutoHideCoordinator>,
 }
 
 impl PasteService {
@@ -33,6 +36,8 @@ impl PasteService {
         platform_key_sim: Arc<dyn PlatformKeySimulator>,
         window_manager: Arc<dyn WindowManager>,
         image_storage: Arc<ImageStorageService>,
+        image_text_recognizer: Arc<dyn ImageTextRecognizer>,
+        panel_auto_hide: Arc<PanelAutoHideCoordinator>,
     ) -> Self {
         Self {
             repository,
@@ -41,6 +46,8 @@ impl PasteService {
             platform_key_sim,
             window_manager,
             image_storage,
+            image_text_recognizer,
+            panel_auto_hide,
         }
     }
 
@@ -50,8 +57,11 @@ impl PasteService {
         mode: PasteMode,
     ) -> Result<PasteResult, AppError> {
         tracing::debug!(record_id = id.value(), ?mode, "paste flow started");
-
-        self.monitor.pause();
+        let _auto_hide_guard = if mode == PasteMode::PlainText {
+            Some(self.panel_auto_hide.suspend())
+        } else {
+            None
+        };
 
         let result = async {
             let detail = self
@@ -59,18 +69,69 @@ impl PasteService {
                 .get_detail(id)?
                 .ok_or_else(|| AppError::RecordNotFound(id.value()))?;
 
+            match detail.content_type {
+                ContentType::Image if mode == PasteMode::PlainText => {
+                    let recognized_text = self.recognize_image_text(&detail).await?;
+                    self.commit_paste(&detail, mode, Some(recognized_text.as_str()))
+                        .await
+                }
+                _ => self.commit_paste(&detail, mode, None).await,
+            }
+        }
+        .await;
+
+        match &result {
+            Ok(result) => tracing::info!(record_id = result.record.id, "paste flow completed"),
+            Err(error) => {
+                tracing::error!(record_id = id.value(), error = %error, "paste flow failed")
+            }
+        }
+        result
+    }
+
+    async fn recognize_image_text(
+        &self,
+        detail: &ClipboardRecordDetail,
+    ) -> Result<String, AppError> {
+        let image_detail = detail
+            .image_detail
+            .as_ref()
+            .ok_or_else(|| AppError::ClipboardRead("image detail missing".to_string()))?;
+        let image = self
+            .image_storage
+            .load_original(&image_detail.original_path)?;
+        let recognizer = self.image_text_recognizer.clone();
+
+        tokio::task::spawn_blocking(move || recognizer.recognize_image_text(&image))
+            .await
+            .map_err(|error| {
+                AppError::Internal(format!("join OCR recognition task failed: {error}"))
+            })?
+    }
+
+    async fn commit_paste(
+        &self,
+        detail: &ClipboardRecordDetail,
+        mode: PasteMode,
+        recognized_image_text: Option<&str>,
+    ) -> Result<PasteResult, AppError> {
+        self.monitor.pause();
+        let result = async {
             write_detail_to_clipboard(
                 &*self.platform_clipboard,
                 &self.image_storage,
-                &detail,
+                detail,
                 mode,
+                recognized_image_text,
             )?;
             self.monitor.sync_clipboard_state()?;
             self.window_manager.hide()?;
             tokio::time::sleep(Duration::from_millis(PRE_PASTE_SETTLE_DELAY_MS)).await;
             self.platform_key_sim.simulate_paste()?;
             let executed_at = now_ms();
-            let record = self.repository.promote(id, executed_at)?;
+            let record = self
+                .repository
+                .promote(RecordId::new(detail.id), executed_at)?;
 
             Ok(PasteResult {
                 record,
@@ -79,14 +140,8 @@ impl PasteService {
             })
         }
         .await;
-
         self.monitor.resume();
-        match &result {
-            Ok(result) => tracing::info!(record_id = result.record.id, "paste flow completed"),
-            Err(error) => {
-                tracing::error!(record_id = id.value(), error = %error, "paste flow failed")
-            }
-        }
+
         result
     }
 }
@@ -96,14 +151,15 @@ fn write_detail_to_clipboard(
     image_storage: &ImageStorageService,
     detail: &ClipboardRecordDetail,
     mode: PasteMode,
+    recognized_image_text: Option<&str>,
 ) -> Result<(), AppError> {
     match detail.content_type {
         ContentType::Text => write_text_detail(clipboard, detail, mode),
         ContentType::Image => {
-            if mode != PasteMode::Original {
-                return Err(AppError::InvalidParam(
-                    "plain_text mode only supports text and file record".to_string(),
-                ));
+            if mode == PasteMode::PlainText {
+                return clipboard.write_text(recognized_image_text.ok_or_else(|| {
+                    AppError::ClipboardRead("recognized image text missing".to_string())
+                })?);
             }
             let image_detail = detail
                 .image_detail
@@ -190,8 +246,9 @@ mod tests {
         },
         error::AppError,
         image::ImageStorageService,
+        ocr::ImageTextRecognizer,
         platform::{PlatformClipboard, PlatformKeySimulator},
-        window::WindowManager,
+        window::{panel_auto_hide::PanelAutoHideCoordinator, WindowManager},
     };
 
     use super::PasteService;
@@ -419,6 +476,30 @@ mod tests {
         }
     }
 
+    struct MockImageTextRecognizer {
+        recognized_text: Option<String>,
+        error_message: Option<String>,
+        trace: Arc<Mutex<Vec<&'static str>>>,
+    }
+
+    impl ImageTextRecognizer for MockImageTextRecognizer {
+        fn recognize_image_text(
+            &self,
+            _image: &crate::clipboard::payload::ClipboardImageData,
+        ) -> Result<String, AppError> {
+            self.trace.lock().expect("trace lock poisoned").push("ocr");
+            if let Some(text) = self.recognized_text.as_ref() {
+                return Ok(text.clone());
+            }
+
+            Err(AppError::Internal(
+                self.error_message
+                    .clone()
+                    .unwrap_or_else(|| "OCR failed".to_string()),
+            ))
+        }
+    }
+
     #[tokio::test]
     async fn ut_paste_001_text_original_steps_execute_in_order() {
         let shared_trace = Arc::new(Mutex::new(Vec::<&'static str>::new()));
@@ -457,6 +538,12 @@ mod tests {
             key_sim,
             window_manager,
             image_storage,
+            Arc::new(MockImageTextRecognizer {
+                recognized_text: Some("Hello".to_string()),
+                error_message: None,
+                trace: shared_trace.clone(),
+            }),
+            PanelAutoHideCoordinator::new(),
         );
         let result = service
             .paste_record(RecordId::new(1), PasteMode::Original)
@@ -514,6 +601,12 @@ mod tests {
             key_sim,
             window_manager,
             image_storage,
+            Arc::new(MockImageTextRecognizer {
+                recognized_text: Some("Hello".to_string()),
+                error_message: None,
+                trace: shared_trace.clone(),
+            }),
+            PanelAutoHideCoordinator::new(),
         );
         let result = service
             .paste_record(RecordId::new(2), PasteMode::PlainText)
@@ -587,6 +680,12 @@ mod tests {
             key_sim,
             window_manager,
             image_storage,
+            Arc::new(MockImageTextRecognizer {
+                recognized_text: Some("图片里的文字".to_string()),
+                error_message: None,
+                trace: shared_trace.clone(),
+            }),
+            PanelAutoHideCoordinator::new(),
         );
         let result = service
             .paste_record(RecordId::new(3), PasteMode::Original)
@@ -655,6 +754,12 @@ mod tests {
             key_sim,
             window_manager,
             image_storage,
+            Arc::new(MockImageTextRecognizer {
+                recognized_text: Some("文件".to_string()),
+                error_message: None,
+                trace: shared_trace.clone(),
+            }),
+            PanelAutoHideCoordinator::new(),
         );
         let result = service
             .paste_record(RecordId::new(4), PasteMode::Original)
@@ -688,38 +793,75 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ut_paste_005_non_text_plain_mode_rejected() {
+    async fn ut_paste_005_image_plain_mode_runs_ocr_before_hiding_panel() {
+        let image_storage = Arc::new(
+            ImageStorageService::initialize_at(
+                temp_dir("paste-005/original"),
+                temp_dir("paste-005/thumbs"),
+            )
+            .expect("image storage should init"),
+        );
+        let original_image = sample_image(6, 6, 77);
+        let saved = image_storage
+            .save_original("paste-plain-image", &original_image)
+            .expect("original image should be saved");
         let repository = Arc::new(MockRepository {
-            detail: Some(image_detail(2)),
-            promoted_ids: Arc::new(Mutex::new(Vec::new())),
+            detail: Some(image_detail_with_path(
+                2,
+                saved.original_path.clone(),
+                6,
+                6,
+                saved.byte_size,
+            )),
+            promoted_ids: Arc::new(Mutex::new(vec![])),
         });
         let trace = Arc::new(Mutex::new(Vec::<&'static str>::new()));
+        let monitor = Arc::new(MockMonitor::default());
+        let clipboard = Arc::new(MockClipboard {
+            trace: trace.clone(),
+            written_texts: Arc::new(Mutex::new(Vec::new())),
+            written_images: Arc::new(Mutex::new(Vec::new())),
+            written_file_lists: Arc::new(Mutex::new(Vec::new())),
+        });
         let service = PasteService::new(
             repository,
-            Arc::new(MockMonitor::default()),
-            Arc::new(MockClipboard {
-                trace: trace.clone(),
-                written_texts: Arc::new(Mutex::new(Vec::new())),
-                written_images: Arc::new(Mutex::new(Vec::new())),
-                written_file_lists: Arc::new(Mutex::new(Vec::new())),
-            }),
+            monitor.clone(),
+            clipboard.clone(),
             Arc::new(MockKeySimulator {
                 trace: trace.clone(),
             }),
-            Arc::new(MockWindowManager { trace }),
-            Arc::new(
-                ImageStorageService::initialize_at(
-                    temp_dir("paste-002/original"),
-                    temp_dir("paste-002/thumbs"),
-                )
-                .expect("image storage should init"),
-            ),
+            Arc::new(MockWindowManager {
+                trace: trace.clone(),
+            }),
+            image_storage,
+            Arc::new(MockImageTextRecognizer {
+                recognized_text: Some("图片里的文字".to_string()),
+                error_message: None,
+                trace: trace.clone(),
+            }),
+            PanelAutoHideCoordinator::new(),
         );
 
         let result = service
             .paste_record(RecordId::new(2), PasteMode::PlainText)
             .await;
-        assert!(matches!(result, Err(AppError::InvalidParam(_))));
+        assert!(matches!(result, Ok(PasteResult { .. })));
+        assert_eq!(
+            clipboard
+                .written_texts
+                .lock()
+                .expect("written_texts lock poisoned")
+                .as_slice(),
+            &["图片里的文字".to_string()]
+        );
+        assert_eq!(
+            trace.lock().expect("trace lock poisoned").clone(),
+            vec!["ocr", "write_text", "hide", "simulate_paste"]
+        );
+        assert_eq!(
+            monitor.trace.lock().expect("trace lock poisoned").clone(),
+            vec!["pause", "sync", "resume"]
+        );
     }
 
     #[tokio::test]
@@ -754,6 +896,12 @@ mod tests {
                 )
                 .expect("image storage should init"),
             ),
+            Arc::new(MockImageTextRecognizer {
+                recognized_text: Some("文件路径".to_string()),
+                error_message: None,
+                trace: trace.clone(),
+            }),
+            PanelAutoHideCoordinator::new(),
         );
 
         service
@@ -803,36 +951,6 @@ mod tests {
             text_content: Some("Hello".to_string()),
             rich_content,
             image_detail: None,
-            files_detail: None,
-        }
-    }
-
-    fn image_detail(id: u64) -> ClipboardRecordDetail {
-        ClipboardRecordDetail {
-            id,
-            content_type: ContentType::Image,
-            preview_text: "图片".to_string(),
-            source_app: None,
-            created_at: 1000,
-            last_used_at: 1000,
-            text_meta: None,
-            image_meta: Some(ImageMeta {
-                mime_type: "image/png".to_string(),
-                pixel_width: 10,
-                pixel_height: 10,
-                thumbnail_path: Some("/tmp/thumb.png".to_string()),
-                thumbnail_state: ThumbnailState::Ready,
-            }),
-            files_meta: None,
-            text_content: None,
-            rich_content: None,
-            image_detail: Some(ImageDetail {
-                original_path: "/tmp/original.png".to_string(),
-                mime_type: "image/png".to_string(),
-                pixel_width: 10,
-                pixel_height: 10,
-                byte_size: 40,
-            }),
             files_detail: None,
         }
     }

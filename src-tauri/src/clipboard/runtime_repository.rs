@@ -368,7 +368,7 @@ fn update_text_record(
     database: &SqliteConnectionManager,
     id: RecordId,
     text: &str,
-    updated_at: i64,
+    _updated_at: i64,
 ) -> Result<ClipboardRecordDetail, AppError> {
     let detail = database
         .find_record_detail(id)?
@@ -383,14 +383,13 @@ fn update_text_record(
     database.with_connection(|connection| {
         connection
             .execute(
-                "UPDATE clipboard_items SET content_hash = ?1, text_content = ?2, rich_content = NULL, preview_text = ?3, search_text = ?4, payload_bytes = ?5, last_used_at = ?6 WHERE id = ?7 AND content_type = 'text'",
+                "UPDATE clipboard_items SET content_hash = ?1, text_content = ?2, rich_content = NULL, preview_text = ?3, search_text = ?4, payload_bytes = ?5 WHERE id = ?6 AND content_type = 'text'",
                 params![
                     content_hash,
                     text,
                     text,
                     text,
                     text.len() as i64,
-                    updated_at,
                     id.value() as i64
                 ],
             )
@@ -898,6 +897,35 @@ mod tests {
         assert_eq!(summaries.len(), 1);
         assert_eq!(summaries[0].id, recaptured.record.id);
         assert_eq!(summaries[0].preview_text, "清空后的新文本");
+    }
+
+    #[test]
+    fn update_text_preserves_last_used_ordering() {
+        let context = TestContext::new("update-text-preserve-order");
+        let repository = context.repository();
+
+        let newer = repository
+            .capture_text("较新的文本".to_string(), None, 2_000)
+            .expect("newer text capture should succeed");
+        let older = repository
+            .capture_text("较旧的文本".to_string(), None, 1_000)
+            .expect("older text capture should succeed");
+
+        let updated = repository
+            .update_text(RecordId::new(older.record.id), "较旧的文本-已编辑".to_string(), 3_000)
+            .expect("text update should succeed");
+
+        assert_eq!(updated.last_used_at, 1_000);
+
+        let summaries = repository
+            .list_summaries(10)
+            .expect("summary query should succeed");
+        assert_eq!(
+            summaries.iter().map(|record| record.id).collect::<Vec<_>>(),
+            vec![newer.record.id, older.record.id]
+        );
+        assert_eq!(summaries[1].preview_text, "较旧的文本-已编辑");
+        assert_eq!(summaries[1].last_used_at, 1_000);
     }
 
     #[test]

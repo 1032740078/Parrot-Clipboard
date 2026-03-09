@@ -16,9 +16,14 @@ interface CardListProps {
   records: ClipboardRecord[];
   selectedIndex: number;
   previewingRecordId?: number;
+  pendingOcrRecordId?: number;
   onSelectRecord: (index: number) => void;
   onPasteRecord: (record: ClipboardRecord, index: number) => void;
-  onOpenContextMenu: (record: ClipboardRecord, index: number, anchor: { x: number; y: number }) => void;
+  onOpenContextMenu: (
+    record: ClipboardRecord,
+    index: number,
+    anchor: { x: number; y: number }
+  ) => void;
   onVisibleQuickSlotsChange: (slots: VisibleQuickSlot[]) => void;
 }
 
@@ -138,11 +143,13 @@ const renderCard = (
   record: ClipboardRecord,
   isSelected: boolean,
   isPreviewing: boolean,
+  isRecognizingText: boolean,
   slot?: number | null
 ) => {
   if (isImageRecord(record)) {
     return (
       <ImageCard
+        isRecognizingText={isRecognizingText}
         isPreviewing={isPreviewing}
         isSelected={isSelected}
         record={record}
@@ -153,22 +160,12 @@ const renderCard = (
 
   if (isFileRecord(record)) {
     return (
-      <FileCard
-        isPreviewing={isPreviewing}
-        isSelected={isSelected}
-        record={record}
-        slot={slot}
-      />
+      <FileCard isPreviewing={isPreviewing} isSelected={isSelected} record={record} slot={slot} />
     );
   }
 
   return (
-    <TextCard
-      isPreviewing={isPreviewing}
-      isSelected={isSelected}
-      record={record}
-      slot={slot}
-    />
+    <TextCard isPreviewing={isPreviewing} isSelected={isSelected} record={record} slot={slot} />
   );
 };
 
@@ -184,6 +181,7 @@ export const CardList = ({
   records,
   selectedIndex,
   previewingRecordId,
+  pendingOcrRecordId,
   onSelectRecord,
   onPasteRecord,
   onOpenContextMenu,
@@ -348,6 +346,7 @@ export const CardList = ({
               record,
               selectedIndex === index,
               previewingRecordId === record.id,
+              pendingOcrRecordId === record.id,
               visibleSlotMap.get(index) ?? null
             )}
           </div>
@@ -379,6 +378,7 @@ export const CardList = ({
                 record,
                 selectedIndex === index,
                 previewingRecordId === record.id,
+                pendingOcrRecordId === record.id,
                 visibleSlotMap.get(index) ?? null
               )}
             </motion.div>

@@ -62,6 +62,7 @@ export interface ContextMenuState {
 
 interface UIState {
   isPanelVisible: boolean;
+  imageOcrPendingRecordId?: number;
   toast?: ToastState;
   clearHistoryDialog?: ClearHistoryDialogState;
   previewOverlay?: PreviewOverlayState;
@@ -69,6 +70,8 @@ interface UIState {
   contextMenu?: ContextMenuState;
   lastContextMenuCloseReason?: ContextMenuCloseReason;
   permissionGuideVisible: boolean;
+  startImageOcrPending: (recordId: number) => void;
+  clearImageOcrPending: () => void;
   showPanel: () => void;
   hidePanel: () => void;
   togglePanel: () => void;
@@ -88,6 +91,7 @@ interface UIState {
 
 export const useUIStore = create<UIState>((set) => ({
   isPanelVisible: false,
+  imageOcrPendingRecordId: undefined,
   toast: undefined,
   clearHistoryDialog: undefined,
   previewOverlay: undefined,
@@ -95,12 +99,17 @@ export const useUIStore = create<UIState>((set) => ({
   contextMenu: undefined,
   lastContextMenuCloseReason: undefined,
   permissionGuideVisible: false,
+  startImageOcrPending: (recordId) => set({ imageOcrPendingRecordId: recordId }),
+  clearImageOcrPending: () => set({ imageOcrPendingRecordId: undefined }),
   showPanel: () => set({ isPanelVisible: true }),
   hidePanel: () =>
     set((state) => ({
       isPanelVisible: false,
+      imageOcrPendingRecordId: undefined,
       contextMenu: undefined,
-      lastContextMenuCloseReason: state.contextMenu ? "panel_hidden" : state.lastContextMenuCloseReason,
+      lastContextMenuCloseReason: state.contextMenu
+        ? "panel_hidden"
+        : state.lastContextMenuCloseReason,
     })),
   togglePanel: () =>
     set((state) => ({
@@ -134,7 +143,8 @@ export const useUIStore = create<UIState>((set) => ({
         },
       };
     }),
-  closePreviewOverlay: (reason) => set({ previewOverlay: undefined, lastPreviewCloseReason: reason }),
+  closePreviewOverlay: (reason) =>
+    set({ previewOverlay: undefined, lastPreviewCloseReason: reason }),
   openContextMenu: (contextMenu) =>
     set({
       contextMenu: {
@@ -149,6 +159,7 @@ export const useUIStore = create<UIState>((set) => ({
   reset: () =>
     set({
       isPanelVisible: false,
+      imageOcrPendingRecordId: undefined,
       toast: undefined,
       clearHistoryDialog: undefined,
       previewOverlay: undefined,

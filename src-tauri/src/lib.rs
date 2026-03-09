@@ -8,6 +8,7 @@ mod error;
 mod image;
 mod ipc;
 mod logging;
+mod ocr;
 mod paste;
 mod persistence;
 mod platform;
@@ -27,6 +28,7 @@ use clipboard::{
 };
 use image::{ImageCleanupService, ImageStorageService};
 use ipc::events::TauriEventEmitter;
+use ocr::{ImageTextRecognizer, OcrService};
 use paste::PasteService;
 use platform::{
     create_platform_active_app_detector, create_platform_clipboard, create_platform_key_simulator,
@@ -38,7 +40,8 @@ use tauri::Manager;
 use tauri_plugin_global_shortcut::Builder as GlobalShortcutBuilder;
 use tray::{runtime_snapshot as tray_runtime_snapshot, TrayController};
 use window::{
-    position::PANEL_HEIGHT_PX, register_panel_focus_auto_hide, TauriWindowManager, WindowManager,
+    panel_auto_hide::PanelAutoHideCoordinator, position::PANEL_HEIGHT_PX,
+    register_panel_focus_auto_hide, TauriWindowManager, WindowManager,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -92,10 +95,13 @@ pub fn run() {
                 TauriWindowManager::new(app_handle.clone(), "main", PANEL_HEIGHT_PX);
             let event_emitter: Arc<dyn DomainEventEmitter> =
                 Arc::new(TauriEventEmitter::new(app_handle.clone()));
+            let panel_auto_hide = PanelAutoHideCoordinator::new();
 
             let platform_clipboard: Arc<dyn PlatformClipboard> = create_platform_clipboard()?;
             let platform_key_sim: Arc<dyn PlatformKeySimulator> = create_platform_key_simulator()?;
             let active_app_detector = create_platform_active_app_detector();
+            let ocr_service: Arc<dyn ImageTextRecognizer> =
+                Arc::new(OcrService::initialize(&app_handle).map_err(std::io::Error::other)?);
 
             let monitor_service = Arc::new(ClipboardMonitorService::new_with_privacy(
                 repository.clone(),
@@ -115,6 +121,8 @@ pub fn run() {
                 platform_key_sim,
                 window_manager.clone(),
                 image_storage.clone(),
+                ocr_service,
+                panel_auto_hide.clone(),
             ));
 
             match register_toggle_shortcut(
@@ -145,6 +153,7 @@ pub fn run() {
                 paste_service,
                 window_manager,
                 event_emitter,
+                panel_auto_hide,
                 logging_state,
                 migration_status: persistence_state.migration_status,
             });

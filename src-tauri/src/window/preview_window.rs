@@ -2,9 +2,7 @@ use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 use crate::{
     error::AppError,
-    ipc::events::{
-        emit_preview_window_requested, emit_preview_window_visibility_changed,
-    },
+    ipc::events::{emit_preview_window_requested, emit_preview_window_visibility_changed},
 };
 
 pub const PREVIEW_WINDOW_LABEL: &str = "preview";
@@ -27,7 +25,11 @@ trait PreviewWindowRuntime {
     fn show_window(&self) -> Result<(), AppError>;
     fn focus_window(&self) -> Result<(), AppError>;
     fn notify_record_changed(&self, record_id: u64) -> Result<(), AppError>;
-    fn notify_visibility_changed(&self, visible: bool, record_id: Option<u64>) -> Result<(), AppError>;
+    fn notify_visibility_changed(
+        &self,
+        visible: bool,
+        record_id: Option<u64>,
+    ) -> Result<(), AppError>;
 }
 
 struct TauriPreviewWindowRuntime {
@@ -48,7 +50,9 @@ impl TauriPreviewWindowRuntime {
 
 impl PreviewWindowRuntime for TauriPreviewWindowRuntime {
     fn window_exists(&self) -> bool {
-        self.app_handle.get_webview_window(PREVIEW_WINDOW_LABEL).is_some()
+        self.app_handle
+            .get_webview_window(PREVIEW_WINDOW_LABEL)
+            .is_some()
     }
 
     fn create_window(&self, record_id: u64) -> Result<(), AppError> {
@@ -192,7 +196,10 @@ mod tests {
 
     impl PreviewWindowRuntime for MockRuntime {
         fn window_exists(&self) -> bool {
-            self.state.borrow_mut().calls.push("window_exists".to_string());
+            self.state
+                .borrow_mut()
+                .calls
+                .push("window_exists".to_string());
             self.state.borrow().existing
         }
 
@@ -209,17 +216,26 @@ mod tests {
         }
 
         fn restore_window(&self) -> Result<(), AppError> {
-            self.state.borrow_mut().calls.push("restore_window".to_string());
+            self.state
+                .borrow_mut()
+                .calls
+                .push("restore_window".to_string());
             Ok(())
         }
 
         fn show_window(&self) -> Result<(), AppError> {
-            self.state.borrow_mut().calls.push("show_window".to_string());
+            self.state
+                .borrow_mut()
+                .calls
+                .push("show_window".to_string());
             Ok(())
         }
 
         fn focus_window(&self) -> Result<(), AppError> {
-            self.state.borrow_mut().calls.push("focus_window".to_string());
+            self.state
+                .borrow_mut()
+                .calls
+                .push("focus_window".to_string());
             Ok(())
         }
 
