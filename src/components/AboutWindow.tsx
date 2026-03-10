@@ -297,33 +297,23 @@ export const AboutWindow = () => {
         </button>
       </div>
       <section className="mx-auto flex max-w-4xl flex-col gap-5 px-6 pb-6">
-        <header className="flex items-start justify-between gap-4 rounded-2xl border border-white/10 bg-white/5 p-5">
+        <header className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/5 p-5">
           <div>
-            <p className="text-sm text-slate-300">粘贴板记录管理工具</p>
-            <h1 className="mt-1 text-2xl font-semibold text-white">关于</h1>
-            <p className="mt-2 max-w-2xl text-sm text-slate-300">
-              这里集中展示当前版本、平台信息、日志目录、诊断摘要与手动检查更新入口。
+            <h1 className="text-2xl font-semibold text-white">粘贴板记录管理工具</h1>
+            <p className="mt-1 text-sm text-slate-400">
+              {viewModel ? `v${viewModel.app_version} · ${viewModel.platform}` : "正在加载..."}
             </p>
           </div>
-          <div className="flex gap-2">
-            <button
-              className="rounded-lg border border-white/15 px-3 py-2 text-sm text-slate-100 transition hover:border-sky-400 hover:text-sky-200"
-              data-testid="about-refresh-button"
-              onClick={() => {
-                void loadData();
-              }}
-              type="button"
-            >
-              刷新诊断
-            </button>
-            <button
-              className="rounded-lg border border-white/15 px-3 py-2 text-sm text-slate-100 transition hover:border-white/30"
-              onClick={() => window.close()}
-              type="button"
-            >
-              关闭
-            </button>
-          </div>
+          <button
+            className="rounded-lg border border-white/15 px-3 py-2 text-sm text-slate-100 transition hover:border-sky-400 hover:text-sky-200"
+            data-testid="about-refresh-button"
+            onClick={() => {
+              void loadData();
+            }}
+            type="button"
+          >
+            刷新诊断
+          </button>
         </header>
 
         {errorMessage ? (
@@ -381,12 +371,7 @@ export const AboutWindow = () => {
             data-testid="about-update-card"
           >
             <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-semibold text-white">更新检查</h2>
-                <p className="mt-3 text-sm text-slate-300">
-                  支持手动检查稳定版更新，失败仅反馈当前结果，不影响诊断区和主面板继续使用。
-                </p>
-              </div>
+              <h2 className="text-lg font-semibold text-white">更新检查</h2>
               <button
                 className="rounded-lg border border-sky-400/30 px-4 py-2 text-sm text-sky-100 transition hover:border-sky-300 disabled:cursor-wait disabled:border-white/10 disabled:text-slate-400"
                 data-testid="about-check-update-button"
@@ -465,12 +450,7 @@ export const AboutWindow = () => {
             data-testid="about-diagnostics-card"
           >
             <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-semibold text-white">诊断摘要</h2>
-                <p className="mt-2 text-sm text-slate-300">
-                  这里展示日志、迁移、权限与最近一次孤立图片清理结果，并支持手动执行安全清理。
-                </p>
-              </div>
+              <h2 className="text-lg font-semibold text-white">诊断摘要</h2>
               <button
                 className="rounded-lg border border-amber-300/30 px-4 py-2 text-sm text-amber-100 transition hover:border-amber-200 disabled:cursor-wait disabled:border-white/10 disabled:text-slate-400"
                 data-testid="about-run-orphan-cleanup-button"
