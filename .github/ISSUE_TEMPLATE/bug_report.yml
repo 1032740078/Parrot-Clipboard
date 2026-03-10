@@ -1,0 +1,61 @@
+name: Bug 反馈
+description: 报告一个可复现的问题，帮助我们定位缺陷。
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈问题。请尽量提供可复现信息，便于快速定位。
+  - type: input
+    id: environment
+    attributes:
+      label: 运行环境
+      description: 例如 macOS 14 / Node 22 / App v1.0.0
+      placeholder: macOS 14.4 + App v1.0.0
+    validations:
+      required: true
+  - type: dropdown
+    id: category
+    attributes:
+      label: 问题类型
+      options:
+        - 主面板 / 搜索 / 分类
+        - 粘贴 / 回贴 / 纯文本粘贴
+        - 图片 / 文件 / 预览
+        - 设置 / 快捷键 / 权限
+        - 构建 / 打包 / 发布
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 请按顺序列出最小复现步骤
+      placeholder: |
+        1. 打开应用
+        2. 复制一段文本
+        3. 使用快捷键呼出主面板
+        4. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期结果
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志 / 截图 / 补充信息
+      description: 可粘贴日志、报错、截图或录屏说明
+      render: shell

@@ -1,0 +1,34 @@
+name: 功能建议
+description: 提交一个新功能、体验优化或开放能力建议。
+title: "[Feature] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        欢迎提出改进建议。请尽量描述使用场景、收益与备选方案。
+  - type: textarea
+    id: problem
+    attributes:
+      label: 想解决什么问题？
+      placeholder: 当前在哪个场景下会觉得不方便？
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 你期望的方案
+      placeholder: 你希望应用新增什么行为或能力？
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 你考虑过的替代方案
+      placeholder: 例如命令行脚本、现有快捷操作、其他工具等
+  - type: textarea
+    id: value
+    attributes:
+      label: 这个功能的价值
+      placeholder: 为什么它值得做？会改善哪些工作流？

@@ -83,7 +83,7 @@ pub struct LaunchAgentService {
 }
 
 impl LaunchAgentService {
-    const DEFAULT_LABEL: &'static str = "com.robin.clipboard-record-manager";
+    const DEFAULT_LABEL: &'static str = "com.robin.parrot-clipboard";
 
     pub fn initialize(app_handle: &AppHandle) -> Result<Arc<Self>, AppError> {
         let agent_dir = resolve_launch_agent_dir(app_handle)?;
@@ -254,7 +254,7 @@ mod tests {
 
         assert!(enabled);
         assert!(saved.contains("<key>Label</key>"));
-        assert!(saved.contains("com.robin.clipboard-record-manager.test"));
+        assert!(saved.contains("com.robin.parrot-clipboard.test"));
         assert!(saved.contains("/mock/Clipboard Manager.app/Contents/MacOS/clipboard-manager"));
         assert!(service.is_enabled().expect("query should succeed"));
     }
@@ -347,7 +347,7 @@ mod tests {
         fn service(&self) -> Arc<LaunchAgentService> {
             LaunchAgentService::initialize_with_paths(
                 self.root_dir.join("LaunchAgents"),
-                "com.robin.clipboard-record-manager.test",
+                "com.robin.parrot-clipboard.test",
                 PathBuf::from("/mock/Clipboard Manager.app/Contents/MacOS/clipboard-manager"),
             )
         }

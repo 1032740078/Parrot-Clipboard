@@ -48,14 +48,14 @@ export const resolvePermissionGuideSteps = (permissionStatus?: PermissionStatus)
   if (isUnsignedOrAdhocPermissionReason(permissionStatus?.reason)) {
     return [
       "点击“打开系统设置”，进入辅助功能授权页面。",
-      "先删除旧的“粘贴板记录管理工具”条目，再重新把当前应用加入允许列表并开启开关。",
+      "先删除旧的“鹦鹉剪贴板”或历史旧名称条目，再重新把当前应用加入允许列表并开启开关。",
       "若刚覆盖安装过应用，请完成授权后彻底退出并重新打开应用，再点击“重新检测”。",
     ];
   }
 
   return [
     "点击“打开系统设置”，进入辅助功能授权页面。",
-    "把“粘贴板记录管理工具”加入允许控制你的电脑的应用列表。",
+    "把“鹦鹉剪贴板”加入允许控制你的电脑的应用列表。",
     "完成授权后返回应用，点击“重新检测”完成闭环。",
   ];
 };

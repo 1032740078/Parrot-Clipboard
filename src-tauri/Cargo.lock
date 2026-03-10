@@ -492,33 +492,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "clipboard-history-manager"
-version = "1.0.0"
-dependencies = [
- "arboard",
- "core-graphics 0.23.2",
- "hex",
- "image",
- "mockall",
- "objc",
- "reqwest 0.12.28",
- "rusqlite",
- "semver",
- "serde",
- "serde_json",
- "sha2",
- "tauri",
- "tauri-build",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-opener",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "clipboard-win"
 version = "5.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2680,6 +2653,33 @@ dependencies = [
  "redox_syscall",
  "smallvec",
  "windows-link 0.2.1",
+]
+
+[[package]]
+name = "parrot-clipboard"
+version = "1.0.0"
+dependencies = [
+ "arboard",
+ "core-graphics 0.23.2",
+ "hex",
+ "image",
+ "mockall",
+ "objc",
+ "reqwest 0.12.28",
+ "rusqlite",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-opener",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
 ]
 
 [[package]]

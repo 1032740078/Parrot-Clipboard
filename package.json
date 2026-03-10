@@ -1,6 +1,17 @@
 {
-  "name": "clipboard-record-manager",
+  "name": "parrot-clipboard",
   "private": true,
+  "description": "macOS 剪贴板历史管理工具，基于 Tauri v2 + React + Rust，支持文本、图片、文件记录、搜索、预览与回粘。",
+  "license": "0BSD",
+  "author": "Robin",
+  "homepage": "https://github.com/1032740078/Parrot-Clipboard",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/1032740078/Parrot-Clipboard.git"
+  },
+  "bugs": {
+    "url": "https://github.com/1032740078/Parrot-Clipboard/issues"
+  },
   "version": "1.0.0",
   "type": "module",
   "scripts": {
@@ -16,7 +27,7 @@
     "test:coverage": "vitest run --coverage",
     "format": "prettier --check .",
     "format:write": "prettier --write .",
-    "test:e2e": "sh -c 'node e2e/start-vite-server.mjs >/tmp/clipboard-record-manager-e2e.log 2>&1 & SERVER_PID=$!; trap \"kill $SERVER_PID\" EXIT; until curl -sf http://127.0.0.1:4173 >/dev/null; do sleep 0.2; done; playwright test --config=e2e/playwright.config.ts'",
+    "test:e2e": "sh -c 'node e2e/start-vite-server.mjs >/tmp/parrot-clipboard-e2e.log 2>&1 & SERVER_PID=$!; trap \"kill $SERVER_PID\" EXIT; until curl -sf http://127.0.0.1:4173 >/dev/null; do sleep 0.2; done; playwright test --config=e2e/playwright.config.ts'",
     "release:verify-config": "node scripts/verify-release.mjs",
     "release:check": "pnpm run type-check && pnpm run lint && pnpm run test:coverage && cargo test --manifest-path src-tauri/Cargo.toml && pnpm run test:e2e && pnpm run release:verify-config",
     "release:build:local": "pnpm tauri build --no-sign --bundles app && bash scripts/package-macos-dmg.sh",

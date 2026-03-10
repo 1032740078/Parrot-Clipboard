@@ -27,7 +27,7 @@
 - 当前仓库以 `v1.4` 为最新文档版本基线
 - 当前产品正式名称为：`鹦鹉剪贴板` / `Parrot Clipboard`
 - 当前核心体验优先保障 macOS；代码中已预留 Windows / Linux 平台抽象，但仍以 macOS 为主
-- 仓库内部分包名、应用标识与历史文档仍保留早期工程名，后续会逐步统一品牌命名
+- 面向用户可见的产品名称、窗口标题、打包名称与开源仓库元信息已统一为“鹦鹉剪贴板 / Parrot Clipboard”
 
 ## 功能预览
 
@@ -227,6 +227,12 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 欢迎通过 Issue、Discussion、Pull Request 参与项目建设。
 
+协作入口：
+
+- 提交流程说明见 `CONTRIBUTING.md`
+- 安全问题披露流程见 `SECURITY.md`
+- 提交 Issue 可直接使用 `.github/ISSUE_TEMPLATE/` 下的模板
+
 建议的协作方式：
 
 1. 先阅读 `docs/项目决策记录文档.md` 与对应版本文档，了解当前约束
@@ -250,7 +256,8 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 - 当前已采用 `0BSD` 许可证，允许个人、团队、商业项目与闭源产品自由使用、修改、分发与再发布
 - 当前默认面向 macOS 使用场景设计，其他平台仍处于能力预留或逐步完善阶段
-- 部分文档与工程名仍使用历史名称“粘贴板记录管理工具”，后续会逐步迁移到“鹦鹉剪贴板”品牌体系
+- `com.robin.clipboard` 等内部标识暂未随品牌同步改名，以避免影响现有数据目录、权限识别与升级路径
+- 较早期的历史设计文档仍保留旧名称，当前运行中的产品可见名称已统一为“鹦鹉剪贴板”
 
 ## 致谢
 

@@ -307,7 +307,7 @@ export const AboutWindow = () => {
       <section className="mx-auto flex max-w-4xl flex-col gap-5 px-6 pb-6">
         <header className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/5 p-5">
           <div>
-            <h1 className="text-2xl font-semibold text-white">粘贴板记录管理工具</h1>
+            <h1 className="text-2xl font-semibold text-white">鹦鹉剪贴板</h1>
             <p className="mt-1 text-sm text-slate-400">
               {viewModel ? `v${viewModel.app_version} · ${viewModel.platform}` : "正在加载..."}
             </p>

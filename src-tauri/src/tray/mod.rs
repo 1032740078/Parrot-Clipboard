@@ -243,7 +243,7 @@ impl TrayController {
         let tray = TrayIconBuilder::with_id(TRAY_ID)
             .menu(&menu)
             .icon(TrayIconAssets::icon(snapshot.status())?)
-            .tooltip("粘贴板记录管理工具")
+            .tooltip("鹦鹉剪贴板")
             .icon_as_template(true)
             .show_menu_on_left_click(true)
             .on_menu_event(|app, event| {

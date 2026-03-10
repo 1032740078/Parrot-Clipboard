@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-APP_NAME="粘贴板记录管理工具"
+APP_NAME="鹦鹉剪贴板"
 VERSION="$(node -p "require('./package.json').version")"
 ARCH_RAW="$(uname -m)"
 

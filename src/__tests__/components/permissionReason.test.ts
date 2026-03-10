@@ -18,7 +18,7 @@ describe("permissionReason", () => {
   it("为临时签名构建返回更准确的权限说明", () => {
     expect(isUnsignedOrAdhocPermissionReason(adhocPermission.reason)).toBe(true);
     expect(resolvePermissionGuideDescription(adhocPermission)).toContain("临时签名或未签名包");
-    expect(resolvePermissionGuideSteps(adhocPermission)[1]).toContain("删除旧的“粘贴板记录管理工具”条目");
+    expect(resolvePermissionGuideSteps(adhocPermission)[1]).toContain("删除旧的“鹦鹉剪贴板”或历史旧名称条目");
     expect(formatPermissionReason(adhocPermission.reason)).toContain("临时签名（ad-hoc）或未签名构建");
   });
 

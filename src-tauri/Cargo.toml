@@ -1,7 +1,10 @@
 [package]
-name = "clipboard-history-manager"
+name = "parrot-clipboard"
 version = "1.0.0"
-description = "Clipboard History Manager desktop app built with Tauri"
+description = "Parrot Clipboard desktop app built with Tauri"
+license = "0BSD"
+repository = "https://github.com/1032740078/Parrot-Clipboard"
+homepage = "https://github.com/1032740078/Parrot-Clipboard"
 authors = ["Robin"]
 edition = "2021"
 

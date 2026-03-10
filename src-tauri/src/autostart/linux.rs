@@ -8,7 +8,7 @@ use crate::error::AppError;
 
 use super::AutostartControl;
 
-const DEFAULT_DESKTOP_FILE_NAME: &str = "com.robin.clipboard-record-manager.desktop";
+const DEFAULT_DESKTOP_FILE_NAME: &str = "com.robin.parrot-clipboard.desktop";
 
 pub struct LinuxAutostartService {
     desktop_file_path: PathBuf,
@@ -44,7 +44,7 @@ impl LinuxAutostartService {
                 "[Desktop Entry]\n",
                 "Type=Application\n",
                 "Version=1.0\n",
-                "Name=Clipboard Record Manager\n",
+                "Name=Parrot Clipboard\n",
                 "Exec={}\n",
                 "X-GNOME-Autostart-enabled=true\n",
                 "Terminal=false\n"
