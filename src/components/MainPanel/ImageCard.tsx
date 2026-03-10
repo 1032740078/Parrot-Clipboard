@@ -6,7 +6,8 @@ import type { ClipboardRecord } from "../../types/clipboard";
 import { getRecordPreviewText } from "../../types/clipboard";
 import { PreviewStateBadge } from "./PreviewStateBadge";
 import { QuickSelectBadge } from "./QuickSelectBadge";
-import { CARD_HEADER_BASE_CLASS_NAME, getCardAppearanceClassName } from "./cardAppearance";
+import { getCardAppearanceClassName, getCardHeaderClassName } from "./cardAppearance";
+import { SourceAppIcon } from "./SourceAppIcon";
 import { toPreviewSrc } from "./previewAsset";
 import { formatRelativeTime } from "./time";
 
@@ -157,14 +158,13 @@ export const ImageCard = ({
     >
       <PreviewStateBadge visible={isPreviewing} />
 
-      <header className={`${CARD_HEADER_BASE_CLASS_NAME} bg-violet-500 text-white`}>
-        <QuickSelectBadge slot={displaySlot} />
-        <span>图片</span>
+      <header className={getCardHeaderClassName(record.content_type)}>
+        <div className="flex items-center gap-2">
+          <QuickSelectBadge slot={displaySlot} />
+          <span>图片</span>
+        </div>
+        <SourceAppIcon sourceApp={record.source_app} />
       </header>
-
-      <div className="px-3 pt-2 text-xs text-[#8E8E93]">
-        {formatRelativeTime(record.created_at)}
-      </div>
 
       <div className="relative mx-3 mt-2 flex h-32 items-center justify-center overflow-hidden rounded-lg bg-white/10">
         {previewSourceKind === "thumbnail" && thumbnailSrc ? (
@@ -220,9 +220,12 @@ export const ImageCard = ({
 
       <div className="flex-1 px-3 pt-2 text-sm leading-5 text-white">{previewText}</div>
 
-      <footer className="flex h-8 items-center justify-between px-3 text-[11px] text-slate-300">
+      <footer className="flex h-8 items-center justify-center gap-3 px-3 text-[11px] text-slate-400">
         <span>{mimeLabel}</span>
+        <span>·</span>
         <span>{sizeLabel}</span>
+        <span>·</span>
+        <span>{formatRelativeTime(record.created_at)}</span>
       </footer>
     </article>
   );

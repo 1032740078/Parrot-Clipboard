@@ -432,7 +432,7 @@ export const CardList = ({
       ref={containerRef}
     >
       {shouldVirtualize ? (
-        <div className="relative min-h-52" style={{ width: contentWidth }}>
+        <div className="relative min-h-56" style={{ width: contentWidth }}>
           <div
             className="absolute inset-y-0 left-0 flex gap-4"
             data-testid="virtualized-track"
