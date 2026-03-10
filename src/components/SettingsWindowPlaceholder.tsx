@@ -1566,8 +1566,18 @@ export const SettingsWindowPlaceholder = () => {
   };
 
   return (
-    <main className="min-h-screen bg-[var(--app-bg)] px-8 py-10 text-[var(--app-fg)] transition-colors">
-      <section className="mx-auto flex max-w-6xl flex-col gap-6 rounded-3xl border border-white/10 bg-slate-900/80 p-8 shadow-2xl shadow-slate-950/50">
+    <main className="glass-window min-h-screen rounded-2xl text-[var(--app-fg)] backdrop-blur-2xl transition-colors">
+      <div className="glass-window-titlebar flex h-12 items-center justify-between px-5">
+        <span className="text-xs font-medium tracking-wide text-slate-400">设置</span>
+        <button
+          className="rounded-md px-2 py-1 text-xs text-slate-400 transition hover:bg-white/10 hover:text-white"
+          onClick={() => window.close()}
+          type="button"
+        >
+          关闭
+        </button>
+      </div>
+      <section className="mx-auto flex max-w-6xl flex-col gap-6 px-8 pb-10">
         <div className="flex items-start justify-between gap-6 border-b border-white/10 pb-6">
           <div>
             <p className="text-sm font-medium uppercase tracking-[0.24em] text-sky-300/90">

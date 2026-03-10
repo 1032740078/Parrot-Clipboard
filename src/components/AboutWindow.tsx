@@ -285,9 +285,19 @@ export const AboutWindow = () => {
   }, []);
 
   return (
-    <main className="min-h-screen bg-[var(--app-bg)] px-6 py-6 text-[var(--app-fg)] transition-colors">
-      <section className="mx-auto flex max-w-4xl flex-col gap-5">
-        <header className="flex items-start justify-between gap-4 rounded-2xl border border-white/10 bg-white/5 p-5 shadow-panel">
+    <main className="glass-window min-h-screen rounded-2xl text-[var(--app-fg)] backdrop-blur-2xl transition-colors">
+      <div className="glass-window-titlebar flex h-12 items-center justify-between px-5">
+        <span className="text-xs font-medium tracking-wide text-slate-400">关于</span>
+        <button
+          className="rounded-md px-2 py-1 text-xs text-slate-400 transition hover:bg-white/10 hover:text-white"
+          onClick={() => window.close()}
+          type="button"
+        >
+          关闭
+        </button>
+      </div>
+      <section className="mx-auto flex max-w-4xl flex-col gap-5 px-6 pb-6">
+        <header className="flex items-start justify-between gap-4 rounded-2xl border border-white/10 bg-white/5 p-5">
           <div>
             <p className="text-sm text-slate-300">粘贴板记录管理工具</p>
             <h1 className="mt-1 text-2xl font-semibold text-white">关于</h1>

@@ -40,19 +40,25 @@ const bindGlobalErrorHandlers = (): void => {
 
 const resolveRootApp = () => {
   const params = new URLSearchParams(window.location.search);
-  if (params.get("window") === "about") {
+  const windowType = params.get("window");
+
+  if (windowType === "about" || windowType === "settings" || windowType === "preview") {
+    document.body.classList.add("standalone-window");
+  }
+
+  if (windowType === "about") {
     return <AboutWindow />;
   }
 
-  if (params.get("window") === "settings") {
+  if (windowType === "settings") {
     return <SettingsWindowPlaceholder />;
   }
 
-  if (params.get("window") === "preview") {
+  if (windowType === "preview") {
     return <PreviewWindow />;
   }
 
-  if (params.get("window") === "permission-guide") {
+  if (windowType === "permission-guide") {
     return <PermissionGuideWindow />;
   }
 

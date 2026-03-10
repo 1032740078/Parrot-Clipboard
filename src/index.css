@@ -219,6 +219,40 @@ body {
     inset 0 0 0 1px rgba(255, 255, 255, 0.03);
 }
 
+.glass-window {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--panel-border);
+  background: var(--panel-bg);
+  box-shadow:
+    var(--panel-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+  -webkit-backdrop-filter: blur(42px) saturate(1.6);
+  backdrop-filter: blur(42px) saturate(1.6);
+}
+
+.glass-window-titlebar {
+  -webkit-app-region: drag;
+  app-region: drag;
+  user-select: none;
+}
+
+.glass-window-titlebar button,
+.glass-window-titlebar a,
+.glass-window-titlebar input {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+body.standalone-window {
+  background: transparent !important;
+}
+
+body.standalone-window #root {
+  background: transparent;
+}
+
 .glass-toast {
   border: 1px solid var(--toast-border);
   background: var(--toast-bg);

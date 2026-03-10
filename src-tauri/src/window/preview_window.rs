@@ -66,6 +66,7 @@ impl PreviewWindowRuntime for TauriPreviewWindowRuntime {
         .inner_size(PREVIEW_WINDOW_WIDTH, PREVIEW_WINDOW_HEIGHT)
         .min_inner_size(PREVIEW_WINDOW_MIN_WIDTH, PREVIEW_WINDOW_MIN_HEIGHT)
         .decorations(false)
+        .transparent(true)
         .resizable(true)
         .skip_taskbar(false)
         .visible(false)

@@ -416,7 +416,7 @@ export const PreviewWindow = () => {
 
   if (recordId === null) {
     return (
-      <main className="flex h-screen w-screen items-center justify-center bg-[#050505] px-6 text-sm text-zinc-400">
+      <main className="glass-window flex h-screen w-screen items-center justify-center rounded-2xl px-6 text-sm text-zinc-400 backdrop-blur-2xl">
         请从主面板重新打开需要查看的记录。
       </main>
     );
@@ -426,7 +426,17 @@ export const PreviewWindow = () => {
   const fileItems = activeDetail?.files_detail?.items ?? [];
 
   return (
-    <main className="relative h-screen w-screen overflow-hidden bg-[#050505] text-white">
+    <main className="glass-window relative h-screen w-screen overflow-hidden rounded-2xl text-white backdrop-blur-2xl">
+      <div className="glass-window-titlebar flex h-10 shrink-0 items-center justify-between px-4">
+        <span className="text-xs font-medium tracking-wide text-slate-400">预览</span>
+        <button
+          className="rounded-md px-2 py-1 text-xs text-slate-400 transition hover:bg-white/10 hover:text-white"
+          onClick={() => window.close()}
+          type="button"
+        >
+          关闭
+        </button>
+      </div>
       {status === "loading" ? (
         <div className="flex h-full w-full items-center justify-center text-sm text-zinc-400">
           正在加载完整内容…

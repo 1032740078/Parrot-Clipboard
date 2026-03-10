@@ -58,6 +58,8 @@ impl AboutWindowRuntime for TauriAboutWindowRuntime {
         .min_inner_size(ABOUT_WINDOW_MIN_WIDTH, ABOUT_WINDOW_MIN_HEIGHT)
         .resizable(true)
         .skip_taskbar(false)
+        .transparent(true)
+        .decorations(false)
         .visible(false)
         .center()
         .build()
