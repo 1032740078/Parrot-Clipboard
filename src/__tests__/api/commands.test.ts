@@ -13,6 +13,7 @@ import {
   getPlatformCapabilities,
   getRuntimeStatus,
   getRecordDetail,
+  getSourceAppIconPng,
   getRecords,
   getRecordSummaries,
   searchRecords,
@@ -132,6 +133,24 @@ describe("api/commands", () => {
       { command: "update_text_record", args: { id: 2, text: "B-updated" } },
       { command: "paste_record", args: { id: 2, mode: "original" } },
     ]);
+  });
+
+  it("getSourceAppIconPng 调用 get_source_app_icon 并返回图标字节", async () => {
+    __setInvokeHandler(async (command) => {
+      if (command === "get_source_app_icon") {
+        return [137, 80, 78, 71];
+      }
+
+      return undefined;
+    });
+
+    const result = await getSourceAppIconPng("Notes", 20);
+
+    expect(Array.from(result ?? [])).toEqual([137, 80, 78, 71]);
+    expect(invokeCalls[0]).toEqual({
+      command: "get_source_app_icon",
+      args: { sourceApp: "Notes", size: 20 },
+    });
   });
 
   it("pasteRecord 兼容层返回 legacy record", async () => {

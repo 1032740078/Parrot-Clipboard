@@ -1,5 +1,13 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useMemo, useRef, useState, type MouseEvent, type WheelEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+  type RefObject,
+  type WheelEvent,
+} from "react";
 
 import {
   isFileFamilyRecord,
@@ -17,6 +25,7 @@ interface CardListProps {
   selectedIndex: number;
   previewingRecordId?: number;
   pendingOcrRecordId?: number;
+  containerRef?: RefObject<HTMLDivElement | null>;
   onSelectRecord: (index: number) => void;
   onPasteRecord: (record: ClipboardRecord, index: number) => void;
   onOpenContextMenu: (
@@ -182,6 +191,7 @@ export const CardList = ({
   selectedIndex,
   previewingRecordId,
   pendingOcrRecordId,
+  containerRef: externalContainerRef,
   onSelectRecord,
   onPasteRecord,
   onOpenContextMenu,
@@ -330,7 +340,7 @@ export const CardList = ({
 
         return (
           <div
-            className="cursor-pointer"
+            className="h-full cursor-pointer"
             key={getCardRenderKey(record)}
             onClick={() => {
               onSelectRecord(index);
@@ -361,7 +371,7 @@ export const CardList = ({
 
           return (
             <motion.div
-              className="cursor-pointer"
+              className="h-full cursor-pointer"
               key={getCardRenderKey(record)}
               onClick={() => {
                 onSelectRecord(index);
@@ -392,10 +402,19 @@ export const CardList = ({
     ? records.slice(visibleRange.startIndex, visibleRange.endIndex + 1)
     : records;
 
+  const setCombinedContainerRef = (node: HTMLDivElement | null): void => {
+    containerRef.current = node;
+
+    if (externalContainerRef) {
+      externalContainerRef.current = node;
+    }
+  };
+
   return (
     <div
-      className="panel-scroll-area h-full overflow-x-auto overflow-y-hidden -mb-4 -mr-4 pb-4 pr-4"
+      className="panel-scroll-area h-full overflow-x-auto overflow-y-hidden -mb-2 -mr-4 pb-2 pr-4"
       data-testid="card-list"
+      tabIndex={-1}
       onScroll={(event) => {
         const nextScrollLeft = (event.currentTarget as HTMLDivElement).scrollLeft ?? 0;
 
@@ -429,10 +448,10 @@ export const CardList = ({
         event.preventDefault();
         setContainerScrollLeft(container, nextLeft);
       }}
-      ref={containerRef}
+      ref={setCombinedContainerRef}
     >
       {shouldVirtualize ? (
-        <div className="relative min-h-56" style={{ width: contentWidth }}>
+        <div className="relative h-full min-h-0" style={{ width: contentWidth }}>
           <div
             className="absolute inset-y-0 left-0 flex gap-4"
             data-testid="virtualized-track"
@@ -442,7 +461,9 @@ export const CardList = ({
           </div>
         </div>
       ) : (
-        <div className="flex gap-4">{renderVisibleCards(visibleRecords, 0)}</div>
+        <div className="flex h-full items-stretch gap-4">
+          {renderVisibleCards(visibleRecords, 0)}
+        </div>
       )}
     </div>
   );

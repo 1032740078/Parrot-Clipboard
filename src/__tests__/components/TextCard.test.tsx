@@ -9,6 +9,7 @@ describe("TextCard", () => {
     render(<TextCard index={0} isSelected={false} record={buildRecord(1, "短文本", Date.now())} />);
     expect(screen.getByText("短文本")).toBeInTheDocument();
     expect(screen.getAllByTestId("quick-select-badge")).toHaveLength(1);
+    expect(screen.getByTestId("source-app-icon")).toHaveAttribute("title", "Notes");
   });
 
   it("UT-CARD-002 长文本触发 4 行截断样式", () => {

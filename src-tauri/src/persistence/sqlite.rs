@@ -428,7 +428,9 @@ impl SqliteConnectionManager {
                 })?;
 
             let total_count = usize::try_from(total_count).map_err(|_| {
-                AppError::Db(format!("invalid sqlite payload record count `{total_count}`"))
+                AppError::Db(format!(
+                    "invalid sqlite payload record count `{total_count}`"
+                ))
             })?;
 
             if total_count <= max_records {
@@ -1665,14 +1667,15 @@ mod tests {
     }
 
     fn unique_test_dir() -> PathBuf {
-        static NEXT_TEST_ID: std::sync::atomic::AtomicU64 =
-            std::sync::atomic::AtomicU64::new(1);
+        static NEXT_TEST_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let suffix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system time should be after unix epoch")
             .as_nanos();
         let unique_id = NEXT_TEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        env::temp_dir().join(format!("clipboard-manager-sqlite-test-{suffix}-{unique_id}"))
+        env::temp_dir().join(format!(
+            "clipboard-manager-sqlite-test-{suffix}-{unique_id}"
+        ))
     }
 
     fn cleanup_test_dir(database_path: &Path) {

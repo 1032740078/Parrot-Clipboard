@@ -181,18 +181,30 @@ impl ClipboardMonitorService {
 
         self.capture_snapshot(change_count, Some(signature));
 
-        if self.should_skip_capture_by_blacklist() {
+        let active_application = self.detect_active_application();
+        if self.should_skip_capture_by_blacklist(active_application.as_ref()) {
             return Ok(());
         }
 
         let now = now_ms();
+        let source_app = active_application
+            .as_ref()
+            .and_then(|application| application.display_name())
+            .map(str::to_string);
         let capture = match snapshot {
             ClipboardSnapshot::Empty => return Ok(()),
             ClipboardSnapshot::Text { text, rich_content } => {
-                self.repository.capture_text(text, rich_content, now)?
+                self.repository
+                    .capture_text(text, rich_content, source_app.clone(), now)?
             }
-            ClipboardSnapshot::Image(image) => self.repository.capture_image(image, now)?,
-            ClipboardSnapshot::Files(items) => self.repository.capture_files(items, now)?,
+            ClipboardSnapshot::Image(image) => {
+                self.repository
+                    .capture_image(image, source_app.clone(), now)?
+            }
+            ClipboardSnapshot::Files(items) => {
+                self.repository
+                    .capture_files(items, source_app.clone(), now)?
+            }
         };
         let should_finalize_image = capture.action == CaptureAction::Added
             && capture.record.content_type == crate::clipboard::types::ContentType::Image;
@@ -220,11 +232,33 @@ impl ClipboardMonitorService {
         Ok(())
     }
 
-    fn should_skip_capture_by_blacklist(&self) -> bool {
+    fn detect_active_application(&self) -> Option<crate::platform::ActiveApplication> {
+        let Some(privacy_filter) = &self.privacy_filter else {
+            return None;
+        };
+
+        match privacy_filter
+            .active_app_detector
+            .detect_active_application()
+        {
+            Ok(active_application) => active_application,
+            Err(error) => {
+                tracing::warn!(
+                    error = %error,
+                    "read active application failed, source_app capture and blacklist filter skipped"
+                );
+                None
+            }
+        }
+    }
+
+    fn should_skip_capture_by_blacklist(
+        &self,
+        active_application: Option<&crate::platform::ActiveApplication>,
+    ) -> bool {
         let Some(privacy_filter) = &self.privacy_filter else {
             return false;
         };
-
         let rules = privacy_filter
             .config_store
             .current()
@@ -234,19 +268,11 @@ impl ClipboardMonitorService {
             return false;
         }
 
-        let active_application = match privacy_filter
-            .active_app_detector
-            .detect_active_application()
-        {
-            Ok(Some(active_application)) => active_application,
-            Ok(None) => return false,
-            Err(error) => {
-                tracing::warn!(error = %error, "read active application failed, blacklist filter skipped");
-                return false;
-            }
+        let Some(active_application) = active_application else {
+            return false;
         };
 
-        let Some(rule) = match_blacklist_rule(&rules, &active_application) else {
+        let Some(rule) = match_blacklist_rule(&rules, active_application) else {
             return false;
         };
 
@@ -730,6 +756,51 @@ mod tests {
     }
 
     #[test]
+    fn poll_once_forwards_detected_source_app_to_repository_capture() {
+        let repository = Arc::new(MockRepository::new(CaptureResult {
+            action: CaptureAction::Added,
+            record: image_summary_pending(43, 1_000),
+            evicted_ids: Vec::new(),
+        }));
+        let clipboard = Arc::new(MockClipboard {
+            text: Some("带来源的文本".to_string()),
+            html: None,
+            image: None,
+            files: None,
+            change_count: 1,
+        });
+        let emitter = Arc::new(MockEmitter::default());
+        let config_store = config_store_with_rules(Vec::new());
+        let active_app_detector = Arc::new(MockActiveAppDetector {
+            active_application: Some(ActiveApplication {
+                platform: PlatformKind::Macos,
+                app_name: Some("Notes".to_string()),
+                bundle_id: Some("com.apple.notes".to_string()),
+                process_name: None,
+                app_id: None,
+                wm_class: None,
+            }),
+            error_message: None,
+        });
+        let service = ClipboardMonitorService::new_with_privacy(
+            repository.clone(),
+            clipboard,
+            emitter,
+            config_store,
+            active_app_detector,
+            Duration::from_millis(10),
+        );
+
+        service.poll_once().expect("text poll should succeed");
+
+        assert_eq!(repository.capture_text_calls(), 1);
+        assert_eq!(
+            repository.captured_text_source_app(0),
+            Some(Some("Notes".to_string()))
+        );
+    }
+
+    #[test]
     fn poll_once_reads_file_list_before_image_and_text() {
         let context = TestPathContext::new("monitor-files-priority");
         let paths = context.sample_paths();
@@ -790,9 +861,14 @@ mod tests {
         result: CaptureResult,
         finalize_result: Mutex<Option<(RecordUpdateReason, ClipboardRecordSummary)>>,
         processed_image_ids: Mutex<Vec<u64>>,
-        capture_texts: Mutex<Vec<String>>,
-        capture_images: Mutex<Vec<ClipboardImageData>>,
-        capture_files: Mutex<Vec<Vec<crate::clipboard::payload::ClipboardFileItem>>>,
+        capture_texts: Mutex<Vec<(String, Option<String>)>>,
+        capture_images: Mutex<Vec<(ClipboardImageData, Option<String>)>>,
+        capture_files: Mutex<
+            Vec<(
+                Vec<crate::clipboard::payload::ClipboardFileItem>,
+                Option<String>,
+            )>,
+        >,
     }
 
     impl MockRepository {
@@ -843,7 +919,15 @@ mod tests {
                 .lock()
                 .expect("capture_files lock poisoned")
                 .get(index)
-                .cloned()
+                .map(|(items, _)| items.clone())
+        }
+
+        fn captured_text_source_app(&self, index: usize) -> Option<Option<String>> {
+            self.capture_texts
+                .lock()
+                .expect("capture_texts lock poisoned")
+                .get(index)
+                .map(|(_, source_app)| source_app.clone())
         }
 
         fn processed_image_ids(&self) -> Vec<u64> {
@@ -859,36 +943,39 @@ mod tests {
             &self,
             text: String,
             _rich_content: Option<String>,
+            source_app: Option<String>,
             _captured_at: i64,
         ) -> Result<CaptureResult, AppError> {
             self.capture_texts
                 .lock()
                 .expect("capture_texts lock poisoned")
-                .push(text);
+                .push((text, source_app));
             Ok(self.result.clone())
         }
 
         fn capture_image(
             &self,
             image: ClipboardImageData,
+            source_app: Option<String>,
             _captured_at: i64,
         ) -> Result<CaptureResult, AppError> {
             self.capture_images
                 .lock()
                 .expect("capture_images lock poisoned")
-                .push(image);
+                .push((image, source_app));
             Ok(self.result.clone())
         }
 
         fn capture_files(
             &self,
             items: Vec<crate::clipboard::payload::ClipboardFileItem>,
+            source_app: Option<String>,
             _captured_at: i64,
         ) -> Result<CaptureResult, AppError> {
             self.capture_files
                 .lock()
                 .expect("capture_files lock poisoned")
-                .push(items);
+                .push((items, source_app));
             Ok(self.result.clone())
         }
 

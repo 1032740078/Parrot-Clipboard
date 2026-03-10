@@ -12,7 +12,7 @@ import { useClipboardStore } from "../stores/useClipboardStore";
 import { useSettingsStore } from "../stores/useSettingsStore";
 import { useSystemStore } from "../stores/useSystemStore";
 import { useUIStore } from "../stores/useUIStore";
-import { mixedFixtureRecords } from "./fixtures/clipboardRecords";
+import { fixtureRecords, mixedFixtureRecords } from "./fixtures/clipboardRecords";
 
 describe("App", () => {
   beforeEach(() => {
@@ -81,6 +81,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(document.documentElement.classList.contains("app-shell-window")).toBe(true);
       expect(document.body.classList.contains("app-shell-window")).toBe(true);
+      expect(screen.getByTestId("app-shell").className).toContain("bg-transparent");
     });
 
     unmount();
@@ -231,11 +232,53 @@ describe("App", () => {
   });
 
   it("收到主面板显隐事件后会同步主面板显示状态", async () => {
+    __setInvokeHandler(async (command: string, args?: Record<string, unknown>) => {
+      if (command === "get_records") {
+        const limit = (args?.limit as number) ?? 20;
+        return fixtureRecords.slice(0, limit);
+      }
+
+      if (command === "get_runtime_status") {
+        return { monitoring: false, launch_at_login: true, panel_visible: true };
+      }
+
+      if (command === "get_settings_snapshot") {
+        return {
+          config_version: 2,
+          general: { theme: "light", language: "zh-CN", launch_at_login: true },
+          history: {
+            max_text_records: 200,
+            max_image_records: 50,
+            max_file_records: 100,
+            max_image_storage_mb: 512,
+            capture_images: true,
+            capture_files: true,
+          },
+          shortcut: {
+            toggle_panel: "shift+control+v",
+            platform_default: "shift+control+v",
+          },
+          privacy: { blacklist_rules: [] },
+        };
+      }
+
+      return undefined;
+    });
+
     render(<App />);
 
     await waitFor(() => {
       expect(screen.getByTestId("card-list")).toBeInTheDocument();
     });
+
+    act(() => {
+      useUIStore.getState().setSearchQuery("第");
+      useUIStore.getState().setActiveTypeFilter("text");
+      useClipboardStore.getState().selectIndex(2);
+    });
+    expect(useUIStore.getState().searchQuery).toBe("第");
+    expect(useUIStore.getState().activeTypeFilter).toBe("text");
+    expect(useClipboardStore.getState().selectedIndex).toBe(2);
 
     await act(async () => {
       __emitMockEvent("system:panel-visibility-changed", {
@@ -262,6 +305,9 @@ describe("App", () => {
     });
     expect(useUIStore.getState().isPanelVisible).toBe(true);
     expect(useSystemStore.getState().panelVisible).toBe(true);
+    expect(useUIStore.getState().searchQuery).toBe("");
+    expect(useUIStore.getState().activeTypeFilter).toBe("all");
+    expect(useClipboardStore.getState().selectedIndex).toBe(0);
   });
 
   it("收到清空历史请求后可取消且不触发命令", async () => {

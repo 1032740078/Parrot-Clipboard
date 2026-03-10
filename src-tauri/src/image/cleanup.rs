@@ -183,8 +183,9 @@ mod tests {
                 .expect("system time should be after unix epoch")
                 .as_nanos();
             let unique_id = NEXT_TEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let root_dir =
-                env::temp_dir().join(format!("clipboard-manager-image-cleanup-test-{nanos}-{unique_id}"));
+            let root_dir = env::temp_dir().join(format!(
+                "clipboard-manager-image-cleanup-test-{nanos}-{unique_id}"
+            ));
             let original_dir = root_dir.join("images/original");
             let thumbnail_dir = root_dir.join("images/thumbs");
             fs::create_dir_all(&original_dir).expect("original dir should be created");

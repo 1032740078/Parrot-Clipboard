@@ -58,6 +58,22 @@ pub fn open_accessibility_settings() -> Result<(), AppError> {
     }
 }
 
+pub fn resolve_source_app_icon_png(
+    source_app: &str,
+    size: u32,
+) -> Result<Option<Vec<u8>>, AppError> {
+    #[cfg(target_os = "macos")]
+    {
+        return macos::resolve_source_app_icon_png(source_app, size);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (source_app, size);
+        Ok(None)
+    }
+}
+
 pub fn create_platform_clipboard() -> Result<Arc<dyn PlatformClipboard>, AppError> {
     #[cfg(target_os = "macos")]
     {
@@ -313,6 +329,13 @@ pub mod macos {
         fn simulate_paste(&self) -> Result<(), AppError> {
             Ok(())
         }
+    }
+
+    pub fn resolve_source_app_icon_png(
+        _source_app: &str,
+        _size: u32,
+    ) -> Result<Option<Vec<u8>>, AppError> {
+        Ok(None)
     }
 }
 

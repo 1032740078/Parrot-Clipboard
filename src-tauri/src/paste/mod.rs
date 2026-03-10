@@ -4,7 +4,7 @@ use crate::{
     clipboard::{
         query::{ClipboardRecordDetail, PasteResult},
         runtime_repository::ClipboardRuntimeRepository,
-        types::{PayloadType, PasteMode, RecordId},
+        types::{PasteMode, PayloadType, RecordId},
     },
     error::AppError,
     image::ImageStorageService,
@@ -242,7 +242,7 @@ mod tests {
                 ImageMeta, PasteResult, TextMeta, ThumbnailState,
             },
             runtime_repository::ClipboardRuntimeRepository,
-            types::{ContentType, PayloadType, PasteMode, RecordId},
+            types::{ContentType, PasteMode, PayloadType, RecordId},
         },
         error::AppError,
         image::ImageStorageService,
@@ -263,6 +263,7 @@ mod tests {
             &self,
             _text: String,
             _rich_content: Option<String>,
+            _source_app: Option<String>,
             _captured_at: i64,
         ) -> Result<crate::clipboard::runtime_repository::CaptureResult, AppError> {
             unreachable!()
@@ -270,6 +271,7 @@ mod tests {
         fn capture_image(
             &self,
             _image: crate::clipboard::payload::ClipboardImageData,
+            _source_app: Option<String>,
             _captured_at: i64,
         ) -> Result<crate::clipboard::runtime_repository::CaptureResult, AppError> {
             unreachable!()
@@ -277,6 +279,7 @@ mod tests {
         fn capture_files(
             &self,
             _items: Vec<crate::clipboard::payload::ClipboardFileItem>,
+            _source_app: Option<String>,
             _captured_at: i64,
         ) -> Result<crate::clipboard::runtime_repository::CaptureResult, AppError> {
             unreachable!()

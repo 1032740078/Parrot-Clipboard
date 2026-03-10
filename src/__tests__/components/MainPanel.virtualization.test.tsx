@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { MainPanel } from "../../components/MainPanel";
@@ -259,6 +259,40 @@ describe("MainPanel virtualization", () => {
     });
   });
 
+  it("面板重新显示时即使未改选中项也会重置卡片列表滚动位置", async () => {
+    const records = buildLargeRecords(18);
+    setInvokeForRecords(records);
+
+    render(<MainPanel />);
+    const cardList = await attachScrollableViewport();
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("text-card")).toHaveLength(18);
+    });
+
+    scrollViewport(cardList, 640);
+
+    await waitFor(() => {
+      expect(cardList.scrollLeft).toBe(640);
+    });
+
+    await act(async () => {
+      useUIStore.getState().hidePanel();
+    });
+    expect(useUIStore.getState().isPanelVisible).toBe(false);
+
+    await act(async () => {
+      useUIStore.getState().showPanel();
+    });
+
+    const reopenedCardList = (await screen.findByTestId("card-list")) as HTMLDivElement;
+
+    await waitFor(() => {
+      expect(useUIStore.getState().isPanelVisible).toBe(true);
+      expect(reopenedCardList.scrollLeft).toBe(0);
+    });
+  });
+
   it("UT-FE-LIST-106 横向滚动容器使用隐藏滚动条样式但仍保留滚动能力", async () => {
     const records = buildLargeRecords(18);
     setInvokeForRecords(records);
@@ -268,7 +302,7 @@ describe("MainPanel virtualization", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("card-list").className).toContain("panel-scroll-area");
-      expect(screen.getByTestId("card-list").className).toContain("-mb-4");
+      expect(screen.getByTestId("card-list").className).toContain("-mb-2");
       expect(screen.getByTestId("card-list").className).toContain("-mr-4");
     });
 

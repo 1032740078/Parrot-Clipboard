@@ -179,7 +179,10 @@ function App() {
   };
 
   return (
-    <main className="min-h-screen bg-[var(--app-bg)] text-[var(--app-fg)] transition-colors">
+    <main
+      className="min-h-screen bg-transparent text-[var(--app-fg)] transition-colors"
+      data-testid="app-shell"
+    >
       <MainPanel />
       <ConfirmDialog
         cancelLabel="取消"

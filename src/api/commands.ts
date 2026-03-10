@@ -86,6 +86,35 @@ export const getRecordDetail = async (id: number): Promise<ClipboardRecordDetail
   }
 };
 
+const isPngByteArray = (value: unknown): value is number[] =>
+  Array.isArray(value) &&
+  value.every((item) => Number.isInteger(item) && Number(item) >= 0 && Number(item) <= 255);
+
+export const getSourceAppIconPng = async (
+  sourceApp: string,
+  size = 20
+): Promise<Uint8Array | null> => {
+  try {
+    const iconBytes = await invoke<unknown>("get_source_app_icon", { sourceApp, size });
+    if (iconBytes == null) {
+      return null;
+    }
+
+    if (!isPngByteArray(iconBytes)) {
+      throw new Error("get_source_app_icon 返回结果格式无效");
+    }
+
+    return Uint8Array.from(iconBytes);
+  } catch (error) {
+    logger.warn("读取来源应用图标失败，回退到字母徽标", {
+      source_app: sourceApp,
+      size,
+      error: normalizeError(error),
+    });
+    return null;
+  }
+};
+
 export const updateTextRecord = async (
   id: number,
   text: string

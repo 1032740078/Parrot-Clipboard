@@ -5,7 +5,7 @@ interface SkeletonCardProps {
 export const SkeletonCard = ({ index }: SkeletonCardProps) => {
   return (
     <article
-      className="flex h-56 w-card shrink-0 animate-pulse flex-col overflow-hidden rounded-[18px] border border-white/10 bg-white/5 backdrop-blur-md"
+      className="flex h-full w-card shrink-0 animate-pulse flex-col overflow-hidden rounded-[18px] border border-white/10 bg-white/5 backdrop-blur-md"
       data-testid="skeleton-card"
     >
       <div className="h-12 bg-white/10" />

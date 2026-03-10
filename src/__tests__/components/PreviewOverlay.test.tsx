@@ -186,4 +186,29 @@ describe("PreviewOverlay", () => {
 
     expect(useUIStore.getState().lastPreviewCloseReason).toBe("click_mask");
   });
+
+  it("UT-PREVIEW-306 代码文本预览会切换到只读高亮视图", async () => {
+    const codeText = "fn main() {\n    println!(\"hello\");\n}";
+
+    useClipboardStore.getState().hydrate([buildRecord(1, "代码摘要", 1000)]);
+    useUIStore.getState().openPreviewOverlay(1, "keyboard_space");
+    __setInvokeHandler(async (command) => {
+      if (command === "get_record_detail") {
+        return buildTextDetail(codeText);
+      }
+
+      return undefined;
+    });
+
+    const { container } = render(<PreviewOverlay />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("preview-overlay-code-content")).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("preview-overlay-code-content")).toHaveTextContent("println!");
+    expect(screen.getByTestId("preview-overlay-code-language")).toHaveTextContent("rust");
+    expect(screen.queryByTestId("preview-overlay-text-content")).not.toBeInTheDocument();
+    expect(container.querySelector(".hljs")).not.toBeNull();
+  });
 });

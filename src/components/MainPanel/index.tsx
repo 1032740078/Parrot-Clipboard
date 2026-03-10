@@ -5,11 +5,7 @@ import { deleteRecord, getRecordSummaries, showPreviewWindow } from "../../api/c
 import { showPermissionGuideWindow } from "../../api/diagnostics";
 import { getErrorMessage } from "../../api/errorHandler";
 import { logger, normalizeError } from "../../api/logger";
-import {
-  isImageRecord,
-  toClipboardRecord,
-  type VisibleQuickSlot,
-} from "../../types/clipboard";
+import { isImageRecord, toClipboardRecord, type VisibleQuickSlot } from "../../types/clipboard";
 import { useClipboardEvents } from "../../hooks/useClipboardEvents";
 import { useKeyboard } from "../../hooks/useKeyboard";
 import { executeRecordPaste } from "../../hooks/recordPaste";
@@ -22,23 +18,59 @@ import { buildCardContextMenuActions } from "./contextMenuActions";
 import { resolveContextMenuPosition } from "./contextMenuPosition";
 import { getPanelMotionVariants, prefersReducedMotion } from "./motion";
 import { PauseHint } from "./PauseHint";
-import {
-  buildSearchSessionKey,
-  filterClipboardRecords,
-  PANEL_TYPE_FILTER_OPTIONS,
-} from "./search";
+import { buildSearchSessionKey, filterClipboardRecords, PANEL_TYPE_FILTER_OPTIONS } from "./search";
 import { SkeletonCard } from "./SkeletonCard";
 
 const INITIAL_RECORD_LIMIT = 200;
 const SEARCH_INPUT_MIN_WIDTH_PX = 320;
 const SEARCH_INPUT_MAX_WIDTH_PX = 560;
+const SEARCH_INPUT_EXPAND_START_CHAR_COUNT = 22;
+const PANEL_TYPE_FILTER_ACCENT_CLASS_MAP: Record<string, string> = {
+  all: "bg-slate-300/75",
+  text: "bg-sky-300/80",
+  image: "bg-teal-300/80",
+  files: "bg-slate-400/80",
+  link: "bg-cyan-300/80",
+  video: "bg-rose-300/80",
+  audio: "bg-amber-300/80",
+  document: "bg-yellow-300/80",
+};
 
 const resolveSearchInputWidth = (query: string): string => {
-  const expandedWidth = SEARCH_INPUT_MIN_WIDTH_PX + query.trim().length * 7;
+  const trimmedLength = query.trim().length;
+  if (trimmedLength <= SEARCH_INPUT_EXPAND_START_CHAR_COUNT) {
+    return `${SEARCH_INPUT_MIN_WIDTH_PX}px`;
+  }
+
+  const expandedWidth =
+    SEARCH_INPUT_MIN_WIDTH_PX + (trimmedLength - SEARCH_INPUT_EXPAND_START_CHAR_COUNT) * 12;
   return `${Math.min(Math.max(expandedWidth, SEARCH_INPUT_MIN_WIDTH_PX), SEARCH_INPUT_MAX_WIDTH_PX)}px`;
 };
 
+const resetCardListScrollPosition = (container: HTMLDivElement | null): void => {
+  if (!container) {
+    return;
+  }
+
+  if (typeof container.scrollTo === "function") {
+    container.scrollTo({ left: 0, behavior: "auto" });
+    return;
+  }
+
+  container.scrollLeft = 0;
+  container.dispatchEvent(new Event("scroll"));
+};
+
+const SearchIcon = () => (
+  <svg aria-hidden="true" className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 20 20">
+    <circle cx="8.5" cy="8.5" r="4.75" stroke="currentColor" strokeWidth="1.6" />
+    <path d="M12.2 12.2 16 16" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" />
+  </svg>
+);
+
 export const MainPanel = () => {
+  const cardListContainerRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const records = useClipboardStore((state) => state.records);
   const selectedRecord = useClipboardStore((state) => state.getSelectedRecord());
   const isHydrating = useClipboardStore((state) => state.isHydrating);
@@ -57,6 +89,7 @@ export const MainPanel = () => {
   const openPreviewOverlay = useUIStore((state) => state.openPreviewOverlay);
   const openContextMenu = useUIStore((state) => state.openContextMenu);
   const openPermissionGuide = useUIStore((state) => state.openPermissionGuide);
+  const resetSearch = useUIStore((state) => state.resetSearch);
   const setActiveTypeFilter = useUIStore((state) => state.setActiveTypeFilter);
   const setSearchQuery = useUIStore((state) => state.setSearchQuery);
   const setSearchResultState = useUIStore((state) => state.setSearchResultState);
@@ -65,6 +98,7 @@ export const MainPanel = () => {
   const permissionStatus = useSystemStore((state) => state.permissionStatus);
 
   const visibleQuickSlotsRef = useRef<VisibleQuickSlot[]>([]);
+  const wasPanelVisibleRef = useRef(isPanelVisible);
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
   useClipboardEvents();
@@ -107,11 +141,69 @@ export const MainPanel = () => {
   const pasteBlockedByPermission =
     permissionStatus?.platform === "macos" && permissionStatus.accessibility === "missing";
   const searchSessionKey = buildSearchSessionKey(deferredSearchQuery, activeTypeFilter);
-  const searchSummaryLabel =
-    activeTypeFilter === "all"
-      ? `全部 · ${filteredRecords.length} 条`
-      : `${PANEL_TYPE_FILTER_OPTIONS.find((item) => item.value === activeTypeFilter)?.label ?? "筛选"} · ${filteredRecords.length} 条`;
   const searchInputWidth = resolveSearchInputWidth(searchQuery);
+
+  useEffect(() => {
+    if (!isPanelVisible) {
+      return;
+    }
+
+    const focusCardList = (): void => {
+      cardListContainerRef.current?.focus({ preventScroll: true });
+    };
+
+    const focusSearchInput = (): void => {
+      const input = searchInputRef.current;
+      if (!input) {
+        return;
+      }
+
+      input.focus({ preventScroll: true });
+      input.select();
+    };
+
+    const handlePanelKeyDown = (event: KeyboardEvent): void => {
+      if (previewOverlay || !isPanelVisible) {
+        return;
+      }
+
+      if (event.key === "Tab" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        event.preventDefault();
+
+        const currentIndex = PANEL_TYPE_FILTER_OPTIONS.findIndex(
+          (option) => option.value === activeTypeFilter
+        );
+        const nextIndex =
+          currentIndex < 0
+            ? 0
+            : event.shiftKey
+              ? (currentIndex - 1 + PANEL_TYPE_FILTER_OPTIONS.length) %
+                PANEL_TYPE_FILTER_OPTIONS.length
+              : (currentIndex + 1) % PANEL_TYPE_FILTER_OPTIONS.length;
+
+        setActiveTypeFilter(PANEL_TYPE_FILTER_OPTIONS[nextIndex]?.value ?? "all");
+        focusCardList();
+        return;
+      }
+
+      if (event.key.toLowerCase() === "f" && event.metaKey && !event.ctrlKey && !event.altKey) {
+        event.preventDefault();
+
+        if (document.activeElement === searchInputRef.current) {
+          searchInputRef.current?.blur();
+          focusCardList();
+          return;
+        }
+
+        focusSearchInput();
+      }
+    };
+
+    window.addEventListener("keydown", handlePanelKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handlePanelKeyDown);
+    };
+  }, [activeTypeFilter, isPanelVisible, previewOverlay, setActiveTypeFilter]);
 
   useEffect(() => {
     const status =
@@ -146,6 +238,36 @@ export const MainPanel = () => {
       selectIndex(nextIndex);
     }
   }, [filteredRecords, records, selectIndex, selectedVisibleIndex]);
+
+  useEffect(() => {
+    const wasPanelVisible = wasPanelVisibleRef.current;
+    wasPanelVisibleRef.current = isPanelVisible;
+
+    if (!isPanelVisible || wasPanelVisible) {
+      return;
+    }
+
+    resetSearch();
+    if (records.length > 0) {
+      selectIndex(0);
+    }
+
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement) {
+      activeElement.blur();
+    }
+
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(() => {
+        resetCardListScrollPosition(cardListContainerRef.current);
+        cardListContainerRef.current?.focus({ preventScroll: true });
+      });
+      return;
+    }
+
+    resetCardListScrollPosition(cardListContainerRef.current);
+    cardListContainerRef.current?.focus({ preventScroll: true });
+  }, [isPanelVisible, records.length, resetSearch, selectIndex]);
 
   const handleCardSelect = (index: number): void => {
     const target = filteredRecords[index];
@@ -331,7 +453,7 @@ export const MainPanel = () => {
         <>
           <motion.section
             animate="visible"
-            className="glass-panel fixed inset-x-4 bottom-4 z-50 h-panel rounded-[28px] px-4 pb-4 pt-6 backdrop-blur-2xl"
+            className="glass-panel fixed inset-x-0 bottom-0 z-50 h-panel rounded-[28px] px-4 pb-3 pt-6 backdrop-blur-2xl"
             data-testid="main-panel"
             exit="exit"
             initial="hidden"
@@ -340,15 +462,20 @@ export const MainPanel = () => {
             variants={panelMotionVariants}
           >
             <div className="flex h-full min-h-0 flex-col">
-              <div className="mb-3 flex items-center justify-center">
+              <div className="mb-2 flex shrink-0 items-center justify-center">
                 <div className="relative" style={{ width: searchInputWidth }}>
-                  <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-slate-400">
-                    搜索
+                  <span
+                    className="pointer-events-none absolute left-4 top-1/2 flex -translate-y-1/2 items-center gap-1.5 text-sm text-slate-400"
+                    data-testid="panel-search-label"
+                  >
+                    <SearchIcon />
+                    <span>搜索</span>
                   </span>
                   <input
-                    className="h-11 w-full rounded-full border border-white/10 bg-white/8 pl-14 pr-12 text-sm text-white outline-none transition-[width,border-color,background-color] duration-150 placeholder:text-slate-500 focus:border-sky-300/55 focus:bg-white/12"
+                    className="panel-search-input h-11 w-full rounded-full border border-white/10 bg-white/8 pl-24 pr-12 text-sm text-white outline-none transition-[width,border-color,background-color] duration-150 placeholder:text-slate-500 focus:border-sky-300/55 focus:bg-white/12"
                     data-expanded={searchQuery.trim().length > 0 ? "true" : "false"}
                     data-testid="panel-search-input"
+                    ref={searchInputRef}
                     onChange={(event) => {
                       setSearchQuery(event.target.value);
                     }}
@@ -371,17 +498,21 @@ export const MainPanel = () => {
                 </div>
               </div>
 
-              <div className="flex min-h-0 flex-1 gap-4">
+              <div className="flex min-h-0 flex-1 gap-3">
                 <aside
-                  className="flex w-[92px] shrink-0 flex-col rounded-[24px] border border-white/8 bg-white/[0.04] p-2"
+                  className="flex w-[84px] shrink-0 flex-col gap-1 rounded-[22px] border border-white/10 bg-black/10 p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl"
                   data-testid="type-filter-sidebar"
                 >
+                  <div className="px-2 pb-1 pt-1 text-center text-[10px] font-semibold tracking-[0.18em] text-slate-400/85">
+                    分类
+                  </div>
                   {PANEL_TYPE_FILTER_OPTIONS.map((option) => (
                     <button
-                      className={`mb-1 rounded-2xl px-3 py-2 text-left text-xs font-medium transition ${
+                      aria-pressed={activeTypeFilter === option.value}
+                      className={`flex h-8 items-center gap-2 rounded-[14px] border px-2.5 text-left text-[12px] font-medium tracking-[0.01em] transition ${
                         activeTypeFilter === option.value
-                          ? "bg-sky-400/18 text-white shadow-[0_8px_24px_rgba(56,189,248,0.18)]"
-                          : "text-slate-300 hover:bg-white/8 hover:text-white"
+                          ? "border-white/14 bg-white/14 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_8px_18px_rgba(15,23,42,0.16)]"
+                          : "border-transparent text-slate-300 hover:border-white/8 hover:bg-white/[0.06] hover:text-white"
                       }`}
                       data-active={activeTypeFilter === option.value ? "true" : "false"}
                       data-testid={`type-filter-${option.value}`}
@@ -391,24 +522,20 @@ export const MainPanel = () => {
                       }}
                       type="button"
                     >
+                      <span
+                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                          PANEL_TYPE_FILTER_ACCENT_CLASS_MAP[option.value] ?? "bg-slate-300/75"
+                        }`}
+                      />
                       {option.shortLabel}
                     </button>
                   ))}
                 </aside>
 
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-                  <div
-                    className="mb-3 flex items-center justify-between gap-3 px-1 text-xs text-slate-400"
-                    data-status={searchQuery !== deferredSearchQuery ? "filtering" : "ready"}
-                    data-testid="search-result-summary"
-                  >
-                    <span>{searchSummaryLabel}</span>
-                    <span>{searchQuery !== deferredSearchQuery ? "刷新中" : "已同步"}</span>
-                  </div>
-
                   {pasteBlockedByPermission ? (
                     <div
-                      className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-50"
+                      className="mb-2 flex shrink-0 items-center justify-between gap-3 rounded-xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-50"
                       data-testid="permission-status-bar"
                     >
                       <div>
@@ -434,7 +561,7 @@ export const MainPanel = () => {
                   <div className="min-h-0 flex-1 overflow-hidden">
                     {isHydrating ? (
                       <div
-                        className="panel-scroll-area flex gap-4 overflow-x-auto overflow-y-hidden -mb-4 -mr-4 pb-4 pr-4"
+                        className="panel-scroll-area flex h-full items-stretch gap-4 overflow-x-auto overflow-y-hidden -mb-2 -mr-4 pb-2 pr-4"
                         data-testid="skeleton-list"
                       >
                         {Array.from({ length: 3 }, (_, index) => (
@@ -451,6 +578,7 @@ export const MainPanel = () => {
                       />
                     ) : (
                       <CardList
+                        containerRef={cardListContainerRef}
                         onOpenContextMenu={handleOpenCardContextMenu}
                         onPasteRecord={(record, index) => {
                           handleCardDoubleClick(record.id, index);
@@ -467,8 +595,9 @@ export const MainPanel = () => {
                 </div>
               </div>
 
-              <footer className="mt-3 flex justify-center" data-testid="shortcut-bar">
+              <footer className="mt-2 flex shrink-0 justify-center" data-testid="shortcut-bar">
                 <div className="flex max-w-[52rem] flex-wrap items-center justify-center gap-x-5 gap-y-1 text-[11px] text-slate-300">
+                  <span>Tab 切换分类</span>
                   <span>空格 预览</span>
                   <span
                     className={pasteBlockedByPermission ? "opacity-40" : ""}
@@ -482,6 +611,7 @@ export const MainPanel = () => {
                   >
                     Shift+Enter 纯文本
                   </span>
+                  <span>⌘F 搜索/返回列表</span>
                   <span>Delete 删除</span>
                   <span>可视 1-9 快选</span>
                   <span>⌘+可视 1-9 快贴</span>

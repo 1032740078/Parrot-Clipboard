@@ -59,18 +59,21 @@ pub trait ClipboardRuntimeRepository: Send + Sync {
         &self,
         text: String,
         rich_content: Option<String>,
+        source_app: Option<String>,
         captured_at: i64,
     ) -> Result<CaptureResult, AppError>;
 
     fn capture_image(
         &self,
         image: ClipboardImageData,
+        source_app: Option<String>,
         captured_at: i64,
     ) -> Result<CaptureResult, AppError>;
 
     fn capture_files(
         &self,
         items: Vec<ClipboardFileItem>,
+        source_app: Option<String>,
         captured_at: i64,
     ) -> Result<CaptureResult, AppError>;
 
@@ -128,6 +131,7 @@ impl ClipboardRuntimeRepository for SqliteClipboardRuntimeRepository {
         &self,
         text: String,
         rich_content: Option<String>,
+        source_app: Option<String>,
         captured_at: i64,
     ) -> Result<CaptureResult, AppError> {
         let content_hash = text_sha256_hex(&text);
@@ -140,6 +144,7 @@ impl ClipboardRuntimeRepository for SqliteClipboardRuntimeRepository {
             &text,
             rich_content.as_deref(),
             &preview_text,
+            source_app.as_deref(),
             captured_at,
         )?;
         let prune_result = self
@@ -156,13 +161,19 @@ impl ClipboardRuntimeRepository for SqliteClipboardRuntimeRepository {
     fn capture_image(
         &self,
         image: ClipboardImageData,
+        source_app: Option<String>,
         captured_at: i64,
     ) -> Result<CaptureResult, AppError> {
         let content_hash = image.sha256_hex();
         if let Some(existing_id) =
             find_existing_id(&self.database, PayloadType::Image, &content_hash)?
         {
-            let record = promote_record(&self.database, existing_id, captured_at)?;
+            let record = promote_record(
+                &self.database,
+                existing_id,
+                source_app.as_deref(),
+                captured_at,
+            )?;
             return Ok(CaptureResult {
                 action: CaptureAction::Promoted,
                 record,
@@ -171,7 +182,13 @@ impl ClipboardRuntimeRepository for SqliteClipboardRuntimeRepository {
         }
 
         let saved = self.image_storage.save_original(&content_hash, &image)?;
-        let record_id = insert_image_record(&self.database, &content_hash, &saved, captured_at)?;
+        let record_id = insert_image_record(
+            &self.database,
+            &content_hash,
+            &saved,
+            source_app.as_deref(),
+            captured_at,
+        )?;
         let prune_result = self
             .database
             .prune_excess_records(ContentType::Image, self.config.max_image_records())?;
@@ -193,6 +210,7 @@ impl ClipboardRuntimeRepository for SqliteClipboardRuntimeRepository {
     fn capture_files(
         &self,
         items: Vec<ClipboardFileItem>,
+        source_app: Option<String>,
         captured_at: i64,
     ) -> Result<CaptureResult, AppError> {
         let content_hash = files_sha256_hex(&items);
@@ -200,7 +218,12 @@ impl ClipboardRuntimeRepository for SqliteClipboardRuntimeRepository {
         if let Some(existing_id) =
             find_existing_id(&self.database, PayloadType::Files, &content_hash)?
         {
-            let record = promote_record(&self.database, existing_id, captured_at)?;
+            let record = promote_record(
+                &self.database,
+                existing_id,
+                source_app.as_deref(),
+                captured_at,
+            )?;
             return Ok(CaptureResult {
                 action: CaptureAction::Promoted,
                 record,
@@ -213,6 +236,7 @@ impl ClipboardRuntimeRepository for SqliteClipboardRuntimeRepository {
             content_type,
             &content_hash,
             &items,
+            source_app.as_deref(),
             captured_at,
         )?;
         let prune_result = self
@@ -254,7 +278,7 @@ impl ClipboardRuntimeRepository for SqliteClipboardRuntimeRepository {
     }
 
     fn promote(&self, id: RecordId, promoted_at: i64) -> Result<ClipboardRecordSummary, AppError> {
-        promote_record(&self.database, id, promoted_at)
+        promote_record(&self.database, id, None, promoted_at)
     }
 
     fn delete(&self, id: RecordId) -> Result<RecordId, AppError> {
@@ -341,13 +365,14 @@ fn upsert_text_record(
     text: &str,
     rich_content: Option<&str>,
     preview_text: &str,
+    source_app: Option<&str>,
     captured_at: i64,
 ) -> Result<(CaptureAction, ClipboardRecordSummary), AppError> {
     if let Some(existing_id) = find_existing_id(database, PayloadType::Text, content_hash)? {
         database.with_connection(|connection| {
             connection
                 .execute(
-                    "UPDATE clipboard_items SET content_type = ?1, text_content = ?2, rich_content = ?3, preview_text = ?4, search_text = ?5, payload_bytes = ?6, last_used_at = ?7 WHERE id = ?8",
+                    "UPDATE clipboard_items SET content_type = ?1, text_content = ?2, rich_content = ?3, preview_text = ?4, search_text = ?5, payload_bytes = ?6, last_used_at = ?7, source_app = COALESCE(?8, source_app) WHERE id = ?9",
                     params![
                         content_type.as_str(),
                         text,
@@ -356,6 +381,7 @@ fn upsert_text_record(
                         text,
                         text.len() as i64,
                         captured_at,
+                        source_app,
                         existing_id.value() as i64
                     ],
                 )
@@ -374,7 +400,7 @@ fn upsert_text_record(
     let record_id = database.with_connection(|connection| {
         connection
             .execute(
-                "INSERT INTO clipboard_items (payload_type, content_type, content_hash, text_content, rich_content, preview_text, search_text, source_app, file_count, payload_bytes, created_at, last_used_at) VALUES ('text', ?1, ?2, ?3, ?4, ?5, ?6, NULL, 0, ?7, ?8, ?8)",
+                "INSERT INTO clipboard_items (payload_type, content_type, content_hash, text_content, rich_content, preview_text, search_text, source_app, file_count, payload_bytes, created_at, last_used_at) VALUES ('text', ?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8, ?9, ?9)",
                 params![
                     content_type.as_str(),
                     content_hash,
@@ -382,6 +408,7 @@ fn upsert_text_record(
                     rich_content,
                     preview_text,
                     text,
+                    source_app,
                     text.len() as i64,
                     captured_at
                 ],
@@ -451,14 +478,16 @@ fn insert_image_record(
     database: &SqliteConnectionManager,
     content_hash: &str,
     saved: &crate::image::SavedImageAsset,
+    source_app: Option<&str>,
     captured_at: i64,
 ) -> Result<RecordId, AppError> {
     database.with_connection(|connection| {
         connection.execute(
-            "INSERT INTO clipboard_items (payload_type, content_type, content_hash, text_content, rich_content, preview_text, search_text, source_app, file_count, payload_bytes, created_at, last_used_at) VALUES ('image', 'image', ?1, NULL, NULL, ?2, ?2, NULL, 0, ?3, ?4, ?4)",
+            "INSERT INTO clipboard_items (payload_type, content_type, content_hash, text_content, rich_content, preview_text, search_text, source_app, file_count, payload_bytes, created_at, last_used_at) VALUES ('image', 'image', ?1, NULL, NULL, ?2, ?2, ?3, 0, ?4, ?5, ?5)",
             params![
                 content_hash,
                 format!("图片 {}×{}", saved.pixel_width, saved.pixel_height),
+                source_app,
                 saved.byte_size,
                 captured_at
             ],
@@ -479,15 +508,17 @@ fn insert_files_record(
     content_type: ContentType,
     content_hash: &str,
     items: &[ClipboardFileItem],
+    source_app: Option<&str>,
     captured_at: i64,
 ) -> Result<ClipboardRecordSummary, AppError> {
     let record_id = database.with_connection(|connection| {
         connection.execute(
-            "INSERT INTO clipboard_items (payload_type, content_type, content_hash, text_content, rich_content, preview_text, search_text, source_app, file_count, payload_bytes, created_at, last_used_at) VALUES ('files', ?1, ?2, NULL, NULL, ?3, ?3, NULL, ?4, 0, ?5, ?5)",
+            "INSERT INTO clipboard_items (payload_type, content_type, content_hash, text_content, rich_content, preview_text, search_text, source_app, file_count, payload_bytes, created_at, last_used_at) VALUES ('files', ?1, ?2, NULL, NULL, ?3, ?3, ?4, ?5, 0, ?6, ?6)",
             params![
                 content_type.as_str(),
                 content_hash,
                 build_files_preview(items),
+                source_app,
                 items.len() as i64,
                 captured_at
             ],
@@ -567,19 +598,8 @@ fn detect_files_content_type(items: &[ClipboardFileItem]) -> ContentType {
         Some("mp4" | "mov" | "m4v" | "avi" | "mkv" | "webm") => ContentType::Video,
         Some("mp3" | "wav" | "aac" | "flac" | "m4a" | "ogg") => ContentType::Audio,
         Some(
-            "pdf"
-            | "md"
-            | "txt"
-            | "rtf"
-            | "doc"
-            | "docx"
-            | "xls"
-            | "xlsx"
-            | "ppt"
-            | "pptx"
-            | "pages"
-            | "numbers"
-            | "key",
+            "pdf" | "md" | "txt" | "rtf" | "doc" | "docx" | "xls" | "xlsx" | "ppt" | "pptx"
+            | "pages" | "numbers" | "key",
         ) => ContentType::Document,
         _ => ContentType::Files,
     }
@@ -588,13 +608,14 @@ fn detect_files_content_type(items: &[ClipboardFileItem]) -> ContentType {
 fn promote_record(
     database: &SqliteConnectionManager,
     id: RecordId,
+    source_app: Option<&str>,
     promoted_at: i64,
 ) -> Result<ClipboardRecordSummary, AppError> {
     database.with_connection(|connection| {
         connection
             .execute(
-                "UPDATE clipboard_items SET last_used_at = ?1 WHERE id = ?2",
-                params![promoted_at, id.value() as i64],
+                "UPDATE clipboard_items SET last_used_at = ?1, source_app = COALESCE(?2, source_app) WHERE id = ?3",
+                params![promoted_at, source_app, id.value() as i64],
             )
             .map_err(|error| AppError::Db(format!("promote record failed: {error}")))?;
         Ok(())
@@ -695,7 +716,7 @@ mod tests {
         let repository = context.repository();
 
         let result = repository
-            .capture_image(sample_image(64), 1_000)
+            .capture_image(sample_image(64), None, 1_000)
             .expect("image should be captured");
 
         assert_eq!(result.action, CaptureAction::Added);
@@ -733,7 +754,7 @@ mod tests {
         let context = TestContext::new("capture-image-finalize-ready");
         let repository = context.repository();
         let captured = repository
-            .capture_image(sample_image(72), 1_000)
+            .capture_image(sample_image(72), None, 1_000)
             .expect("image should be captured");
 
         let (reason, record) = repository
@@ -754,7 +775,7 @@ mod tests {
         let context = TestContext::new("capture-image-finalize-failed");
         let repository = context.repository();
         let captured = repository
-            .capture_image(sample_image(84), 1_000)
+            .capture_image(sample_image(84), None, 1_000)
             .expect("image should be captured");
         let detail = repository
             .get_detail(RecordId::new(captured.record.id))
@@ -782,10 +803,10 @@ mod tests {
         let repository = context.repository();
 
         let first = repository
-            .capture_image(sample_image(96), 1_000)
+            .capture_image(sample_image(96), None, 1_000)
             .expect("first image capture should succeed");
         let second = repository
-            .capture_image(sample_image(96), 2_000)
+            .capture_image(sample_image(96), None, 2_000)
             .expect("duplicate image capture should succeed");
 
         assert_eq!(first.action, CaptureAction::Added);
@@ -809,7 +830,7 @@ mod tests {
         let items = sample_file_items(&context.root_dir, "ordered");
 
         let result = repository
-            .capture_files(items.clone(), 1_000)
+            .capture_files(items.clone(), None, 1_000)
             .expect("files should be captured");
 
         assert_eq!(result.action, CaptureAction::Added);
@@ -853,23 +874,88 @@ mod tests {
     }
 
     #[test]
+    fn capture_text_persists_source_app() {
+        let context = TestContext::new("capture-text-source-app");
+        let repository = context.repository();
+
+        let result = repository
+            .capture_text(
+                "来自备忘录的文本".to_string(),
+                None,
+                Some("Notes".to_string()),
+                1_000,
+            )
+            .expect("text capture should succeed");
+
+        assert_eq!(result.record.source_app.as_deref(), Some("Notes"));
+
+        let detail = repository
+            .get_detail(RecordId::new(result.record.id))
+            .expect("detail query should succeed")
+            .expect("detail should exist");
+        assert_eq!(detail.source_app.as_deref(), Some("Notes"));
+    }
+
+    #[test]
+    fn capture_image_duplicate_updates_source_app_on_promote() {
+        let context = TestContext::new("capture-image-source-app-promote");
+        let repository = context.repository();
+
+        let first = repository
+            .capture_image(sample_image(97), Some("Preview".to_string()), 1_000)
+            .expect("first image capture should succeed");
+        let second = repository
+            .capture_image(sample_image(97), Some("Finder".to_string()), 2_000)
+            .expect("duplicate image capture should succeed");
+
+        assert_eq!(first.record.source_app.as_deref(), Some("Preview"));
+        assert_eq!(second.action, CaptureAction::Promoted);
+        assert_eq!(second.record.source_app.as_deref(), Some("Finder"));
+
+        let detail = repository
+            .get_detail(RecordId::new(first.record.id))
+            .expect("detail query should succeed")
+            .expect("detail should exist");
+        assert_eq!(detail.source_app.as_deref(), Some("Finder"));
+    }
+
+    #[test]
+    fn capture_files_persists_source_app() {
+        let context = TestContext::new("capture-files-source-app");
+        let repository = context.repository();
+        let items = sample_file_items(&context.root_dir, "source-app");
+
+        let result = repository
+            .capture_files(items, Some("Finder".to_string()), 1_000)
+            .expect("files capture should succeed");
+
+        assert_eq!(result.record.source_app.as_deref(), Some("Finder"));
+
+        let detail = repository
+            .get_detail(RecordId::new(result.record.id))
+            .expect("detail query should succeed")
+            .expect("detail should exist");
+        assert_eq!(detail.source_app.as_deref(), Some("Finder"));
+    }
+
+    #[test]
     fn mixed_duplicate_records_reuse_existing_ids_and_move_to_front() {
         let context = TestContext::new("mixed-duplicate-promote");
         let repository = context.repository();
         let file_items = sample_file_items(&context.root_dir, "mixed");
 
         let text_first = repository
-            .capture_text("alpha".to_string(), None, 1_000)
+            .capture_text("alpha".to_string(), None, None, 1_000)
             .expect("text should be captured");
         let image_first = repository
-            .capture_image(sample_image(90), 2_000)
+            .capture_image(sample_image(90), None, 2_000)
             .expect("image should be captured");
         let files_first = repository
-            .capture_files(file_items.clone(), 3_000)
+            .capture_files(file_items.clone(), None, 3_000)
             .expect("files should be captured");
 
         let text_second = repository
-            .capture_text("alpha".to_string(), None, 4_000)
+            .capture_text("alpha".to_string(), None, None, 4_000)
             .expect("duplicate text should be promoted");
         assert_eq!(text_second.action, CaptureAction::Promoted);
         assert_eq!(text_second.record.id, text_first.record.id);
@@ -887,7 +973,7 @@ mod tests {
         );
 
         let image_second = repository
-            .capture_image(sample_image(90), 5_000)
+            .capture_image(sample_image(90), None, 5_000)
             .expect("duplicate image should be promoted");
         assert_eq!(image_second.action, CaptureAction::Promoted);
         assert_eq!(image_second.record.id, image_first.record.id);
@@ -905,7 +991,7 @@ mod tests {
         );
 
         let files_second = repository
-            .capture_files(file_items, 6_000)
+            .capture_files(file_items, None, 6_000)
             .expect("duplicate files should be promoted");
         assert_eq!(files_second.action, CaptureAction::Promoted);
         assert_eq!(files_second.record.id, files_first.record.id);
@@ -929,16 +1015,20 @@ mod tests {
         let repository = context.repository();
 
         repository
-            .capture_text("第一条文本".to_string(), None, 1_000)
+            .capture_text("第一条文本".to_string(), None, None, 1_000)
             .expect("text capture should succeed");
         let image = repository
-            .capture_image(sample_image(48), 2_000)
+            .capture_image(sample_image(48), None, 2_000)
             .expect("image capture should succeed");
         let (_, finalized_record) = repository
             .finalize_pending_image(RecordId::new(image.record.id))
             .expect("thumbnail finalize should succeed");
         repository
-            .capture_files(sample_file_items(&context.root_dir, "clear-history"), 3_000)
+            .capture_files(
+                sample_file_items(&context.root_dir, "clear-history"),
+                None,
+                3_000,
+            )
             .expect("files capture should succeed");
 
         let detail = repository
@@ -975,7 +1065,7 @@ mod tests {
         let repository = context.repository();
 
         repository
-            .capture_text("旧文本".to_string(), None, 1_000)
+            .capture_text("旧文本".to_string(), None, None, 1_000)
             .expect("initial text capture should succeed");
 
         repository
@@ -983,7 +1073,7 @@ mod tests {
             .expect("clear history should succeed");
 
         let recaptured = repository
-            .capture_text("清空后的新文本".to_string(), None, 2_000)
+            .capture_text("清空后的新文本".to_string(), None, None, 2_000)
             .expect("recapture after clear history should succeed");
 
         let summaries = repository
@@ -1002,14 +1092,18 @@ mod tests {
         let repository = context.repository();
 
         let newer = repository
-            .capture_text("较新的文本".to_string(), None, 2_000)
+            .capture_text("较新的文本".to_string(), None, None, 2_000)
             .expect("newer text capture should succeed");
         let older = repository
-            .capture_text("较旧的文本".to_string(), None, 1_000)
+            .capture_text("较旧的文本".to_string(), None, None, 1_000)
             .expect("older text capture should succeed");
 
         let updated = repository
-            .update_text(RecordId::new(older.record.id), "较旧的文本-已编辑".to_string(), 3_000)
+            .update_text(
+                RecordId::new(older.record.id),
+                "较旧的文本-已编辑".to_string(),
+                3_000,
+            )
             .expect("text update should succeed");
 
         assert_eq!(updated.last_used_at, 1_000);
@@ -1032,10 +1126,10 @@ mod tests {
         let items = sample_file_items(&context.root_dir, "duplicate");
 
         let first = repository
-            .capture_files(items.clone(), 1_000)
+            .capture_files(items.clone(), None, 1_000)
             .expect("first files capture should succeed");
         let second = repository
-            .capture_files(items, 2_000)
+            .capture_files(items, None, 2_000)
             .expect("duplicate files capture should succeed");
 
         assert_eq!(first.action, CaptureAction::Added);
@@ -1182,10 +1276,7 @@ mod tests {
 
     #[test]
     fn detect_text_content_type_empty_string_is_text() {
-        assert_eq!(
-            super::detect_text_content_type(""),
-            ContentType::Text
-        );
+        assert_eq!(super::detect_text_content_type(""), ContentType::Text);
     }
 
     // ── detect_files_content_type tests ──
@@ -1279,10 +1370,7 @@ mod tests {
     fn detect_files_content_type_multiple_files_is_files() {
         let mut items = make_single_file_item("a.png");
         items.extend(make_single_file_item("b.mp4"));
-        assert_eq!(
-            super::detect_files_content_type(&items),
-            ContentType::Files
-        );
+        assert_eq!(super::detect_files_content_type(&items), ContentType::Files);
     }
 
     #[test]
@@ -1301,10 +1389,10 @@ mod tests {
         let repository = context.repository();
 
         repository
-            .capture_text("会议纪要 2026-03-10".to_string(), None, 1_000)
+            .capture_text("会议纪要 2026-03-10".to_string(), None, None, 1_000)
             .expect("text capture should succeed");
         repository
-            .capture_text("购物清单".to_string(), None, 2_000)
+            .capture_text("购物清单".to_string(), None, None, 2_000)
             .expect("text capture should succeed");
 
         let results = repository
@@ -1321,10 +1409,10 @@ mod tests {
         let repository = context.repository();
 
         repository
-            .capture_text("https://example.com".to_string(), None, 1_000)
+            .capture_text("https://example.com".to_string(), None, None, 1_000)
             .expect("link capture should succeed");
         repository
-            .capture_text("普通文本 example".to_string(), None, 2_000)
+            .capture_text("普通文本 example".to_string(), None, None, 2_000)
             .expect("text capture should succeed");
 
         let all_results = repository
@@ -1345,7 +1433,7 @@ mod tests {
         let repository = context.repository();
 
         repository
-            .capture_text("some text".to_string(), None, 1_000)
+            .capture_text("some text".to_string(), None, None, 1_000)
             .expect("text capture should succeed");
 
         let results = repository
@@ -1360,7 +1448,7 @@ mod tests {
         let repository = context.repository();
 
         repository
-            .capture_text("hello world".to_string(), None, 1_000)
+            .capture_text("hello world".to_string(), None, None, 1_000)
             .expect("text capture should succeed");
 
         let results = repository
@@ -1370,8 +1458,7 @@ mod tests {
     }
 
     fn unique_test_dir(suffix: &str) -> PathBuf {
-        static NEXT_TEST_ID: std::sync::atomic::AtomicU64 =
-            std::sync::atomic::AtomicU64::new(1);
+        static NEXT_TEST_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system time should be after unix epoch")

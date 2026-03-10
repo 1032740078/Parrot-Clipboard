@@ -8,8 +8,10 @@ import { guessLanguageExtension } from "./previewLanguage";
 
 interface PreviewEditorProps {
   value: string;
-  onChange: (value: string) => void;
+  onChange?: (value: string) => void;
   recordId: number | null;
+  readOnly?: boolean;
+  showSearchButton?: boolean;
 }
 
 const baseTheme = EditorView.theme({
@@ -81,7 +83,21 @@ const baseTheme = EditorView.theme({
   },
 });
 
-export const PreviewEditor = ({ value, onChange, recordId }: PreviewEditorProps) => {
+const supportsDrawSelection = (): boolean => {
+  if (typeof document === "undefined" || typeof document.createRange !== "function") {
+    return false;
+  }
+
+  return typeof document.createRange().getClientRects === "function";
+};
+
+export const PreviewEditor = ({
+  value,
+  onChange,
+  recordId,
+  readOnly = false,
+  showSearchButton = true,
+}: PreviewEditorProps) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
@@ -101,7 +117,7 @@ export const PreviewEditor = ({ value, onChange, recordId }: PreviewEditorProps)
     const langExt = guessLanguageExtension(value);
 
     const updateListener = EditorView.updateListener.of((update) => {
-      if (update.docChanged && !suppressNextUpdateRef.current) {
+      if (update.docChanged && !suppressNextUpdateRef.current && onChangeRef.current) {
         onChangeRef.current(update.state.doc.toString());
       }
       suppressNextUpdateRef.current = false;
@@ -110,7 +126,6 @@ export const PreviewEditor = ({ value, onChange, recordId }: PreviewEditorProps)
     const extensions = [
       lineNumbers(),
       highlightActiveLine(),
-      drawSelection(),
       history(),
       keymap.of([
         ...defaultKeymap,
@@ -123,6 +138,14 @@ export const PreviewEditor = ({ value, onChange, recordId }: PreviewEditorProps)
       updateListener,
       EditorView.lineWrapping,
     ];
+
+    if (supportsDrawSelection()) {
+      extensions.push(drawSelection());
+    }
+
+    if (readOnly) {
+      extensions.push(EditorState.readOnly.of(true), EditorView.editable.of(false));
+    }
 
     if (langExt) {
       extensions.push(langExt);
@@ -146,7 +169,7 @@ export const PreviewEditor = ({ value, onChange, recordId }: PreviewEditorProps)
     };
     // Only recreate editor when recordId changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recordId]);
+  }, [readOnly, recordId]);
 
   useEffect(() => {
     const view = viewRef.current;
@@ -167,16 +190,18 @@ export const PreviewEditor = ({ value, onChange, recordId }: PreviewEditorProps)
 
   return (
     <div className="relative flex h-full w-full flex-col">
-      <div className="flex h-8 shrink-0 items-center justify-end gap-2 border-b border-white/6 px-4">
-        <button
-          className="rounded px-2 py-0.5 text-[11px] text-slate-400 transition hover:bg-white/8 hover:text-white"
-          onClick={openSearch}
-          title="搜索与替换 (⌘F)"
-          type="button"
-        >
-          搜索/替换
-        </button>
-      </div>
+      {showSearchButton ? (
+        <div className="flex h-8 shrink-0 items-center justify-end gap-2 border-b border-white/6 px-4">
+          <button
+            className="rounded px-2 py-0.5 text-[11px] text-slate-400 transition hover:bg-white/8 hover:text-white"
+            onClick={openSearch}
+            title={readOnly ? "搜索 (⌘F)" : "搜索与替换 (⌘F)"}
+            type="button"
+          >
+            {readOnly ? "搜索" : "搜索/替换"}
+          </button>
+        </div>
+      ) : null}
       <div className="min-h-0 flex-1 overflow-hidden" ref={containerRef} />
     </div>
   );
