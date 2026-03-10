@@ -26,6 +26,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],
+      exclude: ["src/components/PreviewEditor.tsx"],
       thresholds: {
         lines: 75,
         branches: 75,

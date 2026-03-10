@@ -20,6 +20,7 @@ import {
 import type { ClipboardRecordDetail } from "../types/clipboard";
 import { isFileRecord, isImageRecord, isTextRecord } from "../types/clipboard";
 import { toPreviewSrc } from "./MainPanel/previewAsset";
+import { PreviewEditor } from "./PreviewEditor";
 
 const AUTO_SAVE_DELAY_MS = 400;
 const IMAGE_MIN_SCALE = 1;
@@ -452,22 +453,18 @@ export const PreviewWindow = () => {
 
       {status === "ready" && activeDetail && isTextRecord(activeDetail) ? (
         <>
-          <textarea
-            aria-label="预览文本编辑器"
-            autoFocus
-            className="h-full w-full resize-none border-0 bg-[#050505] px-8 py-8 text-[16px] leading-8 text-zinc-100 outline-none placeholder:text-zinc-600"
-            onChange={(event) => {
-              setDraftTextState({ recordId, value: event.target.value });
+          <PreviewEditor
+            onChange={(nextValue) => {
+              setDraftTextState({ recordId, value: nextValue });
               setSaveErrorState({ recordId, message: null });
             }}
-            placeholder="输入文本"
-            spellCheck={false}
+            recordId={recordId}
             value={visibleText}
           />
           {saveError ? (
             <div
               aria-live="polite"
-              className="pointer-events-none absolute right-4 top-4 max-w-[320px] rounded-full bg-rose-500/14 px-4 py-2 text-xs text-rose-100 backdrop-blur"
+              className="pointer-events-none absolute right-4 top-14 max-w-[320px] rounded-full bg-rose-500/14 px-4 py-2 text-xs text-rose-100 backdrop-blur"
             >
               {saveError}
             </div>

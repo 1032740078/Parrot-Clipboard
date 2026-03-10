@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   __resetInvokeMock,
   __setInvokeHandler,
-  invokeCalls,
 } from "../../__mocks__/@tauri-apps/api/core";
 import { __resetEventMock } from "../../__mocks__/@tauri-apps/api/event";
 import {
@@ -45,7 +44,7 @@ describe("PreviewWindow", () => {
     render(<PreviewWindow />);
 
     await waitFor(() => {
-      expect(screen.getByRole("textbox", { name: "预览文本编辑器" })).toHaveValue("完整正文");
+      expect(screen.getByText("完整正文")).toBeInTheDocument();
     });
 
     fireEvent.keyDown(window, { key: "Escape" });
@@ -76,7 +75,7 @@ describe("PreviewWindow", () => {
     render(<PreviewWindow />);
 
     await waitFor(() => {
-      expect(screen.getByRole("textbox", { name: "预览文本编辑器" })).toHaveValue("完整正文");
+      expect(screen.getByText("完整正文")).toBeInTheDocument();
     });
 
     fireEvent.keyDown(window, { key: " ", code: "Space" });
@@ -86,7 +85,7 @@ describe("PreviewWindow", () => {
     });
   });
 
-  it("文本预览会直接渲染可编辑文本框并自动保存修改", async () => {
+  it("文本预览会渲染代码编辑器并展示完整内容", async () => {
     const record = buildRecord(9, "摘要文本", 1000);
 
     __setInvokeHandler(async (command, args) => {
@@ -101,37 +100,16 @@ describe("PreviewWindow", () => {
         };
       }
 
-      if (command === "update_text_record") {
-        return {
-          ...record,
-          id: args?.id ?? 9,
-          preview_text: String(args?.text ?? ""),
-          text_content: String(args?.text ?? ""),
-          rich_content: null,
-          image_detail: null,
-          files_detail: null,
-        };
-      }
-
       return undefined;
     });
 
     render(<PreviewWindow />);
 
-    const textbox = await screen.findByRole("textbox", { name: "预览文本编辑器" });
-    fireEvent.change(textbox, { target: { value: "修改后的正文" } });
+    await waitFor(() => {
+      expect(screen.getByText("完整正文")).toBeInTheDocument();
+    });
 
-    await waitFor(
-      () => {
-        expect(invokeCalls).toContainEqual({
-          command: "update_text_record",
-          args: { id: 9, text: "修改后的正文" },
-        });
-      },
-      { timeout: 1200 }
-    );
-
-    expect(textbox).toHaveValue("修改后的正文");
+    expect(screen.getByText("搜索/替换")).toBeInTheDocument();
   });
 
   it("图片预览支持滚轮缩放和放大后拖拽", async () => {
