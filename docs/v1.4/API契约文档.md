@@ -17,7 +17,8 @@
 - API 必须显式区分 `payload_type` 与 `content_type`
 - 主面板搜索与筛选结果应由后端查询能力或统一查询服务提供，避免前后端搜索规则不一致
 - 文本预览的查找替换优先作为前端工作区能力，只有最终保存时才调用后端更新命令
-- `plain_text` 粘贴语义优先由 `payload_type` 决定；`video / audio / document` 只要底层属于 `files`，`Shift+Enter` 就输出文件路径列表
+- `plain_text` 粘贴语义优先由 `payload_type` 决定；`image / video / audio / document` 只要底层属于 `files`，`Shift+Enter` 就输出文件路径列表
+- 当复制的是单个文件且可稳定识别其媒体 / 文稿类型时，允许 `payload_type = files` 与更细的 `content_type` 并存
 
 ---
 
@@ -121,7 +122,7 @@ interface DisplayPlacementPayload {
 补充约定：
 
 - `paste_record(id, "plain_text")` 在 `payload_type = files` 时统一返回换行分隔的路径文本
-- 因此 `content_type = video / audio / document / files` 的记录，只要底层是文件集合，`Shift+Enter` 与“纯文本粘贴”菜单项都走路径列表输出
+- 因此 `content_type = image / video / audio / document / files` 的记录，只要底层是文件集合，`Shift+Enter` 与“纯文本粘贴”菜单项都走路径列表输出
 
 ### 3.2 建议新增命令：`search_records`
 

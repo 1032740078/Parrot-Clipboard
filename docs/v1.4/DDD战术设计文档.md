@@ -158,7 +158,7 @@
 
 | 服务 | 职责 |
 |------|------|
-| `RecordSemanticClassifierService` | 根据载荷、MIME、扩展名、URL 与文本特征推导语义类型 |
+| `RecordSemanticClassifierService` | 根据载荷、MIME、扩展名、URL 与文本特征推导语义类型，单个文件优先映射到 `image / video / audio / document` |
 | `PanelSearchService` | 负责模糊匹配、组合筛选与结果集排序 |
 | `TypeThemeService` | 为不同语义类型提供标题色、背景色与图标色令牌 |
 | `SourceAppIconResolveService` | 根据来源应用标识解析可展示图标，并处理降级 |
@@ -184,8 +184,10 @@
 1. `ClipboardCaptureContext` 接收原始载荷
 2. `RecordSemanticClassifierService` 判断 `payloadType`
 3. 再根据 URL、扩展名、MIME、文本特征推导 `semanticType`
-4. 发布 `RecordSemanticClassified`
-5. `ClipboardRecordAggregate` 写入摘要、搜索文本与语义类型
+4. 若 `payloadType = files` 且仅包含单个文件，则优先尝试映射到 `image / video / audio / document`
+5. 混合文件集合、目录集合或无法稳定判断时回退为 `files`
+6. 发布 `RecordSemanticClassified`
+7. `ClipboardRecordAggregate` 写入摘要、搜索文本与语义类型
 
 ### 4.2 主面板搜索与类型筛选
 
