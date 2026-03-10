@@ -126,7 +126,7 @@ const setupComponent = ({
         general: {
           theme: args?.theme as "light" | "dark" | "system",
           language: args?.language as string,
-          launch_at_login: Boolean(args?.launch_at_login),
+          launch_at_login: Boolean(args?.launchAtLogin),
         },
       };
       return currentSnapshot;
@@ -136,12 +136,12 @@ const setupComponent = ({
       currentSnapshot = {
         ...currentSnapshot,
         history: {
-          max_text_records: Number(args?.max_text_records),
-          max_image_records: Number(args?.max_image_records),
-          max_file_records: Number(args?.max_file_records),
-          max_image_storage_mb: Number(args?.max_image_storage_mb),
-          capture_images: Boolean(args?.capture_images),
-          capture_files: Boolean(args?.capture_files),
+          max_text_records: Number(args?.maxTextRecords),
+          max_image_records: Number(args?.maxImageRecords),
+          max_file_records: Number(args?.maxFileRecords),
+          max_image_storage_mb: Number(args?.maxImageStorageMb),
+          capture_images: Boolean(args?.captureImages),
+          capture_files: Boolean(args?.captureFiles),
         },
       };
       return currentSnapshot;
@@ -176,13 +176,13 @@ const setupComponent = ({
     }
 
     if (command === "create_blacklist_rule") {
-      const normalizedIdentifier = String(args?.app_identifier ?? "")
+      const normalizedIdentifier = String(args?.appIdentifier ?? "")
         .trim()
         .toLowerCase();
       const duplicated = currentSnapshot.privacy.blacklist_rules.some(
         (rule) =>
           rule.platform === args?.platform &&
-          rule.match_type === args?.match_type &&
+          rule.match_type === args?.matchType &&
           rule.app_identifier.trim().toLowerCase() === normalizedIdentifier
       );
       if (duplicated) {
@@ -196,11 +196,11 @@ const setupComponent = ({
             ...currentSnapshot.privacy.blacklist_rules,
             {
               id: `rule-${currentSnapshot.privacy.blacklist_rules.length + 1}`,
-              app_name: String(args?.app_name ?? ""),
+              app_name: String(args?.appName ?? ""),
               platform:
                 args?.platform as SettingsSnapshot["privacy"]["blacklist_rules"][number]["platform"],
               match_type:
-                args?.match_type as SettingsSnapshot["privacy"]["blacklist_rules"][number]["match_type"],
+                args?.matchType as SettingsSnapshot["privacy"]["blacklist_rules"][number]["match_type"],
               app_identifier: normalizedIdentifier,
               enabled: true,
               created_at: 1700000000000,
@@ -220,10 +220,10 @@ const setupComponent = ({
             rule.id === args?.id
               ? {
                   ...rule,
-                  app_name: String(args?.app_name ?? rule.app_name),
+                  app_name: String(args?.appName ?? rule.app_name),
                   platform: args?.platform as typeof rule.platform,
-                  match_type: args?.match_type as typeof rule.match_type,
-                  app_identifier: String(args?.app_identifier ?? rule.app_identifier)
+                  match_type: args?.matchType as typeof rule.match_type,
+                  app_identifier: String(args?.appIdentifier ?? rule.app_identifier)
                     .trim()
                     .toLowerCase(),
                   enabled: Boolean(args?.enabled),
@@ -350,7 +350,7 @@ describe("components/SettingsWindowPlaceholder", () => {
         (call) =>
           call.command === "update_general_settings" &&
           call.args?.theme === "light" &&
-          call.args?.launch_at_login === true
+          call.args?.launchAtLogin === true
       )
     ).toBe(true);
   });
@@ -368,7 +368,7 @@ describe("components/SettingsWindowPlaceholder", () => {
     expect(await screen.findByText("记录与存储设置已保存")).toBeInTheDocument();
     expect(
       invokeCalls.some(
-        (call) => call.command === "update_history_settings" && call.args?.max_text_records === 120
+        (call) => call.command === "update_history_settings" && call.args?.maxTextRecords === 120
       )
     ).toBe(true);
   });
@@ -398,6 +398,23 @@ describe("components/SettingsWindowPlaceholder", () => {
     await act(async () => {
       await expect(__emitMockCloseRequested()).resolves.toBe(true);
     });
+    expect(await screen.findByText("关闭前放弃未保存修改？")).toBeInTheDocument();
+    expect(__getMockCloseCallCount()).toBe(0);
+
+    fireEvent.click(screen.getByTestId("confirm-dialog-confirm"));
+
+    await waitFor(() => {
+      expect(__getMockCloseCallCount()).toBe(1);
+    });
+  });
+
+  it("点击顶部关闭按钮时也会走未保存改动拦截", async () => {
+    setupComponent();
+    await screen.findByText("设置中心");
+
+    fireEvent.click(screen.getByLabelText("深色"));
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+
     expect(await screen.findByText("关闭前放弃未保存修改？")).toBeInTheDocument();
     expect(__getMockCloseCallCount()).toBe(0);
 
@@ -536,8 +553,8 @@ describe("components/SettingsWindowPlaceholder", () => {
         (call) =>
           call.command === "update_blacklist_rule" &&
           call.args?.id === "rule-1" &&
-          call.args?.app_name === "企业微信" &&
-          call.args?.app_identifier === "wxwork.exe"
+          call.args?.appName === "企业微信" &&
+          call.args?.appIdentifier === "wxwork.exe"
       )
     ).toBe(true);
     expect(getCurrentSnapshot().privacy.blacklist_rules[0]?.app_name).toBe("企业微信");
@@ -561,8 +578,8 @@ describe("components/SettingsWindowPlaceholder", () => {
       invokeCalls.some(
         (call) =>
           call.command === "create_blacklist_rule" &&
-          call.args?.app_name === "Terminal" &&
-          call.args?.app_identifier === "org.wezfurlong.wezterm"
+          call.args?.appName === "Terminal" &&
+          call.args?.appIdentifier === "org.wezfurlong.wezterm"
       )
     ).toBe(true);
     expect(getCurrentSnapshot().privacy.blacklist_rules).toHaveLength(1);

@@ -352,7 +352,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(invokeCalls).toContainEqual({
         command: "clear_history",
-        args: { confirm_token: "token-1" },
+        args: { confirmToken: "token-1" },
       });
     });
 

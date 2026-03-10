@@ -1,4 +1,3 @@
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { getPlatformCapabilities } from "../api/commands";
@@ -25,6 +24,7 @@ import type {
   ThemeMode,
 } from "../api/types";
 import { useThemeSync } from "../hooks/useThemeSync";
+import { useTauriWindowClose } from "../hooks/useTauriWindowClose";
 import { ConfirmDialog } from "./common/ConfirmDialog";
 import { Toast } from "./common/Toast";
 
@@ -626,7 +626,6 @@ export const SettingsWindowPlaceholder = () => {
   const privacyFormValid =
     privacyFormDraft.appName.trim().length > 0 && privacyFormDraft.appIdentifier.trim().length > 0;
   const hasUnsavedChangesRef = useRef(hasUnsavedChanges);
-  const forceCloseRef = useRef(false);
   const canSaveShortcut =
     activeSection === "shortcut" &&
     currentSectionDirty &&
@@ -640,6 +639,15 @@ export const SettingsWindowPlaceholder = () => {
     canSavePrivacy;
 
   useThemeSync(savedDrafts.general.theme);
+  const { forceCloseWindow, requestWindowClose, subscribeCloseRequested } = useTauriWindowClose({
+    shouldPreventClose: () => hasUnsavedChangesRef.current,
+    onPreventClose: () => {
+      setPendingAction({ type: "close-window" });
+    },
+    onCloseError: (error) => {
+      logger.error("关闭设置窗口失败", { error: normalizeError(error) });
+    },
+  });
 
   useEffect(() => {
     hasUnsavedChangesRef.current = hasUnsavedChanges;
@@ -694,20 +702,7 @@ export const SettingsWindowPlaceholder = () => {
 
     const bindCloseGuard = async (): Promise<void> => {
       try {
-        const currentWindow = getCurrentWindow();
-        unlistenWindow = await currentWindow.onCloseRequested((event) => {
-          if (forceCloseRef.current) {
-            forceCloseRef.current = false;
-            return;
-          }
-
-          if (!hasUnsavedChangesRef.current) {
-            return;
-          }
-
-          event.preventDefault();
-          setPendingAction({ type: "close-window" });
-        });
+        unlistenWindow = await subscribeCloseRequested();
       } catch (error) {
         logger.warn("设置窗口关闭拦截绑定失败", { error: normalizeError(error) });
       }
@@ -718,7 +713,7 @@ export const SettingsWindowPlaceholder = () => {
     return () => {
       unlistenWindow?.();
     };
-  }, []);
+  }, [subscribeCloseRequested]);
 
   useEffect(() => {
     if (activeSection !== "shortcut" || !isShortcutRecording) {
@@ -856,14 +851,16 @@ export const SettingsWindowPlaceholder = () => {
       setPrivacyFormDraft(privacyFormBaseline);
       setPrivacyFormError(null);
       setPendingAction(null);
-      forceCloseRef.current = true;
       try {
-        await getCurrentWindow().close();
-      } catch (error) {
-        forceCloseRef.current = false;
-        logger.error("关闭设置窗口失败", { error: normalizeError(error) });
-      }
+        await forceCloseWindow();
+      } catch {}
     }
+  };
+
+  const handleRequestCloseWindow = async (): Promise<void> => {
+    try {
+      await requestWindowClose();
+    } catch {}
   };
 
   const applyShortcutCandidate = async (candidate: string): Promise<void> => {
@@ -1571,7 +1568,9 @@ export const SettingsWindowPlaceholder = () => {
         <span className="text-xs font-medium tracking-wide text-slate-400">设置</span>
         <button
           className="rounded-md px-2 py-1 text-xs text-slate-400 transition hover:bg-white/10 hover:text-white"
-          onClick={() => window.close()}
+          onClick={() => {
+            void handleRequestCloseWindow();
+          }}
           type="button"
         >
           关闭

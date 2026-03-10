@@ -16,6 +16,7 @@ import type {
   UpdateCheckResult,
 } from "../api/types";
 import { useThemeSync } from "../hooks/useThemeSync";
+import { useTauriWindowClose } from "../hooks/useTauriWindowClose";
 import { useSettingsStore } from "../stores";
 
 const LICENSE_ITEMS = [
@@ -124,6 +125,11 @@ export const AboutWindow = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useThemeSync(themeMode);
+  const { requestWindowClose } = useTauriWindowClose({
+    onCloseError: (error) => {
+      logger.error("关闭关于窗口失败", { error: normalizeError(error) });
+    },
+  });
 
   const loadData = useCallback(async (): Promise<void> => {
     setIsLoading(true);
@@ -290,7 +296,9 @@ export const AboutWindow = () => {
         <span className="text-xs font-medium tracking-wide text-slate-400">关于</span>
         <button
           className="rounded-md px-2 py-1 text-xs text-slate-400 transition hover:bg-white/10 hover:text-white"
-          onClick={() => window.close()}
+          onClick={() => {
+            void requestWindowClose();
+          }}
           type="button"
         >
           关闭

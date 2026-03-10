@@ -1,4 +1,3 @@
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   useEffect,
   useEffectEvent,
@@ -13,6 +12,7 @@ import { updateTextRecord } from "../api/commands";
 import { getErrorMessage } from "../api/errorHandler";
 import { onPreviewWindowRequested, onRecordDeleted } from "../api/events";
 import { logger, normalizeError } from "../api/logger";
+import { useTauriWindowClose } from "../hooks/useTauriWindowClose";
 import {
   primeRecordPreviewDetailCache,
   useRecordPreviewDetail,
@@ -94,7 +94,6 @@ export const PreviewWindow = () => {
   const saveTimerRef = useRef<number | null>(null);
   const savePromiseRef = useRef<Promise<void> | null>(null);
   const saveTextInFlightRef = useRef<string | null>(null);
-  const bypassCloseHandlerRef = useRef(false);
   const imageStageRef = useRef<HTMLDivElement | null>(null);
   const imageDragOriginRef = useRef<{
     mouseX: number;
@@ -183,15 +182,11 @@ export const PreviewWindow = () => {
     }
   });
 
-  const requestCloseWindow = useEffectEvent(async (): Promise<void> => {
-    await flushPendingTextSave();
-    bypassCloseHandlerRef.current = true;
-    try {
-      await getCurrentWindow().close();
-    } catch (error) {
-      bypassCloseHandlerRef.current = false;
-      throw error;
-    }
+  const { requestWindowClose, subscribeCloseRequested } = useTauriWindowClose({
+    beforeClose: flushPendingTextSave,
+    onCloseError: (error) => {
+      logger.error("关闭预览窗口失败", { error: normalizeError(error) });
+    },
   });
 
   useEffect(() => {
@@ -212,19 +207,11 @@ export const PreviewWindow = () => {
 
         unlistenRecordDeleted = await onRecordDeleted((payload) => {
           if (payload.id === currentRecordIdRef.current) {
-            void requestCloseWindow();
+            void requestWindowClose();
           }
         });
 
-        unlistenCloseRequested = await getCurrentWindow().onCloseRequested(async (event) => {
-          if (bypassCloseHandlerRef.current) {
-            bypassCloseHandlerRef.current = false;
-            return;
-          }
-
-          event.preventDefault();
-          await requestCloseWindow();
-        });
+        unlistenCloseRequested = await subscribeCloseRequested();
       } catch (error) {
         logger.error("订阅预览窗口事件失败", { error: normalizeError(error) });
       }
@@ -244,7 +231,7 @@ export const PreviewWindow = () => {
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (event.key === "Escape" || event.code === "Space") {
         event.preventDefault();
-        void requestCloseWindow();
+        void requestWindowClose();
       }
     };
 
@@ -432,7 +419,9 @@ export const PreviewWindow = () => {
         <span className="text-xs font-medium tracking-wide text-slate-400">预览</span>
         <button
           className="rounded-md px-2 py-1 text-xs text-slate-400 transition hover:bg-white/10 hover:text-white"
-          onClick={() => window.close()}
+          onClick={() => {
+            void requestWindowClose();
+          }}
           type="button"
         >
           关闭

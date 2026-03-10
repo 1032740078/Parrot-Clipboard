@@ -229,7 +229,7 @@ describe("api/commands", () => {
 
     expect(invokeCalls[0]).toEqual({
       command: "search_records",
-      args: { query: "meeting", type_filter: "document", limit: 50 },
+      args: { query: "meeting", typeFilter: "document", limit: 50 },
     });
   });
 
@@ -304,7 +304,7 @@ describe("api/commands", () => {
       { command: "get_runtime_status", args: undefined },
       { command: "get_platform_capabilities", args: undefined },
       { command: "set_monitoring", args: { enabled: false } },
-      { command: "clear_history", args: { confirm_token: "token-1" } },
+      { command: "clear_history", args: { confirmToken: "token-1" } },
       { command: "get_log_directory", args: undefined },
     ]);
   });

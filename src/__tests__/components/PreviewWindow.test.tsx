@@ -85,6 +85,37 @@ describe("PreviewWindow", () => {
     });
   });
 
+  it("点击顶部关闭按钮会关闭当前预览窗口", async () => {
+    const record = buildRecord(9, "摘要文本", 1000);
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "get_record_detail") {
+        return {
+          ...record,
+          id: args?.id ?? 9,
+          text_content: "完整正文",
+          rich_content: null,
+          image_detail: null,
+          files_detail: null,
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<PreviewWindow />);
+
+    await waitFor(() => {
+      expect(screen.getByText("完整正文")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+
+    await waitFor(() => {
+      expect(__getMockCloseCallCount()).toBe(1);
+    });
+  });
+
   it("文本预览会渲染代码编辑器并展示完整内容", async () => {
     const record = buildRecord(9, "摘要文本", 1000);
 

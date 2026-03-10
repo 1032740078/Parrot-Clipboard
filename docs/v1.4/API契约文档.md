@@ -128,14 +128,14 @@ interface DisplayPlacementPayload {
 
 | Command | 输入 | 输出 | 说明 |
 |---------|------|------|------|
-| `search_records` | `query`、`type_filter`、`limit`、`offset?` | `ClipboardRecordSummary[]` | 按模糊搜索与类型筛选查询历史记录 |
+| `search_records` | `query`、`typeFilter`、`limit`、`offset?` | `ClipboardRecordSummary[]` | 按模糊搜索与类型筛选查询历史记录 |
 
 输入示例：
 
 ```ts
 {
   query: "github action",
-  type_filter: "link",
+  typeFilter: "link",
   limit: 100,
   offset: 0
 }

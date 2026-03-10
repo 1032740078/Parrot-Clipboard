@@ -58,7 +58,7 @@ export const searchRecords = async (
   try {
     const records = await invoke<unknown>("search_records", {
       query,
-      type_filter: typeFilter ?? null,
+      typeFilter: typeFilter ?? null,
       limit,
     });
     if (!Array.isArray(records)) {
@@ -231,7 +231,7 @@ export const getPlatformCapabilities = async (): Promise<PlatformCapabilities> =
 
 export const clearHistory = async (confirmToken: string): Promise<ClearHistoryResult> => {
   try {
-    return await invoke<ClearHistoryResult>("clear_history", { confirm_token: confirmToken });
+    return await invoke<ClearHistoryResult>("clear_history", { confirmToken });
   } catch (error) {
     logger.error("清空历史失败", { error: normalizeError(error) });
     throw error;
