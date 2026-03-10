@@ -678,7 +678,7 @@ mod tests {
 
     use crate::{
         clipboard::{
-            payload::ClipboardImageData,
+            payload::{ClipboardFileItem, ClipboardImageData},
             query::ThumbnailState,
             types::{ContentType, RecordId},
         },
@@ -1128,6 +1128,245 @@ mod tests {
             crate::clipboard::payload::ClipboardFileItem::from_path(directory),
             crate::clipboard::payload::ClipboardFileItem::from_path(archive_file),
         ]
+    }
+
+    // ── detect_text_content_type tests ──
+
+    #[test]
+    fn detect_text_content_type_identifies_http_url_as_link() {
+        assert_eq!(
+            super::detect_text_content_type("http://example.com"),
+            ContentType::Link
+        );
+    }
+
+    #[test]
+    fn detect_text_content_type_identifies_https_url_as_link() {
+        assert_eq!(
+            super::detect_text_content_type("https://example.com/path?q=1"),
+            ContentType::Link
+        );
+    }
+
+    #[test]
+    fn detect_text_content_type_trims_whitespace_before_detection() {
+        assert_eq!(
+            super::detect_text_content_type("  https://example.com  "),
+            ContentType::Link
+        );
+    }
+
+    #[test]
+    fn detect_text_content_type_case_insensitive_scheme() {
+        assert_eq!(
+            super::detect_text_content_type("HTTPS://EXAMPLE.COM"),
+            ContentType::Link
+        );
+    }
+
+    #[test]
+    fn detect_text_content_type_url_with_spaces_is_text() {
+        assert_eq!(
+            super::detect_text_content_type("https://example.com some extra text"),
+            ContentType::Text
+        );
+    }
+
+    #[test]
+    fn detect_text_content_type_plain_text_is_text() {
+        assert_eq!(
+            super::detect_text_content_type("hello world"),
+            ContentType::Text
+        );
+    }
+
+    #[test]
+    fn detect_text_content_type_empty_string_is_text() {
+        assert_eq!(
+            super::detect_text_content_type(""),
+            ContentType::Text
+        );
+    }
+
+    // ── detect_files_content_type tests ──
+
+    fn make_single_file_item(name: &str) -> Vec<ClipboardFileItem> {
+        let extension = std::path::Path::new(name)
+            .extension()
+            .map(|ext| ext.to_string_lossy().to_string());
+        vec![ClipboardFileItem {
+            path: PathBuf::from(name),
+            display_name: name.to_string(),
+            entry_type: crate::clipboard::query::FileEntryType::File,
+            extension,
+        }]
+    }
+
+    fn make_single_directory_item() -> Vec<ClipboardFileItem> {
+        vec![ClipboardFileItem {
+            path: PathBuf::from("/tmp/folder"),
+            display_name: "folder".to_string(),
+            entry_type: crate::clipboard::query::FileEntryType::Directory,
+            extension: None,
+        }]
+    }
+
+    #[test]
+    fn detect_files_content_type_single_png_is_image() {
+        assert_eq!(
+            super::detect_files_content_type(&make_single_file_item("photo.png")),
+            ContentType::Image
+        );
+    }
+
+    #[test]
+    fn detect_files_content_type_single_heic_is_image() {
+        assert_eq!(
+            super::detect_files_content_type(&make_single_file_item("photo.heic")),
+            ContentType::Image
+        );
+    }
+
+    #[test]
+    fn detect_files_content_type_single_mp4_is_video() {
+        assert_eq!(
+            super::detect_files_content_type(&make_single_file_item("clip.mp4")),
+            ContentType::Video
+        );
+    }
+
+    #[test]
+    fn detect_files_content_type_single_mp3_is_audio() {
+        assert_eq!(
+            super::detect_files_content_type(&make_single_file_item("song.mp3")),
+            ContentType::Audio
+        );
+    }
+
+    #[test]
+    fn detect_files_content_type_single_pdf_is_document() {
+        assert_eq!(
+            super::detect_files_content_type(&make_single_file_item("report.pdf")),
+            ContentType::Document
+        );
+    }
+
+    #[test]
+    fn detect_files_content_type_single_docx_is_document() {
+        assert_eq!(
+            super::detect_files_content_type(&make_single_file_item("essay.docx")),
+            ContentType::Document
+        );
+    }
+
+    #[test]
+    fn detect_files_content_type_single_unknown_ext_is_files() {
+        assert_eq!(
+            super::detect_files_content_type(&make_single_file_item("data.bin")),
+            ContentType::Files
+        );
+    }
+
+    #[test]
+    fn detect_files_content_type_single_directory_is_files() {
+        assert_eq!(
+            super::detect_files_content_type(&make_single_directory_item()),
+            ContentType::Files
+        );
+    }
+
+    #[test]
+    fn detect_files_content_type_multiple_files_is_files() {
+        let mut items = make_single_file_item("a.png");
+        items.extend(make_single_file_item("b.mp4"));
+        assert_eq!(
+            super::detect_files_content_type(&items),
+            ContentType::Files
+        );
+    }
+
+    #[test]
+    fn detect_files_content_type_extension_case_insensitive() {
+        assert_eq!(
+            super::detect_files_content_type(&make_single_file_item("photo.JPG")),
+            ContentType::Image
+        );
+    }
+
+    // ── search_summaries tests ──
+
+    #[test]
+    fn search_summaries_returns_matching_text_records() {
+        let context = TestContext::new("search-text-match");
+        let repository = context.repository();
+
+        repository
+            .capture_text("会议纪要 2026-03-10".to_string(), None, 1_000)
+            .expect("text capture should succeed");
+        repository
+            .capture_text("购物清单".to_string(), None, 2_000)
+            .expect("text capture should succeed");
+
+        let results = repository
+            .search_summaries("会议", None, 10)
+            .expect("search should succeed");
+
+        assert_eq!(results.len(), 1);
+        assert!(results[0].preview_text.contains("会议"));
+    }
+
+    #[test]
+    fn search_summaries_with_type_filter_narrows_results() {
+        let context = TestContext::new("search-type-filter");
+        let repository = context.repository();
+
+        repository
+            .capture_text("https://example.com".to_string(), None, 1_000)
+            .expect("link capture should succeed");
+        repository
+            .capture_text("普通文本 example".to_string(), None, 2_000)
+            .expect("text capture should succeed");
+
+        let all_results = repository
+            .search_summaries("example", None, 10)
+            .expect("search should succeed");
+        assert_eq!(all_results.len(), 2);
+
+        let link_results = repository
+            .search_summaries("example", Some(ContentType::Link), 10)
+            .expect("search with filter should succeed");
+        assert_eq!(link_results.len(), 1);
+        assert_eq!(link_results[0].content_type, ContentType::Link);
+    }
+
+    #[test]
+    fn search_summaries_empty_query_returns_all() {
+        let context = TestContext::new("search-empty-query");
+        let repository = context.repository();
+
+        repository
+            .capture_text("some text".to_string(), None, 1_000)
+            .expect("text capture should succeed");
+
+        let results = repository
+            .search_summaries("", None, 10)
+            .expect("empty search should succeed");
+        assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn search_summaries_no_match_returns_empty() {
+        let context = TestContext::new("search-no-match");
+        let repository = context.repository();
+
+        repository
+            .capture_text("hello world".to_string(), None, 1_000)
+            .expect("text capture should succeed");
+
+        let results = repository
+            .search_summaries("不存在的关键字", None, 10)
+            .expect("search should succeed");
+        assert!(results.is_empty());
     }
 
     fn unique_test_dir(suffix: &str) -> PathBuf {
