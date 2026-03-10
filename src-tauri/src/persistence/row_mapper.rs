@@ -256,8 +256,9 @@ fn build_files_meta(
 
     let count = usize::try_from(file_count)
         .map_err(|_| AppError::Db(format!("invalid file_count `{file_count}` in sqlite row")))?;
-    let primary_name = primary_name
-        .ok_or_else(|| AppError::Db("missing primary_name for files record".to_string()))?;
+
+    // Defensive: use fallback if primary_name is missing (data inconsistency)
+    let primary_name = primary_name.unwrap_or_else(|| "(未知文件)".to_string());
 
     Ok(Some(FilesMeta {
         count,
