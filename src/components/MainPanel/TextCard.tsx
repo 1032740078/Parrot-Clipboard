@@ -1,7 +1,12 @@
-import { getRecordPreviewText, type ClipboardRecord } from "../../types/clipboard";
+import {
+  getContentTypeLabel,
+  getRecordPreviewText,
+  type ClipboardRecord,
+} from "../../types/clipboard";
 import { PreviewStateBadge } from "./PreviewStateBadge";
 import { QuickSelectBadge } from "./QuickSelectBadge";
-import { CARD_HEADER_BASE_CLASS_NAME, getCardAppearanceClassName } from "./cardAppearance";
+import { getCardAppearanceClassName, getCardHeaderClassName } from "./cardAppearance";
+import { SourceAppIcon } from "./SourceAppIcon";
 import { formatRelativeTime } from "./time";
 
 interface TextCardProps {
@@ -42,21 +47,22 @@ export const TextCard = ({
     >
       <PreviewStateBadge visible={isPreviewing} />
 
-      <header className={`${CARD_HEADER_BASE_CLASS_NAME} bg-brand text-brand-foreground`}>
-        <QuickSelectBadge slot={displaySlot} />
-        <span>文本</span>
+      <header className={getCardHeaderClassName(record.content_type)}>
+        <div className="flex items-center gap-2">
+          <QuickSelectBadge slot={displaySlot} />
+          <span>{getContentTypeLabel(record.content_type)}</span>
+        </div>
+        <SourceAppIcon sourceApp={record.source_app} />
       </header>
-
-      <div className="px-3 pt-2 text-xs text-[#8E8E93]">
-        {formatRelativeTime(record.created_at)}
-      </div>
 
       <div className="flex-1 px-3 pt-2 text-sm leading-5 text-white" style={previewStyle}>
         {previewText}
       </div>
 
-      <footer className="flex h-7 items-center justify-between px-3 text-[11px] text-slate-300">
+      <footer className="flex h-8 items-center justify-center gap-3 px-3 text-[11px] text-slate-400">
         <span>{charCount} 字符</span>
+        <span>·</span>
+        <span>{formatRelativeTime(record.created_at)}</span>
       </footer>
     </article>
   );

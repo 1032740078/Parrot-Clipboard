@@ -2,7 +2,13 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useMemo, useState } from "react";
 
 import { usePreviewOverlay } from "../../hooks/usePreviewOverlay";
-import { isFileRecord, isImageRecord, isTextRecord } from "../../types/clipboard";
+import {
+  getContentTypeLabel,
+  isFileRecord,
+  isImageRecord,
+  isTextRecord,
+} from "../../types/clipboard";
+import { detectHighlightedCode } from "../codeHighlight";
 import { prefersReducedMotion } from "./motion";
 import { toPreviewSrc } from "./previewAsset";
 import { formatRelativeTime } from "./time";
@@ -29,12 +35,6 @@ const cardMotion = {
   },
 } as const;
 
-const contentTypeLabelMap = {
-  text: "文本",
-  image: "图片",
-  files: "文件",
-} as const;
-
 export const PreviewOverlay = () => {
   const { previewOverlay, record, detail, errorMessage, closePreview } = usePreviewOverlay();
   const reducedMotion = prefersReducedMotion();
@@ -47,6 +47,14 @@ export const PreviewOverlay = () => {
 
     return toPreviewSrc(detail?.image_detail?.original_path ?? record.image_meta?.thumbnail_path ?? null);
   }, [detail?.image_detail?.original_path, record]);
+  const textContent = detail?.text_content ?? record?.text_content ?? record?.preview_text ?? "";
+  const highlightedCode = useMemo(() => {
+    if (!record || !isTextRecord(record)) {
+      return null;
+    }
+
+    return detectHighlightedCode(textContent);
+  }, [record, textContent]);
 
   if (!previewOverlay || !record) {
     return null;
@@ -71,7 +79,7 @@ export const PreviewOverlay = () => {
     : cardMotion;
 
   const title = record.preview_text;
-  const typeLabel = contentTypeLabelMap[record.content_type];
+  const typeLabel = getContentTypeLabel(record.content_type);
   const sourceApp = record.source_app ?? "未知来源";
 
   return (
@@ -150,12 +158,37 @@ export const PreviewOverlay = () => {
             ) : null}
 
             {previewOverlay.status === "ready" && isTextRecord(record) ? (
-              <div
-                className="rounded-3xl border border-white/10 bg-white/[0.03] p-6 text-[15px] leading-7 text-slate-100 whitespace-pre-wrap break-words"
-                data-testid="preview-overlay-text-content"
-              >
-                {detail?.text_content ?? record.text_content ?? record.preview_text}
-              </div>
+              highlightedCode ? (
+                <div
+                  className="preview-code-surface h-[min(56vh,520px)] min-h-[320px] overflow-hidden rounded-3xl border border-cyan-300/12 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
+                  data-testid="preview-overlay-code-content"
+                >
+                  <div className="preview-code-toolbar flex items-center justify-between gap-3 border-b border-white/8 px-5 py-3">
+                    <span className="text-xs tracking-[0.18em] text-slate-400">代码预览</span>
+                    <span
+                      className="rounded-full border border-cyan-300/18 bg-cyan-300/10 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.16em] text-cyan-100"
+                      data-testid="preview-overlay-code-language"
+                    >
+                      {highlightedCode.language}
+                    </span>
+                  </div>
+                  <div className="preview-code-scroll h-[calc(100%-49px)] overflow-auto px-5 py-5">
+                    <pre className="m-0 min-h-full">
+                      <code
+                        className={`hljs language-${highlightedCode.language}`}
+                        dangerouslySetInnerHTML={{ __html: highlightedCode.html }}
+                      />
+                    </pre>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  className="rounded-3xl border border-white/10 bg-white/[0.03] p-6 text-[15px] leading-7 text-slate-100 whitespace-pre-wrap break-words"
+                  data-testid="preview-overlay-text-content"
+                >
+                  {textContent}
+                </div>
+              )
             ) : null}
 
             {previewOverlay.status === "ready" && isImageRecord(record) ? (

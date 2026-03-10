@@ -15,13 +15,13 @@ impl RecordId {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum ContentType {
+pub enum PayloadType {
     Text,
     Image,
     Files,
 }
 
-impl ContentType {
+impl PayloadType {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Text => "text",
@@ -35,6 +35,45 @@ impl ContentType {
             "text" => Some(Self::Text),
             "image" => Some(Self::Image),
             "files" => Some(Self::Files),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ContentType {
+    Text,
+    Image,
+    Files,
+    Link,
+    Video,
+    Audio,
+    Document,
+}
+
+impl ContentType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Image => "image",
+            Self::Files => "files",
+            Self::Link => "link",
+            Self::Video => "video",
+            Self::Audio => "audio",
+            Self::Document => "document",
+        }
+    }
+
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "text" => Some(Self::Text),
+            "image" => Some(Self::Image),
+            "files" => Some(Self::Files),
+            "link" => Some(Self::Link),
+            "video" => Some(Self::Video),
+            "audio" => Some(Self::Audio),
+            "document" => Some(Self::Document),
             _ => None,
         }
     }

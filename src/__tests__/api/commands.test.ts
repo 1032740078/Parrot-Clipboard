@@ -13,8 +13,10 @@ import {
   getPlatformCapabilities,
   getRuntimeStatus,
   getRecordDetail,
+  getSourceAppIconPng,
   getRecords,
   getRecordSummaries,
+  searchRecords,
   hidePanel,
   pasteRecord,
   pasteRecordResult,
@@ -24,6 +26,7 @@ import {
 
 const summaryRecord = {
   id: 2,
+  payload_type: "text" as const,
   content_type: "text" as const,
   preview_text: "B",
   source_app: "Notes",
@@ -83,6 +86,7 @@ describe("api/commands", () => {
     await expect(getRecordSummaries(20)).resolves.toEqual([
       {
         id: 2,
+        payload_type: "text",
         content_type: "text",
         preview_text: "B",
         source_app: null,
@@ -131,6 +135,24 @@ describe("api/commands", () => {
     ]);
   });
 
+  it("getSourceAppIconPng 调用 get_source_app_icon 并返回图标字节", async () => {
+    __setInvokeHandler(async (command) => {
+      if (command === "get_source_app_icon") {
+        return [137, 80, 78, 71];
+      }
+
+      return undefined;
+    });
+
+    const result = await getSourceAppIconPng("Notes", 20);
+
+    expect(Array.from(result ?? [])).toEqual([137, 80, 78, 71]);
+    expect(invokeCalls[0]).toEqual({
+      command: "get_source_app_icon",
+      args: { sourceApp: "Notes", size: 20 },
+    });
+  });
+
   it("pasteRecord 兼容层返回 legacy record", async () => {
     __setInvokeHandler(async () => pasteResult);
 
@@ -162,6 +184,52 @@ describe("api/commands", () => {
     expect(invokeCalls[1]).toEqual({
       command: "get_records",
       args: { limit: 20 },
+    });
+  });
+
+  it("searchRecords 调用 search_records 并兼容 payload_type 缺失的旧结果", async () => {
+    __setInvokeHandler(async () => [
+      summaryRecord,
+      {
+        id: 3,
+        content_type: "document",
+        preview_text: "meeting-agenda.md",
+        source_app: "Finder",
+        created_at: 1000,
+        last_used_at: 1000,
+        text_meta: null,
+        image_meta: null,
+        files_meta: {
+          count: 1,
+          primary_name: "meeting-agenda.md",
+          contains_directory: false,
+        },
+      },
+    ]);
+
+    await expect(searchRecords("meeting", "document", 50)).resolves.toEqual([
+      summaryRecord,
+      {
+        id: 3,
+        payload_type: "files",
+        content_type: "document",
+        preview_text: "meeting-agenda.md",
+        source_app: "Finder",
+        created_at: 1000,
+        last_used_at: 1000,
+        text_meta: null,
+        image_meta: null,
+        files_meta: {
+          count: 1,
+          primary_name: "meeting-agenda.md",
+          contains_directory: false,
+        },
+      },
+    ]);
+
+    expect(invokeCalls[0]).toEqual({
+      command: "search_records",
+      args: { query: "meeting", typeFilter: "document", limit: 50 },
     });
   });
 
@@ -236,7 +304,7 @@ describe("api/commands", () => {
       { command: "get_runtime_status", args: undefined },
       { command: "get_platform_capabilities", args: undefined },
       { command: "set_monitoring", args: { enabled: false } },
-      { command: "clear_history", args: { confirm_token: "token-1" } },
+      { command: "clear_history", args: { confirmToken: "token-1" } },
       { command: "get_log_directory", args: undefined },
     ]);
   });

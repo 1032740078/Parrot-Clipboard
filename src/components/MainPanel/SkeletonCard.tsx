@@ -5,10 +5,10 @@ interface SkeletonCardProps {
 export const SkeletonCard = ({ index }: SkeletonCardProps) => {
   return (
     <article
-      className="flex h-52 w-card shrink-0 animate-pulse flex-col overflow-hidden rounded-[18px] border border-white/10 bg-white/5 backdrop-blur-md"
+      className="flex h-full w-card shrink-0 animate-pulse flex-col overflow-hidden rounded-[18px] border border-white/10 bg-white/5 backdrop-blur-md"
       data-testid="skeleton-card"
     >
-      <div className="h-8 bg-white/10" />
+      <div className="h-12 bg-white/10" />
       <div className="px-3 pt-3">
         <div className="h-3 w-20 rounded bg-white/10" />
       </div>

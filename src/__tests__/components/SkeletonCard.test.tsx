@@ -9,7 +9,7 @@ describe("SkeletonCard", () => {
 
     expect(screen.getByTestId("skeleton-card")).toBeInTheDocument();
     expect(screen.getByText("加载中")).toBeInTheDocument();
-    expect(screen.getByTestId("skeleton-card").className).toContain("h-52");
+    expect(screen.getByTestId("skeleton-card").className).toContain("h-full");
     expect(screen.getByTestId("skeleton-card").className).toContain("rounded-[18px]");
   });
 });

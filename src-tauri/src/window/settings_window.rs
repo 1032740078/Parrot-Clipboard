@@ -58,6 +58,8 @@ impl SettingsWindowRuntime for TauriSettingsWindowRuntime {
         .min_inner_size(SETTINGS_WINDOW_MIN_WIDTH, SETTINGS_WINDOW_MIN_HEIGHT)
         .resizable(true)
         .skip_taskbar(false)
+        .transparent(true)
+        .decorations(false)
         .visible(false)
         .center()
         .build()

@@ -1,4 +1,3 @@
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   useEffect,
   useEffectEvent,
@@ -13,6 +12,7 @@ import { updateTextRecord } from "../api/commands";
 import { getErrorMessage } from "../api/errorHandler";
 import { onPreviewWindowRequested, onRecordDeleted } from "../api/events";
 import { logger, normalizeError } from "../api/logger";
+import { useTauriWindowClose } from "../hooks/useTauriWindowClose";
 import {
   primeRecordPreviewDetailCache,
   useRecordPreviewDetail,
@@ -20,6 +20,7 @@ import {
 import type { ClipboardRecordDetail } from "../types/clipboard";
 import { isFileRecord, isImageRecord, isTextRecord } from "../types/clipboard";
 import { toPreviewSrc } from "./MainPanel/previewAsset";
+import { PreviewEditor } from "./PreviewEditor";
 
 const AUTO_SAVE_DELAY_MS = 400;
 const IMAGE_MIN_SCALE = 1;
@@ -93,7 +94,6 @@ export const PreviewWindow = () => {
   const saveTimerRef = useRef<number | null>(null);
   const savePromiseRef = useRef<Promise<void> | null>(null);
   const saveTextInFlightRef = useRef<string | null>(null);
-  const bypassCloseHandlerRef = useRef(false);
   const imageStageRef = useRef<HTMLDivElement | null>(null);
   const imageDragOriginRef = useRef<{
     mouseX: number;
@@ -182,15 +182,11 @@ export const PreviewWindow = () => {
     }
   });
 
-  const requestCloseWindow = useEffectEvent(async (): Promise<void> => {
-    await flushPendingTextSave();
-    bypassCloseHandlerRef.current = true;
-    try {
-      await getCurrentWindow().close();
-    } catch (error) {
-      bypassCloseHandlerRef.current = false;
-      throw error;
-    }
+  const { requestWindowClose, subscribeCloseRequested } = useTauriWindowClose({
+    beforeClose: flushPendingTextSave,
+    onCloseError: (error) => {
+      logger.error("关闭预览窗口失败", { error: normalizeError(error) });
+    },
   });
 
   useEffect(() => {
@@ -211,19 +207,11 @@ export const PreviewWindow = () => {
 
         unlistenRecordDeleted = await onRecordDeleted((payload) => {
           if (payload.id === currentRecordIdRef.current) {
-            void requestCloseWindow();
+            void requestWindowClose();
           }
         });
 
-        unlistenCloseRequested = await getCurrentWindow().onCloseRequested(async (event) => {
-          if (bypassCloseHandlerRef.current) {
-            bypassCloseHandlerRef.current = false;
-            return;
-          }
-
-          event.preventDefault();
-          await requestCloseWindow();
-        });
+        unlistenCloseRequested = await subscribeCloseRequested();
       } catch (error) {
         logger.error("订阅预览窗口事件失败", { error: normalizeError(error) });
       }
@@ -243,7 +231,7 @@ export const PreviewWindow = () => {
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (event.key === "Escape" || event.code === "Space") {
         event.preventDefault();
-        void requestCloseWindow();
+        void requestWindowClose();
       }
     };
 
@@ -416,7 +404,7 @@ export const PreviewWindow = () => {
 
   if (recordId === null) {
     return (
-      <main className="flex h-screen w-screen items-center justify-center bg-[#050505] px-6 text-sm text-zinc-400">
+      <main className="glass-window flex h-screen w-screen items-center justify-center rounded-2xl px-6 text-sm text-zinc-400 backdrop-blur-2xl">
         请从主面板重新打开需要查看的记录。
       </main>
     );
@@ -426,7 +414,19 @@ export const PreviewWindow = () => {
   const fileItems = activeDetail?.files_detail?.items ?? [];
 
   return (
-    <main className="relative h-screen w-screen overflow-hidden bg-[#050505] text-white">
+    <main className="glass-window relative h-screen w-screen overflow-hidden rounded-2xl text-white backdrop-blur-2xl">
+      <div className="glass-window-titlebar flex h-10 shrink-0 items-center justify-between px-4">
+        <span className="text-xs font-medium tracking-wide text-slate-400">预览</span>
+        <button
+          className="rounded-md px-2 py-1 text-xs text-slate-400 transition hover:bg-white/10 hover:text-white"
+          onClick={() => {
+            void requestWindowClose();
+          }}
+          type="button"
+        >
+          关闭
+        </button>
+      </div>
       {status === "loading" ? (
         <div className="flex h-full w-full items-center justify-center text-sm text-zinc-400">
           正在加载完整内容…
@@ -442,22 +442,18 @@ export const PreviewWindow = () => {
 
       {status === "ready" && activeDetail && isTextRecord(activeDetail) ? (
         <>
-          <textarea
-            aria-label="预览文本编辑器"
-            autoFocus
-            className="h-full w-full resize-none border-0 bg-[#050505] px-8 py-8 text-[16px] leading-8 text-zinc-100 outline-none placeholder:text-zinc-600"
-            onChange={(event) => {
-              setDraftTextState({ recordId, value: event.target.value });
+          <PreviewEditor
+            onChange={(nextValue) => {
+              setDraftTextState({ recordId, value: nextValue });
               setSaveErrorState({ recordId, message: null });
             }}
-            placeholder="输入文本"
-            spellCheck={false}
+            recordId={recordId}
             value={visibleText}
           />
           {saveError ? (
             <div
               aria-live="polite"
-              className="pointer-events-none absolute right-4 top-4 max-w-[320px] rounded-full bg-rose-500/14 px-4 py-2 text-xs text-rose-100 backdrop-blur"
+              className="pointer-events-none absolute right-4 top-14 max-w-[320px] rounded-full bg-rose-500/14 px-4 py-2 text-xs text-rose-100 backdrop-blur"
             >
               {saveError}
             </div>

@@ -2,6 +2,7 @@
 
 use std::{
     ffi::c_void,
+    ffi::CString,
     path::{Path, PathBuf},
     process::Command,
     sync::Mutex,
@@ -14,6 +15,7 @@ use core_graphics::{
     event::{CGEvent, CGEventFlags, CGEventTapLocation},
     event_source::{CGEventSource, CGEventSourceStateID},
 };
+use objc::rc::autoreleasepool;
 use objc::{class, msg_send, sel, sel_impl};
 
 use crate::{
@@ -34,6 +36,7 @@ const FRONTMOST_BUNDLE_ID_SCRIPT: &str =
     "tell application \"System Events\" to get bundle identifier of first application process whose frontmost is true";
 const FRONTMOST_NAME_SCRIPT: &str =
     "tell application \"System Events\" to get name of first application process whose frontmost is true";
+const NS_BITMAP_IMAGE_FILE_TYPE_PNG: usize = 4;
 
 #[link(name = "ApplicationServices", kind = "framework")]
 unsafe extern "C" {
@@ -209,6 +212,134 @@ impl PlatformActiveAppDetector for MacosActiveAppDetector {
     }
 }
 
+#[repr(C)]
+struct NSSize {
+    width: f64,
+    height: f64,
+}
+
+pub fn resolve_source_app_icon_png(
+    source_app: &str,
+    size: u32,
+) -> Result<Option<Vec<u8>>, AppError> {
+    let source_app = source_app.trim();
+    if source_app.is_empty() {
+        return Ok(None);
+    }
+
+    autoreleasepool(|| unsafe {
+        let workspace_class = class!(NSWorkspace);
+        let workspace: *mut objc::runtime::Object = msg_send![workspace_class, sharedWorkspace];
+        if workspace.is_null() {
+            return Ok(None);
+        }
+
+        let app_path = resolve_application_path(workspace, source_app)?;
+        let Some(app_path) = app_path else {
+            return Ok(None);
+        };
+
+        let icon: *mut objc::runtime::Object = msg_send![workspace, iconForFile: app_path];
+        if icon.is_null() {
+            return Ok(None);
+        }
+
+        let _: () = msg_send![
+            icon,
+            setSize: NSSize {
+                width: size as f64,
+                height: size as f64,
+            }
+        ];
+
+        let tiff_data: *mut objc::runtime::Object = msg_send![icon, TIFFRepresentation];
+        if tiff_data.is_null() {
+            return Ok(None);
+        }
+
+        let bitmap_rep_class = class!(NSBitmapImageRep);
+        let bitmap_rep: *mut objc::runtime::Object =
+            msg_send![bitmap_rep_class, imageRepWithData: tiff_data];
+        if bitmap_rep.is_null() {
+            return Ok(None);
+        }
+
+        let properties: *mut objc::runtime::Object = msg_send![class!(NSDictionary), dictionary];
+        let png_data: *mut objc::runtime::Object = msg_send![
+            bitmap_rep,
+            representationUsingType: NS_BITMAP_IMAGE_FILE_TYPE_PNG
+            properties: properties
+        ];
+        if png_data.is_null() {
+            return Ok(None);
+        }
+
+        Ok(ns_data_to_bytes(png_data))
+    })
+}
+
+unsafe fn resolve_application_path(
+    workspace: *mut objc::runtime::Object,
+    source_app: &str,
+) -> Result<Option<*mut objc::runtime::Object>, AppError> {
+    let source_app_name = ns_string(source_app)?;
+    let app_path: *mut objc::runtime::Object =
+        msg_send![workspace, fullPathForApplication: source_app_name];
+    if !app_path.is_null() {
+        return Ok(Some(app_path));
+    }
+
+    if !source_app.contains('.') {
+        return Ok(None);
+    }
+
+    let bundle_id = ns_string(source_app)?;
+    let app_url: *mut objc::runtime::Object =
+        msg_send![workspace, URLForApplicationWithBundleIdentifier: bundle_id];
+    if app_url.is_null() {
+        return Ok(None);
+    }
+
+    let bundle_path: *mut objc::runtime::Object = msg_send![app_url, path];
+    if bundle_path.is_null() {
+        return Ok(None);
+    }
+
+    Ok(Some(bundle_path))
+}
+
+unsafe fn ns_data_to_bytes(data: *mut objc::runtime::Object) -> Option<Vec<u8>> {
+    let length: usize = msg_send![data, length];
+    if length == 0 {
+        return None;
+    }
+
+    let bytes: *const u8 = msg_send![data, bytes];
+    if bytes.is_null() {
+        return None;
+    }
+
+    Some(std::slice::from_raw_parts(bytes, length).to_vec())
+}
+
+fn ns_string(value: &str) -> Result<*mut objc::runtime::Object, AppError> {
+    let c_string = CString::new(value).map_err(|error| {
+        AppError::UnsupportedPlatformFeature(format!(
+            "build NSString for source app `{value}` failed: {error}"
+        ))
+    })?;
+    let string: *mut objc::runtime::Object =
+        unsafe { msg_send![class!(NSString), stringWithUTF8String: c_string.as_ptr()] };
+
+    if string.is_null() {
+        return Err(AppError::UnsupportedPlatformFeature(format!(
+            "create NSString for source app `{value}` failed"
+        )));
+    }
+
+    Ok(string)
+}
+
 pub fn detect_accessibility_permission() -> AccessibilityPermissionSnapshot {
     if unsafe { AXIsProcessTrustedWithOptions(std::ptr::null()) || AXIsProcessTrusted() } {
         return AccessibilityPermissionSnapshot {
@@ -371,7 +502,8 @@ mod tests {
 
     use super::{
         open_accessibility_settings_with_launcher, parse_signature_kind, resolve_bundle_path,
-        AccessibilitySettingsLauncher, SignatureKind, ACCESSIBILITY_SETTINGS_URL,
+        resolve_source_app_icon_png, AccessibilitySettingsLauncher, SignatureKind,
+        ACCESSIBILITY_SETTINGS_URL,
     };
 
     #[derive(Default, Clone)]
@@ -453,5 +585,14 @@ mod tests {
             bundle,
             Some(PathBuf::from("/Applications/Clipboard Manager.app"))
         );
+    }
+
+    #[test]
+    fn resolve_source_app_icon_png_returns_png_bytes_for_finder() {
+        let icon_bytes = resolve_source_app_icon_png("Finder", 20)
+            .expect("finder icon lookup should not fail")
+            .expect("finder icon should exist");
+
+        assert!(icon_bytes.starts_with(&[137, 80, 78, 71]));
     }
 }

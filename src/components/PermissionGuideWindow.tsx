@@ -1,4 +1,3 @@
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState } from "react";
 
 import {
@@ -14,11 +13,17 @@ import {
   resolvePermissionGuideDescription,
   resolvePermissionGuideSteps,
 } from "./common/permissionReason";
+import { useTauriWindowClose } from "../hooks/useTauriWindowClose";
 
 export const PermissionGuideWindow = () => {
   const [permissionStatus, setPermissionStatus] = useState<PermissionStatus>();
   const [isCheckingPermission, setIsCheckingPermission] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>();
+  const { requestWindowClose } = useTauriWindowClose({
+    onCloseError: (error) => {
+      logger.error("关闭权限引导窗口失败", { error: normalizeError(error) });
+    },
+  });
 
   useEffect(() => {
     let mounted = true;
@@ -99,7 +104,7 @@ export const PermissionGuideWindow = () => {
           <button
             className="rounded-xl border border-white/10 px-4 py-2 text-sm text-slate-200 transition hover:border-white/25"
             onClick={() => {
-              void getCurrentWindow().close();
+              void requestWindowClose();
             }}
             type="button"
           >

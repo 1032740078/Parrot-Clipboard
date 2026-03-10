@@ -4,7 +4,7 @@ use crate::{
     clipboard::{
         query::{ClipboardRecordDetail, PasteResult},
         runtime_repository::ClipboardRuntimeRepository,
-        types::{ContentType, PasteMode, RecordId},
+        types::{PasteMode, PayloadType, RecordId},
     },
     error::AppError,
     image::ImageStorageService,
@@ -69,8 +69,8 @@ impl PasteService {
                 .get_detail(id)?
                 .ok_or_else(|| AppError::RecordNotFound(id.value()))?;
 
-            match detail.content_type {
-                ContentType::Image if mode == PasteMode::PlainText => {
+            match detail.payload_type {
+                PayloadType::Image if mode == PasteMode::PlainText => {
                     let recognized_text = self.recognize_image_text(&detail).await?;
                     self.commit_paste(&detail, mode, Some(recognized_text.as_str()))
                         .await
@@ -153,9 +153,9 @@ fn write_detail_to_clipboard(
     mode: PasteMode,
     recognized_image_text: Option<&str>,
 ) -> Result<(), AppError> {
-    match detail.content_type {
-        ContentType::Text => write_text_detail(clipboard, detail, mode),
-        ContentType::Image => {
+    match detail.payload_type {
+        PayloadType::Text => write_text_detail(clipboard, detail, mode),
+        PayloadType::Image => {
             if mode == PasteMode::PlainText {
                 return clipboard.write_text(recognized_image_text.ok_or_else(|| {
                     AppError::ClipboardRead("recognized image text missing".to_string())
@@ -168,7 +168,7 @@ fn write_detail_to_clipboard(
             let image = image_storage.load_original(&image_detail.original_path)?;
             clipboard.write_image(&image)
         }
-        ContentType::Files => {
+        PayloadType::Files => {
             let files_detail = detail
                 .files_detail
                 .as_ref()
@@ -242,7 +242,7 @@ mod tests {
                 ImageMeta, PasteResult, TextMeta, ThumbnailState,
             },
             runtime_repository::ClipboardRuntimeRepository,
-            types::{ContentType, PasteMode, RecordId},
+            types::{ContentType, PasteMode, PayloadType, RecordId},
         },
         error::AppError,
         image::ImageStorageService,
@@ -263,6 +263,7 @@ mod tests {
             &self,
             _text: String,
             _rich_content: Option<String>,
+            _source_app: Option<String>,
             _captured_at: i64,
         ) -> Result<crate::clipboard::runtime_repository::CaptureResult, AppError> {
             unreachable!()
@@ -270,6 +271,7 @@ mod tests {
         fn capture_image(
             &self,
             _image: crate::clipboard::payload::ClipboardImageData,
+            _source_app: Option<String>,
             _captured_at: i64,
         ) -> Result<crate::clipboard::runtime_repository::CaptureResult, AppError> {
             unreachable!()
@@ -277,11 +279,20 @@ mod tests {
         fn capture_files(
             &self,
             _items: Vec<crate::clipboard::payload::ClipboardFileItem>,
+            _source_app: Option<String>,
             _captured_at: i64,
         ) -> Result<crate::clipboard::runtime_repository::CaptureResult, AppError> {
             unreachable!()
         }
         fn list_summaries(&self, _limit: usize) -> Result<Vec<ClipboardRecordSummary>, AppError> {
+            Ok(Vec::new())
+        }
+        fn search_summaries(
+            &self,
+            _query: &str,
+            _content_type: Option<ContentType>,
+            _limit: usize,
+        ) -> Result<Vec<ClipboardRecordSummary>, AppError> {
             Ok(Vec::new())
         }
         fn get_detail(&self, id: RecordId) -> Result<Option<ClipboardRecordDetail>, AppError> {
@@ -937,6 +948,7 @@ mod tests {
     fn text_detail(id: u64, rich_content: Option<String>) -> ClipboardRecordDetail {
         ClipboardRecordDetail {
             id,
+            payload_type: PayloadType::Text,
             content_type: ContentType::Text,
             preview_text: "Hello".to_string(),
             source_app: Some("Notes".to_string()),
@@ -964,6 +976,7 @@ mod tests {
     ) -> ClipboardRecordDetail {
         ClipboardRecordDetail {
             id,
+            payload_type: PayloadType::Image,
             content_type: ContentType::Image,
             preview_text: "图片".to_string(),
             source_app: None,
@@ -994,6 +1007,7 @@ mod tests {
     fn files_detail_with_items(id: u64, paths: &[PathBuf]) -> ClipboardRecordDetail {
         ClipboardRecordDetail {
             id,
+            payload_type: PayloadType::Files,
             content_type: ContentType::Files,
             preview_text: format!(
                 "{} 等 {} 项",
@@ -1048,6 +1062,7 @@ mod tests {
     fn files_detail(id: u64) -> ClipboardRecordDetail {
         ClipboardRecordDetail {
             id,
+            payload_type: PayloadType::Files,
             content_type: ContentType::Files,
             preview_text: "A 等 2 项".to_string(),
             source_app: None,

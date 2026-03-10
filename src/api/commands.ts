@@ -11,6 +11,7 @@ import type {
   ClearHistoryResult,
   ClipboardRecordDetail,
   ClipboardRecordSummary,
+  ContentType,
   LegacyClipboardRecord,
   MonitoringStatus,
   PanelVisibilityReason,
@@ -49,12 +50,68 @@ export const getRecordSummaries = async (limit = 20): Promise<ClipboardRecordSum
   }
 };
 
+export const searchRecords = async (
+  query: string,
+  typeFilter?: Exclude<ContentType, never> | null,
+  limit = 20
+): Promise<ClipboardRecordSummary[]> => {
+  try {
+    const records = await invoke<unknown>("search_records", {
+      query,
+      typeFilter: typeFilter ?? null,
+      limit,
+    });
+    if (!Array.isArray(records)) {
+      throw new Error("search_records 返回结果格式无效");
+    }
+
+    return records.map((record) => toClipboardRecordSummary(record));
+  } catch (error) {
+    logger.error("搜索剪贴板摘要失败", {
+      query,
+      type_filter: typeFilter,
+      limit,
+      error: normalizeError(error),
+    });
+    throw error;
+  }
+};
+
 export const getRecordDetail = async (id: number): Promise<ClipboardRecordDetail> => {
   try {
     return await invoke<ClipboardRecordDetail>("get_record_detail", { id });
   } catch (error) {
     logger.error("读取剪贴板记录详情失败", { id, error: normalizeError(error) });
     throw error;
+  }
+};
+
+const isPngByteArray = (value: unknown): value is number[] =>
+  Array.isArray(value) &&
+  value.every((item) => Number.isInteger(item) && Number(item) >= 0 && Number(item) <= 255);
+
+export const getSourceAppIconPng = async (
+  sourceApp: string,
+  size = 20
+): Promise<Uint8Array | null> => {
+  try {
+    const iconBytes = await invoke<unknown>("get_source_app_icon", { sourceApp, size });
+    if (iconBytes == null) {
+      return null;
+    }
+
+    if (!isPngByteArray(iconBytes)) {
+      throw new Error("get_source_app_icon 返回结果格式无效");
+    }
+
+    return Uint8Array.from(iconBytes);
+  } catch (error) {
+    logger.warn("读取来源应用图标失败，回退到字母徽标", {
+      source_app: sourceApp,
+      size,
+      error: normalizeError(error),
+    });
+    return null;
   }
 };
 
@@ -174,7 +231,7 @@ export const getPlatformCapabilities = async (): Promise<PlatformCapabilities> =
 
 export const clearHistory = async (confirmToken: string): Promise<ClearHistoryResult> => {
   try {
-    return await invoke<ClearHistoryResult>("clear_history", { confirm_token: confirmToken });
+    return await invoke<ClearHistoryResult>("clear_history", { confirmToken });
   } catch (error) {
     logger.error("清空历史失败", { error: normalizeError(error) });
     throw error;

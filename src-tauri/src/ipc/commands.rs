@@ -4,7 +4,7 @@ use crate::{
     clipboard::{
         query::{ClipboardRecordDetail, ClipboardRecordSummary, PasteResult},
         runtime_repository::{RecordDeleteReason, RecordUpdateReason},
-        types::{PasteMode, RecordId},
+        types::{ContentType, PasteMode, RecordId},
     },
     config::{
         schema::{
@@ -17,7 +17,7 @@ use crate::{
     error::AppError,
     ipc::events::{emit_panel_visibility_changed, PanelVisibilityReasonPayload},
     logging::{self, ClientLogLevel},
-    platform::PlatformCapabilities,
+    platform::{self, PlatformCapabilities},
     settings::{BlacklistRuleDraft, SettingsError, SettingsProfile},
     shortcut::{self, ShortcutValidationResult},
     state::AppState,
@@ -95,6 +95,52 @@ pub fn get_records(
 }
 
 #[tauri::command]
+pub fn search_records(
+    query: String,
+    type_filter: Option<String>,
+    limit: usize,
+    state: State<'_, AppState>,
+) -> Result<Vec<ClipboardRecordSummary>, AppError> {
+    tracing::debug!(
+        query = query.as_str(),
+        ?type_filter,
+        limit,
+        "ipc search_records requested"
+    );
+
+    if limit == 0 {
+        return Err(AppError::InvalidParam("limit must be > 0".to_string()));
+    }
+    if limit > 500 {
+        return Err(AppError::InvalidParam("limit must be <= 500".to_string()));
+    }
+    if query.chars().count() > 200 {
+        return Err(AppError::InvalidParam(
+            "query must be <= 200 chars".to_string(),
+        ));
+    }
+
+    let semantic_filter = type_filter
+        .as_deref()
+        .map(|value| {
+            ContentType::from_db(value)
+                .ok_or_else(|| AppError::InvalidParam(format!("unsupported type_filter `{value}`")))
+        })
+        .transpose()?;
+
+    let records = state
+        .repository
+        .search_summaries(&query, semantic_filter, limit)?;
+    tracing::debug!(
+        query = query.as_str(),
+        ?semantic_filter,
+        returned_count = records.len(),
+        "ipc search_records completed"
+    );
+    Ok(records)
+}
+
+#[tauri::command]
 pub fn get_record_detail(
     id: u64,
     state: State<'_, AppState>,
@@ -104,6 +150,32 @@ pub fn get_record_detail(
         .repository
         .get_detail(RecordId::new(id))?
         .ok_or(AppError::RecordNotFound(id))
+}
+
+#[tauri::command]
+pub fn get_source_app_icon(source_app: String, size: Option<u32>) -> Option<Vec<u8>> {
+    let icon_size = size.unwrap_or(20).clamp(16, 64);
+
+    match platform::resolve_source_app_icon_png(&source_app, icon_size) {
+        Ok(icon_bytes) => {
+            tracing::debug!(
+                source_app = source_app.as_str(),
+                icon_size,
+                has_icon = icon_bytes.is_some(),
+                "ipc get_source_app_icon completed"
+            );
+            icon_bytes
+        }
+        Err(error) => {
+            tracing::warn!(
+                source_app = source_app.as_str(),
+                icon_size,
+                error = %error,
+                "ipc get_source_app_icon failed, fallback icon will be used"
+            );
+            None
+        }
+    }
 }
 
 #[tauri::command]

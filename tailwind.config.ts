@@ -16,7 +16,7 @@ const config: Config = {
       },
       spacing: {
         card: "18rem",
-        panel: "21rem",
+        panel: "24rem",
       },
       borderRadius: {
         panel: "16px",

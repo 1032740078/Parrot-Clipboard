@@ -12,7 +12,7 @@ describe("cardAppearance", () => {
     expect(className).toContain("hover:-translate-y-0.5");
     expect(className).toContain("hover:border-sky-300/35");
     expect(className).toContain("border-white/10");
-    expect(className).toContain("h-52");
+    expect(className).toContain("h-full");
   });
 
   it("UT-VISUAL-305 选中态保留高亮边框与聚焦阴影", () => {
@@ -47,6 +47,6 @@ describe("cardAppearance", () => {
     });
 
     expect(className).toContain("rounded-[8px]");
-    expect(CARD_HEADER_BASE_CLASS_NAME).toContain("h-8");
+    expect(CARD_HEADER_BASE_CLASS_NAME).toContain("h-12");
   });
 });

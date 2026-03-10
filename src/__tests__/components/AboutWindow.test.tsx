@@ -8,6 +8,10 @@ import {
   __setInvokeHandler,
   invokeCalls,
 } from "../../__mocks__/@tauri-apps/api/core";
+import {
+  __getMockCloseCallCount,
+  __resetWindowMock,
+} from "../../__mocks__/@tauri-apps/api/window";
 import { useSettingsStore } from "../../stores";
 
 const settingsSnapshot = {
@@ -76,6 +80,7 @@ describe("AboutWindow", () => {
   beforeEach(() => {
     __resetInvokeMock();
     __resetEventMock();
+    __resetWindowMock();
     useSettingsStore.getState().reset();
   });
 
@@ -262,6 +267,34 @@ describe("AboutWindow", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("about-release-card")).toHaveTextContent("1.0.0");
+    });
+  });
+
+  it("点击顶部关闭按钮会关闭关于窗口", async () => {
+    __setInvokeHandler(async (command) => {
+      if (command === "get_settings_snapshot") {
+        return settingsSnapshot;
+      }
+      if (command === "get_release_info") {
+        return releaseInfo;
+      }
+      if (command === "get_diagnostics_snapshot") {
+        return diagnosticsSnapshot;
+      }
+
+      throw new Error(`unexpected command: ${command}`);
+    });
+
+    render(<AboutWindow />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("about-release-card")).toHaveTextContent("1.0.0");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+
+    await waitFor(() => {
+      expect(__getMockCloseCallCount()).toBe(1);
     });
   });
 });

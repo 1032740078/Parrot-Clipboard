@@ -25,6 +25,7 @@ import {
 
 const summaryRecord = {
   id: 1,
+  payload_type: "text" as const,
   content_type: "text" as const,
   preview_text: "A",
   source_app: "Notes",

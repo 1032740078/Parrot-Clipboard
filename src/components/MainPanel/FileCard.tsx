@@ -1,8 +1,12 @@
-import type { ClipboardRecord } from "../../types/clipboard";
-import { getRecordPreviewText } from "../../types/clipboard";
+import {
+  getContentTypeLabel,
+  getRecordPreviewText,
+  type ClipboardRecord,
+} from "../../types/clipboard";
 import { PreviewStateBadge } from "./PreviewStateBadge";
 import { QuickSelectBadge } from "./QuickSelectBadge";
-import { CARD_HEADER_BASE_CLASS_NAME, getCardAppearanceClassName } from "./cardAppearance";
+import { getCardAppearanceClassName, getCardHeaderClassName } from "./cardAppearance";
+import { SourceAppIcon } from "./SourceAppIcon";
 import { formatRelativeTime } from "./time";
 
 interface FileCardProps {
@@ -24,7 +28,16 @@ export const FileCard = ({
   const previewText = getRecordPreviewText(record);
   const countLabel = meta ? `共 ${meta.count} 项` : "共 0 项";
   const folderLabel = meta?.contains_directory ? "含文件夹" : "";
-  const icon = meta?.contains_directory ? "📁" : "📄";
+  const icon =
+    record.content_type === "video"
+      ? "🎬"
+      : record.content_type === "audio"
+        ? "🎧"
+        : record.content_type === "document"
+          ? "📝"
+          : meta?.contains_directory
+            ? "📁"
+            : "📄";
   const displaySlot = slot ?? (typeof index === "number" ? index + 1 : null);
 
   return (
@@ -39,14 +52,13 @@ export const FileCard = ({
     >
       <PreviewStateBadge visible={isPreviewing} />
 
-      <header className={`${CARD_HEADER_BASE_CLASS_NAME} bg-emerald-500 text-white`}>
-        <QuickSelectBadge slot={displaySlot} />
-        <span>文件</span>
+      <header className={getCardHeaderClassName(record.content_type)}>
+        <div className="flex items-center gap-2">
+          <QuickSelectBadge slot={displaySlot} />
+          <span>{getContentTypeLabel(record.content_type)}</span>
+        </div>
+        <SourceAppIcon sourceApp={record.source_app} />
       </header>
-
-      <div className="px-3 pt-2 text-xs text-[#8E8E93]">
-        {formatRelativeTime(record.created_at)}
-      </div>
 
       <div className="mx-3 mt-2 flex h-32 items-center gap-3 rounded-lg bg-white/5 px-4 text-white">
         <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10 text-2xl">
@@ -60,9 +72,16 @@ export const FileCard = ({
         </div>
       </div>
 
-      <footer className="flex h-8 items-center justify-between px-3 text-[11px] text-slate-300">
+      <footer className="flex h-8 items-center justify-center gap-3 px-3 text-[11px] text-slate-400">
         <span>{countLabel}</span>
-        <span>{folderLabel}</span>
+        {folderLabel ? (
+          <>
+            <span>·</span>
+            <span>{folderLabel}</span>
+          </>
+        ) : null}
+        <span>·</span>
+        <span>{formatRelativeTime(record.created_at)}</span>
       </footer>
     </article>
   );

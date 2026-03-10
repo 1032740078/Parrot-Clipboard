@@ -1,4 +1,3 @@
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { getPlatformCapabilities } from "../api/commands";
@@ -25,6 +24,7 @@ import type {
   ThemeMode,
 } from "../api/types";
 import { useThemeSync } from "../hooks/useThemeSync";
+import { useTauriWindowClose } from "../hooks/useTauriWindowClose";
 import { ConfirmDialog } from "./common/ConfirmDialog";
 import { Toast } from "./common/Toast";
 
@@ -626,7 +626,6 @@ export const SettingsWindowPlaceholder = () => {
   const privacyFormValid =
     privacyFormDraft.appName.trim().length > 0 && privacyFormDraft.appIdentifier.trim().length > 0;
   const hasUnsavedChangesRef = useRef(hasUnsavedChanges);
-  const forceCloseRef = useRef(false);
   const canSaveShortcut =
     activeSection === "shortcut" &&
     currentSectionDirty &&
@@ -640,6 +639,15 @@ export const SettingsWindowPlaceholder = () => {
     canSavePrivacy;
 
   useThemeSync(savedDrafts.general.theme);
+  const { forceCloseWindow, requestWindowClose, subscribeCloseRequested } = useTauriWindowClose({
+    shouldPreventClose: () => hasUnsavedChangesRef.current,
+    onPreventClose: () => {
+      setPendingAction({ type: "close-window" });
+    },
+    onCloseError: (error) => {
+      logger.error("关闭设置窗口失败", { error: normalizeError(error) });
+    },
+  });
 
   useEffect(() => {
     hasUnsavedChangesRef.current = hasUnsavedChanges;
@@ -694,20 +702,7 @@ export const SettingsWindowPlaceholder = () => {
 
     const bindCloseGuard = async (): Promise<void> => {
       try {
-        const currentWindow = getCurrentWindow();
-        unlistenWindow = await currentWindow.onCloseRequested((event) => {
-          if (forceCloseRef.current) {
-            forceCloseRef.current = false;
-            return;
-          }
-
-          if (!hasUnsavedChangesRef.current) {
-            return;
-          }
-
-          event.preventDefault();
-          setPendingAction({ type: "close-window" });
-        });
+        unlistenWindow = await subscribeCloseRequested();
       } catch (error) {
         logger.warn("设置窗口关闭拦截绑定失败", { error: normalizeError(error) });
       }
@@ -718,7 +713,7 @@ export const SettingsWindowPlaceholder = () => {
     return () => {
       unlistenWindow?.();
     };
-  }, []);
+  }, [subscribeCloseRequested]);
 
   useEffect(() => {
     if (activeSection !== "shortcut" || !isShortcutRecording) {
@@ -856,14 +851,16 @@ export const SettingsWindowPlaceholder = () => {
       setPrivacyFormDraft(privacyFormBaseline);
       setPrivacyFormError(null);
       setPendingAction(null);
-      forceCloseRef.current = true;
       try {
-        await getCurrentWindow().close();
-      } catch (error) {
-        forceCloseRef.current = false;
-        logger.error("关闭设置窗口失败", { error: normalizeError(error) });
-      }
+        await forceCloseWindow();
+      } catch {}
     }
+  };
+
+  const handleRequestCloseWindow = async (): Promise<void> => {
+    try {
+      await requestWindowClose();
+    } catch {}
   };
 
   const applyShortcutCandidate = async (candidate: string): Promise<void> => {
@@ -1566,8 +1563,20 @@ export const SettingsWindowPlaceholder = () => {
   };
 
   return (
-    <main className="min-h-screen bg-[var(--app-bg)] px-8 py-10 text-[var(--app-fg)] transition-colors">
-      <section className="mx-auto flex max-w-6xl flex-col gap-6 rounded-3xl border border-white/10 bg-slate-900/80 p-8 shadow-2xl shadow-slate-950/50">
+    <main className="glass-window min-h-screen rounded-2xl text-[var(--app-fg)] backdrop-blur-2xl transition-colors">
+      <div className="glass-window-titlebar flex h-12 items-center justify-between px-5">
+        <span className="text-xs font-medium tracking-wide text-slate-400">设置</span>
+        <button
+          className="rounded-md px-2 py-1 text-xs text-slate-400 transition hover:bg-white/10 hover:text-white"
+          onClick={() => {
+            void handleRequestCloseWindow();
+          }}
+          type="button"
+        >
+          关闭
+        </button>
+      </div>
+      <section className="mx-auto flex max-w-6xl flex-col gap-6 px-8 pb-10">
         <div className="flex items-start justify-between gap-6 border-b border-white/10 pb-6">
           <div>
             <p className="text-sm font-medium uppercase tracking-[0.24em] text-sky-300/90">

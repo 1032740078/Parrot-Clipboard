@@ -43,11 +43,11 @@ describe("Glass Tech Visual", () => {
     });
 
     expect(screen.getByTestId("main-panel").className).toContain("glass-panel");
-    expect(screen.getByTestId("main-panel").className).toContain("inset-x-4");
-    expect(screen.getByTestId("main-panel").className).toContain("bottom-4");
+    expect(screen.getByTestId("main-panel").className).toContain("inset-x-0");
+    expect(screen.getByTestId("main-panel").className).toContain("bottom-0");
     expect(screen.getByTestId("main-panel").className).toContain("pt-6");
     expect(screen.getByTestId("card-list").className).toContain("panel-scroll-area");
-    expect(screen.getByTestId("card-list").className).toContain("-mb-4");
+    expect(screen.getByTestId("card-list").className).toContain("-mb-2");
     expect(screen.getByTestId("card-list").className).toContain("-mr-4");
   });
 

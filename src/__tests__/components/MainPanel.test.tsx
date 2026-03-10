@@ -10,7 +10,12 @@ import {
 import { useClipboardStore } from "../../stores/useClipboardStore";
 import { useSystemStore } from "../../stores/useSystemStore";
 import { useUIStore } from "../../stores/useUIStore";
-import { buildRecord, fixtureRecords, mixedFixtureRecords } from "../fixtures/clipboardRecords";
+import {
+  buildRecord,
+  fixtureRecords,
+  mixedFixtureRecords,
+  semanticFixtureRecords,
+} from "../fixtures/clipboardRecords";
 
 const setInvokeForRecords = (records = mixedFixtureRecords) => {
   __setInvokeHandler(async (command: string, args?: Record<string, unknown>) => {
@@ -59,6 +64,18 @@ describe("MainPanel", () => {
 
     fireEvent.keyDown(window, { key: "ArrowLeft" });
     expect(useClipboardStore.getState().selectedIndex).toBe(0);
+  });
+
+  it("搜索框标签包含搜索图标，侧边栏标题居中展示", async () => {
+    setInvokeForRecords(mixedFixtureRecords);
+    render(<MainPanel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("panel-search-input")).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("panel-search-label").querySelector("svg")).not.toBeNull();
+    expect(screen.getByText("分类").className).toContain("text-center");
   });
 
   it("加载中时渲染骨架卡片", async () => {
@@ -134,6 +151,8 @@ describe("MainPanel", () => {
       expect(screen.getAllByTestId("text-card")).toHaveLength(1);
     });
 
+    const plainTextHint = screen.getByTestId("plain-text-hint");
+
     fireEvent.keyDown(window, { key: "ArrowRight" });
     fireEvent.keyDown(window, { key: "ArrowRight" });
     fireEvent.keyDown(window, { key: "Enter", shiftKey: true });
@@ -146,7 +165,7 @@ describe("MainPanel", () => {
     });
 
     expect(useUIStore.getState().toast?.message).toBe("已切换为纯文本粘贴");
-    expect(screen.getByTestId("plain-text-hint").className.includes("opacity-40")).toBe(false);
+    expect(plainTextHint.className.includes("opacity-40")).toBe(false);
   });
 
   it("UT-PANEL-005 Delete 删除图片记录并移除卡片", async () => {
@@ -206,18 +225,142 @@ describe("MainPanel", () => {
     );
   });
 
-  it("UT-PANEL-008 主面板可打开关于页", async () => {
+  it("UT-PANEL-008 主面板切换为搜索优先布局并移除关于入口", async () => {
     setInvokeForRecords(mixedFixtureRecords);
     render(<MainPanel />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("open-about-button")).toBeInTheDocument();
+      expect(screen.getByTestId("panel-search-input")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByTestId("open-about-button"));
+    expect(screen.queryByText("支持托盘、设置与关于页的发布版基础能力")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("open-about-button")).not.toBeInTheDocument();
+    expect(screen.getByTestId("type-filter-sidebar")).toBeInTheDocument();
+    expect(screen.getByText("分类")).toBeInTheDocument();
+    expect(screen.getByTestId("type-filter-all")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("UT-PANEL-041 搜索框支持模糊搜索、清空与动态宽度", async () => {
+    setInvokeForRecords(semanticFixtureRecords);
+    render(<MainPanel />);
 
     await waitFor(() => {
-      expect(invokeCalls.some((call) => call.command === "show_about_window")).toBe(true);
+      expect(screen.getByTestId("panel-search-input")).toBeInTheDocument();
+    });
+
+    const searchInput = screen.getByTestId("panel-search-input");
+    const initialWidth = (searchInput.parentElement as HTMLElement).style.width;
+
+    fireEvent.change(searchInput, { target: { value: "meeting" } });
+
+    await waitFor(() => {
+      expect(screen.getByText("meeting notes")).toBeInTheDocument();
+      expect(screen.getByText("https://example.com/meeting")).toBeInTheDocument();
+      expect(screen.getAllByText("meeting-agenda.md").length).toBeGreaterThan(0);
+      expect(screen.queryByText("demo.mp4")).not.toBeInTheDocument();
+    });
+
+    expect(useUIStore.getState().searchResultCount).toBe(3);
+    expect(useUIStore.getState().searchResultStatus).toBe("ready");
+    expect((searchInput.parentElement as HTMLElement).style.width).toBe(initialWidth);
+
+    fireEvent.change(searchInput, {
+      target: { value: "meeting notes meeting agenda follow up" },
+    });
+
+    await waitFor(() => {
+      expect(useUIStore.getState().searchResultStatus).toBe("ready");
+    });
+
+    expect((searchInput.parentElement as HTMLElement).style.width).not.toBe(initialWidth);
+
+    fireEvent.click(screen.getByTestId("panel-search-clear-button"));
+
+    await waitFor(() => {
+      expect(useUIStore.getState().searchResultCount).toBe(7);
+      expect(useUIStore.getState().searchResultStatus).toBe("idle");
+    });
+
+    expect((searchInput.parentElement as HTMLElement).style.width).toBe(initialWidth);
+  });
+
+  it("UT-PANEL-042 类型筛选与搜索可组合，并在清空后保留当前筛选", async () => {
+    setInvokeForRecords(semanticFixtureRecords);
+    render(<MainPanel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("type-filter-video")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("type-filter-document"));
+
+    await waitFor(() => {
+      expect(useUIStore.getState().searchResultCount).toBe(1);
+      expect(useUIStore.getState().searchResultStatus).toBe("ready");
+      expect(screen.getByTestId("type-filter-document")).toHaveAttribute("data-active", "true");
+      expect(screen.getAllByText("meeting-agenda.md").length).toBeGreaterThan(0);
+    });
+
+    fireEvent.change(screen.getByTestId("panel-search-input"), { target: { value: "meeting" } });
+
+    await waitFor(() => {
+      expect(useUIStore.getState().searchResultCount).toBe(1);
+      expect(useUIStore.getState().searchResultStatus).toBe("ready");
+      expect(screen.getAllByText("meeting-agenda.md").length).toBeGreaterThan(0);
+      expect(screen.queryByText("meeting notes")).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("panel-search-clear-button"));
+
+    await waitFor(() => {
+      expect(useUIStore.getState().searchResultCount).toBe(1);
+      expect(useUIStore.getState().searchResultStatus).toBe("ready");
+    });
+  });
+
+  it("Tab / Shift+Tab 可循环切换分类，且焦点保持在卡片列表", async () => {
+    setInvokeForRecords(semanticFixtureRecords);
+    render(<MainPanel />);
+
+    const cardList = (await screen.findByTestId("card-list")) as HTMLDivElement;
+    cardList.focus();
+    expect(document.activeElement).toBe(cardList);
+
+    fireEvent.keyDown(window, { key: "Tab" });
+
+    await waitFor(() => {
+      expect(useUIStore.getState().activeTypeFilter).toBe("text");
+    });
+    expect(document.activeElement).toBe(cardList);
+
+    fireEvent.keyDown(window, { key: "Tab", shiftKey: true });
+
+    await waitFor(() => {
+      expect(useUIStore.getState().activeTypeFilter).toBe("all");
+    });
+    expect(document.activeElement).toBe(cardList);
+  });
+
+  it("Command+F 可激活搜索框，再次触发会取消搜索框焦点并回到卡片列表", async () => {
+    setInvokeForRecords(semanticFixtureRecords);
+    render(<MainPanel />);
+
+    const cardList = (await screen.findByTestId("card-list")) as HTMLDivElement;
+    const searchInput = (await screen.findByTestId("panel-search-input")) as HTMLInputElement;
+
+    cardList.focus();
+    expect(document.activeElement).toBe(cardList);
+
+    fireEvent.keyDown(window, { key: "f", metaKey: true });
+
+    await waitFor(() => {
+      expect(document.activeElement).toBe(searchInput);
+    });
+
+    fireEvent.keyDown(window, { key: "f", metaKey: true });
+
+    await waitFor(() => {
+      expect(document.activeElement).toBe(cardList);
     });
   });
 
@@ -233,9 +376,7 @@ describe("MainPanel", () => {
 
     await waitFor(() => {
       expect(useClipboardStore.getState().selectedIndex).toBe(1);
-      expect(screen.getByTestId("image-card").className.includes("border-rose-400/85")).toBe(
-        true
-      );
+      expect(screen.getByTestId("image-card").className.includes("border-rose-400/85")).toBe(true);
     });
 
     expect(invokeCalls.some((call) => call.command === "paste_record")).toBe(false);
