@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type WheelEvent } from "react";
 
 import {
-  isFileRecord,
+  isFileFamilyRecord,
   isImageRecord,
   type ClipboardRecord,
   type VisibleQuickSlot,
@@ -158,7 +158,7 @@ const renderCard = (
     );
   }
 
-  if (isFileRecord(record)) {
+  if (isFileFamilyRecord(record)) {
     return (
       <FileCard isPreviewing={isPreviewing} isSelected={isSelected} record={record} slot={slot} />
     );

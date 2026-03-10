@@ -51,6 +51,45 @@ describe("useUIStore", () => {
     expect(useUIStore.getState().toast).toBeUndefined();
   });
 
+  it("搜索词、类型筛选与结果状态可统一维护并在 reset 时清理", () => {
+    const store = useUIStore.getState();
+
+    store.setSearchQuery("meeting");
+    store.setActiveTypeFilter("document");
+    store.setSearchResultState({
+      sessionKey: "document::meeting",
+      status: "ready",
+      resultCount: 3,
+    });
+
+    expect(useUIStore.getState()).toMatchObject({
+      searchQuery: "meeting",
+      activeTypeFilter: "document",
+      searchSessionKey: "document::meeting",
+      searchResultStatus: "ready",
+      searchResultCount: 3,
+    });
+
+    store.resetSearch();
+    expect(useUIStore.getState()).toMatchObject({
+      searchQuery: "",
+      activeTypeFilter: "all",
+      searchSessionKey: "all::",
+      searchResultStatus: "idle",
+      searchResultCount: 0,
+    });
+
+    store.setSearchQuery("video");
+    store.reset();
+    expect(useUIStore.getState()).toMatchObject({
+      searchQuery: "",
+      activeTypeFilter: "all",
+      searchSessionKey: "all::",
+      searchResultStatus: "idle",
+      searchResultCount: 0,
+    });
+  });
+
   it("startImageOcrPending / clearImageOcrPending 可维护图片 OCR 进行态", () => {
     const store = useUIStore.getState();
 

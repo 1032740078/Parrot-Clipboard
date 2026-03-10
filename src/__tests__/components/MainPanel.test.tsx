@@ -10,7 +10,12 @@ import {
 import { useClipboardStore } from "../../stores/useClipboardStore";
 import { useSystemStore } from "../../stores/useSystemStore";
 import { useUIStore } from "../../stores/useUIStore";
-import { buildRecord, fixtureRecords, mixedFixtureRecords } from "../fixtures/clipboardRecords";
+import {
+  buildRecord,
+  fixtureRecords,
+  mixedFixtureRecords,
+  semanticFixtureRecords,
+} from "../fixtures/clipboardRecords";
 
 const setInvokeForRecords = (records = mixedFixtureRecords) => {
   __setInvokeHandler(async (command: string, args?: Record<string, unknown>) => {
@@ -134,6 +139,8 @@ describe("MainPanel", () => {
       expect(screen.getAllByTestId("text-card")).toHaveLength(1);
     });
 
+    const plainTextHint = screen.getByTestId("plain-text-hint");
+
     fireEvent.keyDown(window, { key: "ArrowRight" });
     fireEvent.keyDown(window, { key: "ArrowRight" });
     fireEvent.keyDown(window, { key: "Enter", shiftKey: true });
@@ -146,7 +153,7 @@ describe("MainPanel", () => {
     });
 
     expect(useUIStore.getState().toast?.message).toBe("已切换为纯文本粘贴");
-    expect(screen.getByTestId("plain-text-hint").className.includes("opacity-40")).toBe(false);
+    expect(plainTextHint.className.includes("opacity-40")).toBe(false);
   });
 
   it("UT-PANEL-005 Delete 删除图片记录并移除卡片", async () => {
@@ -206,18 +213,81 @@ describe("MainPanel", () => {
     );
   });
 
-  it("UT-PANEL-008 主面板可打开关于页", async () => {
+  it("UT-PANEL-008 主面板切换为搜索优先布局并移除关于入口", async () => {
     setInvokeForRecords(mixedFixtureRecords);
     render(<MainPanel />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("open-about-button")).toBeInTheDocument();
+      expect(screen.getByTestId("panel-search-input")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByTestId("open-about-button"));
+    expect(
+      screen.queryByText("支持托盘、设置与关于页的发布版基础能力")
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("open-about-button")).not.toBeInTheDocument();
+    expect(screen.getByTestId("type-filter-sidebar")).toBeInTheDocument();
+  });
+
+  it("UT-PANEL-041 搜索框支持模糊搜索、清空与动态宽度", async () => {
+    setInvokeForRecords(semanticFixtureRecords);
+    render(<MainPanel />);
 
     await waitFor(() => {
-      expect(invokeCalls.some((call) => call.command === "show_about_window")).toBe(true);
+      expect(screen.getByTestId("panel-search-input")).toBeInTheDocument();
+    });
+
+    const searchInput = screen.getByTestId("panel-search-input");
+    const initialWidth = (searchInput.parentElement as HTMLElement).style.width;
+
+    fireEvent.change(searchInput, { target: { value: "meeting" } });
+
+    await waitFor(() => {
+      expect(screen.getByText("meeting notes")).toBeInTheDocument();
+      expect(screen.getByText("https://example.com/meeting")).toBeInTheDocument();
+      expect(screen.getAllByText("meeting-agenda.md").length).toBeGreaterThan(0);
+      expect(screen.queryByText("demo.mp4")).not.toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("search-result-summary")).toHaveTextContent("全部 · 3 条");
+    expect((searchInput.parentElement as HTMLElement).style.width).not.toBe(initialWidth);
+
+    fireEvent.click(screen.getByTestId("panel-search-clear-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("search-result-summary")).toHaveTextContent("全部 · 7 条");
+    });
+
+    expect((searchInput.parentElement as HTMLElement).style.width).toBe(initialWidth);
+  });
+
+  it("UT-PANEL-042 类型筛选与搜索可组合，并在清空后保留当前筛选", async () => {
+    setInvokeForRecords(semanticFixtureRecords);
+    render(<MainPanel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("type-filter-video")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("type-filter-document"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("search-result-summary")).toHaveTextContent("文稿 · 1 条");
+      expect(screen.getByTestId("type-filter-document")).toHaveAttribute("data-active", "true");
+      expect(screen.getAllByText("meeting-agenda.md").length).toBeGreaterThan(0);
+    });
+
+    fireEvent.change(screen.getByTestId("panel-search-input"), { target: { value: "meeting" } });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("search-result-summary")).toHaveTextContent("文稿 · 1 条");
+      expect(screen.getAllByText("meeting-agenda.md").length).toBeGreaterThan(0);
+      expect(screen.queryByText("meeting notes")).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("panel-search-clear-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("search-result-summary")).toHaveTextContent("文稿 · 1 条");
     });
   });
 

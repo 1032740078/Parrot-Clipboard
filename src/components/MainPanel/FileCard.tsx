@@ -1,5 +1,8 @@
-import type { ClipboardRecord } from "../../types/clipboard";
-import { getRecordPreviewText } from "../../types/clipboard";
+import {
+  getContentTypeLabel,
+  getRecordPreviewText,
+  type ClipboardRecord,
+} from "../../types/clipboard";
 import { PreviewStateBadge } from "./PreviewStateBadge";
 import { QuickSelectBadge } from "./QuickSelectBadge";
 import { CARD_HEADER_BASE_CLASS_NAME, getCardAppearanceClassName } from "./cardAppearance";
@@ -24,7 +27,16 @@ export const FileCard = ({
   const previewText = getRecordPreviewText(record);
   const countLabel = meta ? `共 ${meta.count} 项` : "共 0 项";
   const folderLabel = meta?.contains_directory ? "含文件夹" : "";
-  const icon = meta?.contains_directory ? "📁" : "📄";
+  const icon =
+    record.content_type === "video"
+      ? "🎬"
+      : record.content_type === "audio"
+        ? "🎧"
+        : record.content_type === "document"
+          ? "📝"
+          : meta?.contains_directory
+            ? "📁"
+            : "📄";
   const displaySlot = slot ?? (typeof index === "number" ? index + 1 : null);
 
   return (
@@ -41,7 +53,7 @@ export const FileCard = ({
 
       <header className={`${CARD_HEADER_BASE_CLASS_NAME} bg-emerald-500 text-white`}>
         <QuickSelectBadge slot={displaySlot} />
-        <span>文件</span>
+        <span>{getContentTypeLabel(record.content_type)}</span>
       </header>
 
       <div className="px-3 pt-2 text-xs text-[#8E8E93]">

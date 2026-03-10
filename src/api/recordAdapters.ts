@@ -19,7 +19,14 @@ const toNullableString = (value: unknown): string | null =>
   typeof value === "string" ? value : null;
 
 const toContentType = (value: unknown): ClipboardRecordSummary["content_type"] => {
-  if (value === "image" || value === "files") {
+  if (
+    value === "image" ||
+    value === "files" ||
+    value === "link" ||
+    value === "video" ||
+    value === "audio" ||
+    value === "document"
+  ) {
     return value;
   }
 

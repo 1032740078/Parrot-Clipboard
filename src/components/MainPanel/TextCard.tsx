@@ -1,4 +1,8 @@
-import { getRecordPreviewText, type ClipboardRecord } from "../../types/clipboard";
+import {
+  getContentTypeLabel,
+  getRecordPreviewText,
+  type ClipboardRecord,
+} from "../../types/clipboard";
 import { PreviewStateBadge } from "./PreviewStateBadge";
 import { QuickSelectBadge } from "./QuickSelectBadge";
 import { CARD_HEADER_BASE_CLASS_NAME, getCardAppearanceClassName } from "./cardAppearance";
@@ -44,7 +48,7 @@ export const TextCard = ({
 
       <header className={`${CARD_HEADER_BASE_CLASS_NAME} bg-brand text-brand-foreground`}>
         <QuickSelectBadge slot={displaySlot} />
-        <span>文本</span>
+        <span>{getContentTypeLabel(record.content_type)}</span>
       </header>
 
       <div className="px-3 pt-2 text-xs text-[#8E8E93]">

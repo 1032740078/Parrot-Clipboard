@@ -1,6 +1,6 @@
 export type { ErrorCode, IpcError } from "../types/error";
 
-export type ContentType = "text" | "image" | "files";
+export type ContentType = "text" | "image" | "files" | "link" | "video" | "audio" | "document";
 export type PasteMode = "original" | "plain_text";
 export type ThumbnailState = "pending" | "ready" | "failed";
 export type RecordUpdatedReason = "promoted" | "thumbnail_ready" | "thumbnail_failed";

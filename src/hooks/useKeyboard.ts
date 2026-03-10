@@ -1,8 +1,9 @@
-import { useEffect } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 
 import { closePreviewWindow, deleteRecord, hidePanel, showPreviewWindow } from "../api/commands";
 import { getErrorMessage } from "../api/errorHandler";
 import { logger, normalizeError } from "../api/logger";
+import { filterClipboardRecords } from "../components/MainPanel/search";
 import { type ClipboardRecord, type VisibleQuickSlot } from "../types/clipboard";
 import { useClipboardStore, useSystemStore, useUIStore } from "../stores";
 import { executeRecordPaste } from "./recordPaste";
@@ -100,13 +101,13 @@ const resolveVisibleQuickSlotTarget = (
 export const useKeyboard = ({ enabled, visibleQuickSlotsRef }: UseKeyboardOptions): void => {
   const records = useClipboardStore((state) => state.records);
   const selectedIndex = useClipboardStore((state) => state.selectedIndex);
-  const selectPrev = useClipboardStore((state) => state.selectPrev);
-  const selectNext = useClipboardStore((state) => state.selectNext);
   const selectIndex = useClipboardStore((state) => state.selectIndex);
   const removeRecord = useClipboardStore((state) => state.removeRecord);
 
   const clearHistoryDialog = useUIStore((state) => state.clearHistoryDialog);
   const previewOverlay = useUIStore((state) => state.previewOverlay);
+  const searchQuery = useUIStore((state) => state.searchQuery);
+  const activeTypeFilter = useUIStore((state) => state.activeTypeFilter);
   const hidePanelState = useUIStore((state) => state.hidePanel);
   const openPreviewOverlay = useUIStore((state) => state.openPreviewOverlay);
   const closePreviewOverlay = useUIStore((state) => state.closePreviewOverlay);
@@ -114,6 +115,32 @@ export const useKeyboard = ({ enabled, visibleQuickSlotsRef }: UseKeyboardOption
 
   const setPanelVisible = useSystemStore((state) => state.setPanelVisible);
   const permissionStatus = useSystemStore((state) => state.permissionStatus);
+  const filteredRecords = useMemo(
+    () => filterClipboardRecords(records, searchQuery, activeTypeFilter),
+    [activeTypeFilter, records, searchQuery]
+  );
+  const selectedRecord =
+    selectedIndex >= 0 && selectedIndex < records.length ? records[selectedIndex] : undefined;
+  const selectedVisibleIndex = selectedRecord
+    ? filteredRecords.findIndex((record) => record.id === selectedRecord.id)
+    : -1;
+
+  const selectVisibleRecordAt = useCallback(
+    (visibleIndex: number): ClipboardRecord | null => {
+      const visibleRecord = filteredRecords[visibleIndex];
+      if (!visibleRecord) {
+        return null;
+      }
+
+      const nextIndex = records.findIndex((record) => record.id === visibleRecord.id);
+      if (nextIndex >= 0) {
+        selectIndex(nextIndex);
+      }
+
+      return visibleRecord;
+    },
+    [filteredRecords, records, selectIndex]
+  );
 
   useEffect(() => {
     if (!enabled) {
@@ -154,7 +181,7 @@ export const useKeyboard = ({ enabled, visibleQuickSlotsRef }: UseKeyboardOption
         }
 
         const selected =
-          selectedIndex >= 0 && selectedIndex < records.length ? records[selectedIndex] : undefined;
+          selectedVisibleIndex >= 0 ? filteredRecords[selectedVisibleIndex] : filteredRecords[0];
 
         if (!selected) {
           return;
@@ -165,7 +192,7 @@ export const useKeyboard = ({ enabled, visibleQuickSlotsRef }: UseKeyboardOption
           openPreviewOverlay(selected.id, "keyboard_space");
           logger.debug("用户通过空格打开预览", {
             trigger_key: "Space",
-            selected_index: selectedIndex,
+            selected_index: selectedVisibleIndex >= 0 ? selectedVisibleIndex : 0,
             record_id: selected.id,
           });
         } catch (error) {
@@ -206,7 +233,7 @@ export const useKeyboard = ({ enabled, visibleQuickSlotsRef }: UseKeyboardOption
       if (quickPasteIndex !== null) {
         const slot = quickPasteIndex + 1;
         const quickTarget = resolveVisibleQuickSlotTarget(
-          records,
+          filteredRecords,
           visibleQuickSlotsRef?.current ?? [],
           slot
         );
@@ -215,11 +242,14 @@ export const useKeyboard = ({ enabled, visibleQuickSlotsRef }: UseKeyboardOption
         }
 
         event.preventDefault();
-        selectIndex(quickTarget.absoluteIndex);
+        const selectedByQuickPaste = selectVisibleRecordAt(quickTarget.absoluteIndex);
+        if (!selectedByQuickPaste) {
+          return;
+        }
 
         try {
           await executeRecordPaste({
-            record: quickTarget.target,
+            record: selectedByQuickPaste,
             hideReason: "quick_paste",
             trigger: "keyboard_quick_paste",
             logContext: {
@@ -243,7 +273,7 @@ export const useKeyboard = ({ enabled, visibleQuickSlotsRef }: UseKeyboardOption
       if (quickSelectIndex !== null) {
         const slot = quickSelectIndex + 1;
         const quickTarget = resolveVisibleQuickSlotTarget(
-          records,
+          filteredRecords,
           visibleQuickSlotsRef?.current ?? [],
           slot
         );
@@ -252,28 +282,45 @@ export const useKeyboard = ({ enabled, visibleQuickSlotsRef }: UseKeyboardOption
         }
 
         event.preventDefault();
-        selectIndex(quickTarget.absoluteIndex);
+        const selectedByQuickSelect = selectVisibleRecordAt(quickTarget.absoluteIndex);
+        if (!selectedByQuickSelect) {
+          return;
+        }
         logger.debug("用户通过数字键快选记录", {
           trigger_key: event.key,
           selected_index: quickTarget.absoluteIndex,
-          record_id: quickTarget.target.id,
+          record_id: selectedByQuickSelect.id,
           visible_slot: slot,
         });
         return;
       }
 
       if (event.key === "ArrowLeft") {
-        selectPrev();
+        if (filteredRecords.length === 0) {
+          return;
+        }
+
+        const nextVisibleIndex =
+          selectedVisibleIndex <= 0 ? 0 : Math.max(selectedVisibleIndex - 1, 0);
+        selectVisibleRecordAt(nextVisibleIndex);
         return;
       }
 
       if (event.key === "ArrowRight") {
-        selectNext();
+        if (filteredRecords.length === 0) {
+          return;
+        }
+
+        const nextVisibleIndex =
+          selectedVisibleIndex < 0
+            ? 0
+            : Math.min(selectedVisibleIndex + 1, filteredRecords.length - 1);
+        selectVisibleRecordAt(nextVisibleIndex);
         return;
       }
 
       const selected =
-        selectedIndex >= 0 && selectedIndex < records.length ? records[selectedIndex] : undefined;
+        selectedVisibleIndex >= 0 ? filteredRecords[selectedVisibleIndex] : filteredRecords[0];
 
       if (event.key === "Enter") {
         if (!selected) {
@@ -292,7 +339,7 @@ export const useKeyboard = ({ enabled, visibleQuickSlotsRef }: UseKeyboardOption
             trigger: event.shiftKey ? "keyboard_shift_enter" : "keyboard_enter",
             logContext: {
               trigger_key: event.shiftKey ? "Shift+Enter" : "Enter",
-              selected_index: selectedIndex,
+              selected_index: selectedVisibleIndex >= 0 ? selectedVisibleIndex : 0,
             },
           });
         } catch (error) {
@@ -361,13 +408,16 @@ export const useKeyboard = ({ enabled, visibleQuickSlotsRef }: UseKeyboardOption
     previewOverlay,
     records,
     removeRecord,
+    selectVisibleRecordAt,
     selectIndex,
-    selectNext,
-    selectPrev,
+    searchQuery,
+    activeTypeFilter,
     selectedIndex,
+    selectedVisibleIndex,
     setPanelVisible,
     permissionStatus,
     showToast,
+    filteredRecords,
     visibleQuickSlotsRef,
   ]);
 };

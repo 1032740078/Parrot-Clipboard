@@ -2,7 +2,12 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useMemo, useState } from "react";
 
 import { usePreviewOverlay } from "../../hooks/usePreviewOverlay";
-import { isFileRecord, isImageRecord, isTextRecord } from "../../types/clipboard";
+import {
+  getContentTypeLabel,
+  isFileRecord,
+  isImageRecord,
+  isTextRecord,
+} from "../../types/clipboard";
 import { prefersReducedMotion } from "./motion";
 import { toPreviewSrc } from "./previewAsset";
 import { formatRelativeTime } from "./time";
@@ -27,12 +32,6 @@ const cardMotion = {
     y: 8,
     transition: { duration: 0.12, ease: [0.4, 0, 1, 1] },
   },
-} as const;
-
-const contentTypeLabelMap = {
-  text: "文本",
-  image: "图片",
-  files: "文件",
 } as const;
 
 export const PreviewOverlay = () => {
@@ -71,7 +70,7 @@ export const PreviewOverlay = () => {
     : cardMotion;
 
   const title = record.preview_text;
-  const typeLabel = contentTypeLabelMap[record.content_type];
+  const typeLabel = getContentTypeLabel(record.content_type);
   const sourceApp = record.source_app ?? "未知来源";
 
   return (

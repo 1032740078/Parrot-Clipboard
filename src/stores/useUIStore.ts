@@ -1,5 +1,7 @@
 import { create } from "zustand";
 
+import type { PanelTypeFilter } from "../types/clipboard";
+
 export interface ToastState {
   level: "info" | "error";
   message: string;
@@ -43,6 +45,8 @@ export interface ContextMenuActionState {
 
 export type ContextMenuPlacement = "bottom-start" | "bottom-end";
 
+export type SearchResultStatus = "idle" | "filtering" | "ready";
+
 export type ContextMenuCloseReason =
   | "click_outside"
   | "action_completed"
@@ -63,6 +67,11 @@ export interface ContextMenuState {
 interface UIState {
   isPanelVisible: boolean;
   imageOcrPendingRecordId?: number;
+  searchQuery: string;
+  activeTypeFilter: PanelTypeFilter;
+  searchSessionKey: string;
+  searchResultStatus: SearchResultStatus;
+  searchResultCount: number;
   toast?: ToastState;
   clearHistoryDialog?: ClearHistoryDialogState;
   previewOverlay?: PreviewOverlayState;
@@ -70,6 +79,14 @@ interface UIState {
   contextMenu?: ContextMenuState;
   lastContextMenuCloseReason?: ContextMenuCloseReason;
   permissionGuideVisible: boolean;
+  setSearchQuery: (query: string) => void;
+  setActiveTypeFilter: (filter: PanelTypeFilter) => void;
+  setSearchResultState: (payload: {
+    sessionKey: string;
+    status: SearchResultStatus;
+    resultCount: number;
+  }) => void;
+  resetSearch: () => void;
   startImageOcrPending: (recordId: number) => void;
   clearImageOcrPending: () => void;
   showPanel: () => void;
@@ -92,6 +109,11 @@ interface UIState {
 export const useUIStore = create<UIState>((set) => ({
   isPanelVisible: false,
   imageOcrPendingRecordId: undefined,
+  searchQuery: "",
+  activeTypeFilter: "all",
+  searchSessionKey: "all::",
+  searchResultStatus: "idle",
+  searchResultCount: 0,
   toast: undefined,
   clearHistoryDialog: undefined,
   previewOverlay: undefined,
@@ -99,6 +121,22 @@ export const useUIStore = create<UIState>((set) => ({
   contextMenu: undefined,
   lastContextMenuCloseReason: undefined,
   permissionGuideVisible: false,
+  setSearchQuery: (query) => set({ searchQuery: query }),
+  setActiveTypeFilter: (filter) => set({ activeTypeFilter: filter }),
+  setSearchResultState: ({ sessionKey, status, resultCount }) =>
+    set({
+      searchSessionKey: sessionKey,
+      searchResultStatus: status,
+      searchResultCount: resultCount,
+    }),
+  resetSearch: () =>
+    set({
+      searchQuery: "",
+      activeTypeFilter: "all",
+      searchSessionKey: "all::",
+      searchResultStatus: "idle",
+      searchResultCount: 0,
+    }),
   startImageOcrPending: (recordId) => set({ imageOcrPendingRecordId: recordId }),
   clearImageOcrPending: () => set({ imageOcrPendingRecordId: undefined }),
   showPanel: () => set({ isPanelVisible: true }),
@@ -160,6 +198,11 @@ export const useUIStore = create<UIState>((set) => ({
     set({
       isPanelVisible: false,
       imageOcrPendingRecordId: undefined,
+      searchQuery: "",
+      activeTypeFilter: "all",
+      searchSessionKey: "all::",
+      searchResultStatus: "idle",
+      searchResultCount: 0,
       toast: undefined,
       clearHistoryDialog: undefined,
       previewOverlay: undefined,

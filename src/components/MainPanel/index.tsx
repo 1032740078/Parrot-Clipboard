@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
 import { deleteRecord, getRecordSummaries, showPreviewWindow } from "../../api/commands";
-import { showAboutWindow, showPermissionGuideWindow } from "../../api/diagnostics";
-import { logger, normalizeError } from "../../api/logger";
+import { showPermissionGuideWindow } from "../../api/diagnostics";
 import { getErrorMessage } from "../../api/errorHandler";
+import { logger, normalizeError } from "../../api/logger";
 import {
-  isFileRecord,
+  isFileFamilyRecord,
   isImageRecord,
-  isTextRecord,
+  isTextualRecord,
   toClipboardRecord,
   type VisibleQuickSlot,
 } from "../../types/clipboard";
@@ -24,13 +24,24 @@ import { buildCardContextMenuActions } from "./contextMenuActions";
 import { resolveContextMenuPosition } from "./contextMenuPosition";
 import { getPanelMotionVariants, prefersReducedMotion } from "./motion";
 import { PauseHint } from "./PauseHint";
+import {
+  buildSearchSessionKey,
+  filterClipboardRecords,
+  PANEL_TYPE_FILTER_OPTIONS,
+} from "./search";
 import { SkeletonCard } from "./SkeletonCard";
 
 const INITIAL_RECORD_LIMIT = 200;
+const SEARCH_INPUT_MIN_WIDTH_PX = 320;
+const SEARCH_INPUT_MAX_WIDTH_PX = 560;
+
+const resolveSearchInputWidth = (query: string): string => {
+  const expandedWidth = SEARCH_INPUT_MIN_WIDTH_PX + query.trim().length * 7;
+  return `${Math.min(Math.max(expandedWidth, SEARCH_INPUT_MIN_WIDTH_PX), SEARCH_INPUT_MAX_WIDTH_PX)}px`;
+};
 
 export const MainPanel = () => {
   const records = useClipboardStore((state) => state.records);
-  const selectedIndex = useClipboardStore((state) => state.selectedIndex);
   const selectedRecord = useClipboardStore((state) => state.getSelectedRecord());
   const isHydrating = useClipboardStore((state) => state.isHydrating);
   const hydrate = useClipboardStore((state) => state.hydrate);
@@ -43,14 +54,20 @@ export const MainPanel = () => {
   const closeContextMenu = useUIStore((state) => state.closeContextMenu);
   const isPanelVisible = useUIStore((state) => state.isPanelVisible);
   const imageOcrPendingRecordId = useUIStore((state) => state.imageOcrPendingRecordId);
+  const searchQuery = useUIStore((state) => state.searchQuery);
+  const activeTypeFilter = useUIStore((state) => state.activeTypeFilter);
   const openPreviewOverlay = useUIStore((state) => state.openPreviewOverlay);
   const openContextMenu = useUIStore((state) => state.openContextMenu);
   const openPermissionGuide = useUIStore((state) => state.openPermissionGuide);
+  const setActiveTypeFilter = useUIStore((state) => state.setActiveTypeFilter);
+  const setSearchQuery = useUIStore((state) => state.setSearchQuery);
+  const setSearchResultState = useUIStore((state) => state.setSearchResultState);
   const showToast = useUIStore((state) => state.showToast);
   const monitoring = useSystemStore((state) => state.monitoring);
   const permissionStatus = useSystemStore((state) => state.permissionStatus);
 
   const visibleQuickSlotsRef = useRef<VisibleQuickSlot[]>([]);
+  const deferredSearchQuery = useDeferredValue(searchQuery);
 
   useClipboardEvents();
   useKeyboard({ enabled: isPanelVisible, visibleQuickSlotsRef });
@@ -72,41 +89,95 @@ export const MainPanel = () => {
     void bootstrap();
   }, [hydrate, setHydrating]);
 
-  const plainTextEnabled = selectedRecord
-    ? isTextRecord(selectedRecord) || isFileRecord(selectedRecord) || isImageRecord(selectedRecord)
+  const filteredRecords = useMemo(
+    () => filterClipboardRecords(records, deferredSearchQuery, activeTypeFilter),
+    [activeTypeFilter, deferredSearchQuery, records]
+  );
+  const selectedVisibleIndex = useMemo(
+    () =>
+      selectedRecord ? filteredRecords.findIndex((record) => record.id === selectedRecord.id) : -1,
+    [filteredRecords, selectedRecord]
+  );
+  const selectedVisibleRecord =
+    selectedVisibleIndex >= 0 ? filteredRecords[selectedVisibleIndex] : filteredRecords[0];
+  const plainTextEnabled = selectedVisibleRecord
+    ? isTextualRecord(selectedVisibleRecord) ||
+      isFileFamilyRecord(selectedVisibleRecord) ||
+      isImageRecord(selectedVisibleRecord)
     : false;
   const panelMotionVariants = getPanelMotionVariants(prefersReducedMotion());
   const pasteBlockedByPermission =
     permissionStatus?.platform === "macos" && permissionStatus.accessibility === "missing";
+  const searchSessionKey = buildSearchSessionKey(deferredSearchQuery, activeTypeFilter);
+  const searchSummaryLabel =
+    activeTypeFilter === "all"
+      ? `全部 · ${filteredRecords.length} 条`
+      : `${PANEL_TYPE_FILTER_OPTIONS.find((item) => item.value === activeTypeFilter)?.label ?? "筛选"} · ${filteredRecords.length} 条`;
+  const searchInputWidth = resolveSearchInputWidth(searchQuery);
 
-  const handleOpenAbout = async (): Promise<void> => {
-    try {
-      await showAboutWindow();
-      logger.info("用户从主面板打开关于页");
-    } catch (error) {
-      showToast({
-        level: "error",
-        message: getErrorMessage(error),
-        duration: 2200,
-      });
+  useEffect(() => {
+    const status =
+      searchQuery !== deferredSearchQuery
+        ? "filtering"
+        : searchQuery.trim().length === 0 && activeTypeFilter === "all"
+          ? "idle"
+          : "ready";
+
+    setSearchResultState({
+      sessionKey: searchSessionKey,
+      status,
+      resultCount: filteredRecords.length,
+    });
+  }, [
+    activeTypeFilter,
+    deferredSearchQuery,
+    filteredRecords.length,
+    searchQuery,
+    searchSessionKey,
+    setSearchResultState,
+  ]);
+
+  useEffect(() => {
+    if (filteredRecords.length === 0 || selectedVisibleIndex >= 0) {
+      return;
     }
-  };
+
+    const firstVisibleRecordId = filteredRecords[0]?.id;
+    const nextIndex = records.findIndex((record) => record.id === firstVisibleRecordId);
+    if (nextIndex >= 0) {
+      selectIndex(nextIndex);
+    }
+  }, [filteredRecords, records, selectIndex, selectedVisibleIndex]);
 
   const handleCardSelect = (index: number): void => {
-    selectIndex(index);
+    const target = filteredRecords[index];
+    if (!target) {
+      return;
+    }
+
+    const nextIndex = records.findIndex((record) => record.id === target.id);
+    if (nextIndex < 0) {
+      return;
+    }
+
+    selectIndex(nextIndex);
     logger.debug("用户通过鼠标选择记录", {
       selected_index: index,
-      record_id: records[index]?.id,
+      record_id: target.id,
     });
   };
 
   const handleCardDoubleClick = (recordId: number, index: number): void => {
-    const target = records[index];
+    const target = filteredRecords[index];
     if (!target || target.id !== recordId) {
       return;
     }
 
-    selectIndex(index);
+    const nextIndex = records.findIndex((record) => record.id === target.id);
+    if (nextIndex >= 0) {
+      selectIndex(nextIndex);
+    }
+
     void executeRecordPaste({
       record: target,
       hideReason: "paste_completed",
@@ -127,11 +198,14 @@ export const MainPanel = () => {
   }, []);
 
   const handleOpenCardContextMenu = (
-    record: (typeof records)[number],
+    record: (typeof filteredRecords)[number],
     index: number,
     anchor: { x: number; y: number }
   ): void => {
-    selectIndex(index);
+    const nextIndex = records.findIndex((item) => item.id === record.id);
+    if (nextIndex >= 0) {
+      selectIndex(nextIndex);
+    }
 
     const actions = buildCardContextMenuActions(record);
     const position = resolveContextMenuPosition(
@@ -268,97 +342,153 @@ export const MainPanel = () => {
             variants={panelMotionVariants}
           >
             <div className="flex h-full min-h-0 flex-col">
-              <header className="mb-3 flex items-center justify-between gap-3">
-                <div>
-                  <h1 className="text-base font-semibold text-white">最近记录</h1>
-                  <p className="text-xs text-slate-400">支持托盘、设置与关于页的发布版基础能力</p>
-                </div>
-                <button
-                  className="rounded-lg border border-white/15 px-3 py-2 text-sm text-slate-100 transition hover:border-sky-400 hover:text-sky-200"
-                  data-testid="open-about-button"
-                  onClick={() => {
-                    void handleOpenAbout();
-                  }}
-                  type="button"
-                >
-                  关于
-                </button>
-              </header>
-
-              {pasteBlockedByPermission ? (
-                <div
-                  className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-50"
-                  data-testid="permission-status-bar"
-                >
-                  <div>
-                    <p className="font-medium">辅助功能权限缺失</p>
-                    <p className="mt-1 text-xs text-amber-100/90">
-                      当前仍可浏览、选择和删除历史，但 Enter / Shift+Enter 粘贴操作暂不可用。
-                    </p>
-                  </div>
-                  <button
-                    className="rounded-lg border border-amber-300/40 px-3 py-2 text-xs font-medium text-amber-50 transition hover:border-amber-200"
-                    onClick={() => {
-                      void handleOpenPermissionGuide();
+              <div className="mb-3 flex items-center justify-center">
+                <div className="relative" style={{ width: searchInputWidth }}>
+                  <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-slate-400">
+                    搜索
+                  </span>
+                  <input
+                    className="h-11 w-full rounded-full border border-white/10 bg-white/8 pl-14 pr-12 text-sm text-white outline-none transition-[width,border-color,background-color] duration-150 placeholder:text-slate-500 focus:border-sky-300/55 focus:bg-white/12"
+                    data-expanded={searchQuery.trim().length > 0 ? "true" : "false"}
+                    data-testid="panel-search-input"
+                    onChange={(event) => {
+                      setSearchQuery(event.target.value);
                     }}
-                    type="button"
-                  >
-                    查看引导
-                  </button>
-                </div>
-              ) : null}
-
-              {monitoring ? null : <PauseHint />}
-
-              <div className="min-h-0 flex-1 overflow-hidden">
-                {isHydrating ? (
-                  <div
-                    className="panel-scroll-area flex gap-4 overflow-x-auto overflow-y-hidden -mb-4 -mr-4 pb-4 pr-4"
-                    data-testid="skeleton-list"
-                  >
-                    {Array.from({ length: 3 }, (_, index) => (
-                      <SkeletonCard key={`skeleton-${index}`} index={index} />
-                    ))}
-                  </div>
-                ) : records.length === 0 ? (
-                  <EmptyState />
-                ) : (
-                  <CardList
-                    onOpenContextMenu={handleOpenCardContextMenu}
-                    onPasteRecord={(record, index) => {
-                      handleCardDoubleClick(record.id, index);
-                    }}
-                    onSelectRecord={handleCardSelect}
-                    onVisibleQuickSlotsChange={handleVisibleQuickSlotsChange}
-                    pendingOcrRecordId={imageOcrPendingRecordId}
-                    previewingRecordId={previewOverlay?.recordId}
-                    records={records}
-                    selectedIndex={selectedIndex}
+                    placeholder="搜索内容、来源或文件名"
+                    type="search"
+                    value={searchQuery}
                   />
-                )}
+                  {searchQuery.trim().length > 0 ? (
+                    <button
+                      className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-white/8 text-sm text-slate-200 transition hover:border-sky-300/45 hover:text-white"
+                      data-testid="panel-search-clear-button"
+                      onClick={() => {
+                        setSearchQuery("");
+                      }}
+                      type="button"
+                    >
+                      ×
+                    </button>
+                  ) : null}
+                </div>
               </div>
 
-              <footer
-                className="mt-3 flex items-center justify-between text-[11px] text-slate-300"
-                data-testid="shortcut-bar"
-              >
-                <span>空格 预览</span>
-                <span
-                  className={pasteBlockedByPermission ? "opacity-40" : ""}
-                  data-testid="paste-hint"
+              <div className="flex min-h-0 flex-1 gap-4">
+                <aside
+                  className="flex w-[92px] shrink-0 flex-col rounded-[24px] border border-white/8 bg-white/[0.04] p-2"
+                  data-testid="type-filter-sidebar"
                 >
-                  Enter 粘贴
-                </span>
-                <span
-                  className={plainTextEnabled && !pasteBlockedByPermission ? "" : "opacity-40"}
-                  data-testid="plain-text-hint"
-                >
-                  Shift+Enter 纯文本
-                </span>
-                <span>Delete 删除</span>
-                <span>可视 1-9 快选</span>
-                <span>⌘+可视 1-9 快贴</span>
-                <span>Esc 关闭</span>
+                  {PANEL_TYPE_FILTER_OPTIONS.map((option) => (
+                    <button
+                      className={`mb-1 rounded-2xl px-3 py-2 text-left text-xs font-medium transition ${
+                        activeTypeFilter === option.value
+                          ? "bg-sky-400/18 text-white shadow-[0_8px_24px_rgba(56,189,248,0.18)]"
+                          : "text-slate-300 hover:bg-white/8 hover:text-white"
+                      }`}
+                      data-active={activeTypeFilter === option.value ? "true" : "false"}
+                      data-testid={`type-filter-${option.value}`}
+                      key={option.value}
+                      onClick={() => {
+                        setActiveTypeFilter(option.value);
+                      }}
+                      type="button"
+                    >
+                      {option.shortLabel}
+                    </button>
+                  ))}
+                </aside>
+
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                  <div
+                    className="mb-3 flex items-center justify-between gap-3 px-1 text-xs text-slate-400"
+                    data-status={searchQuery !== deferredSearchQuery ? "filtering" : "ready"}
+                    data-testid="search-result-summary"
+                  >
+                    <span>{searchSummaryLabel}</span>
+                    <span>{searchQuery !== deferredSearchQuery ? "刷新中" : "已同步"}</span>
+                  </div>
+
+                  {pasteBlockedByPermission ? (
+                    <div
+                      className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-50"
+                      data-testid="permission-status-bar"
+                    >
+                      <div>
+                        <p className="font-medium">辅助功能权限缺失</p>
+                        <p className="mt-1 text-xs text-amber-100/90">
+                          当前仍可浏览、选择和删除历史，但 Enter / Shift+Enter 粘贴操作暂不可用。
+                        </p>
+                      </div>
+                      <button
+                        className="rounded-lg border border-amber-300/40 px-3 py-2 text-xs font-medium text-amber-50 transition hover:border-amber-200"
+                        onClick={() => {
+                          void handleOpenPermissionGuide();
+                        }}
+                        type="button"
+                      >
+                        查看引导
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {monitoring ? null : <PauseHint />}
+
+                  <div className="min-h-0 flex-1 overflow-hidden">
+                    {isHydrating ? (
+                      <div
+                        className="panel-scroll-area flex gap-4 overflow-x-auto overflow-y-hidden -mb-4 -mr-4 pb-4 pr-4"
+                        data-testid="skeleton-list"
+                      >
+                        {Array.from({ length: 3 }, (_, index) => (
+                          <SkeletonCard key={`skeleton-${index}`} index={index} />
+                        ))}
+                      </div>
+                    ) : records.length === 0 ? (
+                      <EmptyState />
+                    ) : filteredRecords.length === 0 ? (
+                      <EmptyState
+                        description="换个关键字，或者保留当前筛选查看完整记录"
+                        testId="search-empty-state"
+                        title="没有匹配结果"
+                      />
+                    ) : (
+                      <CardList
+                        onOpenContextMenu={handleOpenCardContextMenu}
+                        onPasteRecord={(record, index) => {
+                          handleCardDoubleClick(record.id, index);
+                        }}
+                        onSelectRecord={handleCardSelect}
+                        onVisibleQuickSlotsChange={handleVisibleQuickSlotsChange}
+                        pendingOcrRecordId={imageOcrPendingRecordId}
+                        previewingRecordId={previewOverlay?.recordId}
+                        records={filteredRecords}
+                        selectedIndex={selectedVisibleIndex}
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <footer className="mt-3 flex justify-center" data-testid="shortcut-bar">
+                <div className="flex max-w-[52rem] flex-wrap items-center justify-center gap-x-5 gap-y-1 text-[11px] text-slate-300">
+                  <span>空格 预览</span>
+                  <span
+                    className={pasteBlockedByPermission ? "opacity-40" : ""}
+                    data-testid="paste-hint"
+                  >
+                    Enter 粘贴
+                  </span>
+                  <span
+                    className={plainTextEnabled && !pasteBlockedByPermission ? "" : "opacity-40"}
+                    data-testid="plain-text-hint"
+                  >
+                    Shift+Enter 纯文本
+                  </span>
+                  <span>Delete 删除</span>
+                  <span>可视 1-9 快选</span>
+                  <span>⌘+可视 1-9 快贴</span>
+                  <span>Esc 关闭</span>
+                </div>
               </footer>
             </div>
           </motion.section>
