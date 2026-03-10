@@ -1,9 +1,41 @@
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri::{AppHandle, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 use crate::{
     error::AppError,
     ipc::events::{emit_preview_window_requested, emit_preview_window_visibility_changed},
 };
+
+use super::position::{center_in_work_area, select_target_work_area, WorkArea};
+
+fn to_work_area(monitor: &tauri::Monitor) -> WorkArea {
+    let position = monitor.position();
+    let size = monitor.size();
+
+    WorkArea {
+        x: position.x,
+        y: position.y,
+        width: size.width,
+        height: size.height,
+    }
+}
+
+fn resolve_target_work_area(app_handle: &AppHandle) -> Option<WorkArea> {
+    let primary_monitor = app_handle.primary_monitor().ok().flatten()?;
+    let fallback = to_work_area(&primary_monitor);
+
+    let available_monitors = app_handle.available_monitors().ok()?;
+    let work_areas: Vec<WorkArea> = available_monitors.iter().map(to_work_area).collect();
+
+    let cursor_position = match app_handle.cursor_position() {
+        Ok(position) => Some((position.x, position.y)),
+        Err(error) => {
+            tracing::warn!(error = %error, "preview: read cursor position failed");
+            None
+        }
+    };
+
+    Some(select_target_work_area(&work_areas, cursor_position, fallback))
+}
 
 pub const PREVIEW_WINDOW_LABEL: &str = "preview";
 const PREVIEW_WINDOW_TITLE: &str = "卡片预览";
@@ -70,9 +102,17 @@ impl PreviewWindowRuntime for TauriPreviewWindowRuntime {
         .resizable(true)
         .skip_taskbar(false)
         .visible(false)
-        .center()
         .build()
         .map_err(|error| AppError::Window(format!("build preview window failed: {error}")))?;
+
+        if let Some(work_area) = resolve_target_work_area(&self.app_handle) {
+            let (x, y) = center_in_work_area(work_area, PREVIEW_WINDOW_WIDTH, PREVIEW_WINDOW_HEIGHT);
+            let _ = window.set_position(PhysicalPosition::new(x, y));
+            tracing::debug!(x, y, "preview window positioned on target display");
+        } else {
+            let _ = window.center();
+            tracing::debug!("preview window fallback to center");
+        }
 
         window.on_window_event(move |event| {
             if matches!(event, WindowEvent::Destroyed) {

@@ -84,12 +84,21 @@ pub fn calculate_panel_frame(
     }
 }
 
+pub fn center_in_work_area(work_area: WorkArea, window_width: f64, window_height: f64) -> (i32, i32) {
+    let x = f64::from(work_area.x)
+        + (f64::from(work_area.width) - window_width) / 2.0;
+    let y = f64::from(work_area.y)
+        + (f64::from(work_area.height) - window_height) / 2.0;
+
+    (x.round() as i32, y.round() as i32)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         calculate_macos_display_point_from_mouse_location, calculate_panel_frame,
-        calculate_panel_frame_for_work_area, select_target_work_area, PanelFrame, WorkArea,
-        PANEL_HEIGHT_PX,
+        calculate_panel_frame_for_work_area, center_in_work_area, select_target_work_area,
+        PanelFrame, WorkArea, PANEL_HEIGHT_PX,
     };
 
     #[test]
@@ -246,5 +255,35 @@ mod tests {
                 height: 336,
             }
         );
+    }
+
+    #[test]
+    fn should_center_window_in_work_area() {
+        let work_area = WorkArea {
+            x: 0,
+            y: 0,
+            width: 1512,
+            height: 982,
+        };
+
+        let (x, y) = center_in_work_area(work_area, 960.0, 760.0);
+
+        assert_eq!(x, 276);
+        assert_eq!(y, 111);
+    }
+
+    #[test]
+    fn should_center_window_in_secondary_display_work_area() {
+        let work_area = WorkArea {
+            x: 1512,
+            y: 0,
+            width: 1728,
+            height: 1117,
+        };
+
+        let (x, y) = center_in_work_area(work_area, 960.0, 760.0);
+
+        assert_eq!(x, 1896);
+        assert_eq!(y, 179);
     }
 }
