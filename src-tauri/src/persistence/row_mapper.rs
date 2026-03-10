@@ -6,31 +6,33 @@ use crate::{
             ClipboardRecordDetail, ClipboardRecordSummary, FileEntryType, FileItemDetail,
             FilesDetail, FilesMeta, ImageDetail, ImageMeta, TextMeta, ThumbnailState,
         },
-        types::ContentType,
+        types::{ContentType, PayloadType},
     },
     error::AppError,
 };
 
 pub fn map_summary_row(row: &Row<'_>) -> Result<ClipboardRecordSummary, AppError> {
     let id = row_id(row, 0)?;
-    let content_type = content_type_from_row(row, 1)?;
-    let preview_text: String = row_value(row, 2, "preview_text")?;
-    let source_app: Option<String> = row_optional_value(row, 3, "source_app")?;
-    let created_at: i64 = row_value(row, 4, "created_at")?;
-    let last_used_at: i64 = row_value(row, 5, "last_used_at")?;
-    let text_char_count: Option<i64> = row_optional_value(row, 6, "text_char_count")?;
-    let text_line_count: Option<i64> = row_optional_value(row, 7, "text_line_count")?;
-    let thumbnail_path: Option<String> = row_optional_value(row, 8, "thumbnail_path")?;
-    let mime_type: Option<String> = row_optional_value(row, 9, "mime_type")?;
-    let pixel_width: Option<i64> = row_optional_value(row, 10, "pixel_width")?;
-    let pixel_height: Option<i64> = row_optional_value(row, 11, "pixel_height")?;
-    let thumbnail_state: Option<String> = row_optional_value(row, 12, "thumbnail_state")?;
-    let file_count: i64 = row_value(row, 13, "file_count")?;
-    let primary_name: Option<String> = row_optional_value(row, 14, "primary_name")?;
-    let contains_directory: i64 = row_value(row, 15, "contains_directory")?;
+    let payload_type = payload_type_from_row(row, 1)?;
+    let content_type = content_type_from_row(row, 2)?;
+    let preview_text: String = row_value(row, 3, "preview_text")?;
+    let source_app: Option<String> = row_optional_value(row, 4, "source_app")?;
+    let created_at: i64 = row_value(row, 5, "created_at")?;
+    let last_used_at: i64 = row_value(row, 6, "last_used_at")?;
+    let text_char_count: Option<i64> = row_optional_value(row, 7, "text_char_count")?;
+    let text_line_count: Option<i64> = row_optional_value(row, 8, "text_line_count")?;
+    let thumbnail_path: Option<String> = row_optional_value(row, 9, "thumbnail_path")?;
+    let mime_type: Option<String> = row_optional_value(row, 10, "mime_type")?;
+    let pixel_width: Option<i64> = row_optional_value(row, 11, "pixel_width")?;
+    let pixel_height: Option<i64> = row_optional_value(row, 12, "pixel_height")?;
+    let thumbnail_state: Option<String> = row_optional_value(row, 13, "thumbnail_state")?;
+    let file_count: i64 = row_value(row, 14, "file_count")?;
+    let primary_name: Option<String> = row_optional_value(row, 15, "primary_name")?;
+    let contains_directory: i64 = row_value(row, 16, "contains_directory")?;
 
     Ok(ClipboardRecordSummary {
         id,
+        payload_type,
         content_type,
         preview_text,
         source_app,
@@ -54,28 +56,35 @@ pub fn content_type_from_row(row: &Row<'_>, index: usize) -> Result<ContentType,
         .ok_or_else(|| AppError::Db(format!("unsupported content_type `{raw}` in sqlite row")))
 }
 
+pub fn payload_type_from_row(row: &Row<'_>, index: usize) -> Result<PayloadType, AppError> {
+    let raw: String = row_value(row, index, "payload_type")?;
+    PayloadType::from_db(&raw)
+        .ok_or_else(|| AppError::Db(format!("unsupported payload_type `{raw}` in sqlite row")))
+}
+
 pub fn map_detail_row(
     row: &Row<'_>,
     files_detail: Option<FilesDetail>,
 ) -> Result<ClipboardRecordDetail, AppError> {
     let id = row_id(row, 0)?;
-    let content_type = content_type_from_row(row, 1)?;
-    let preview_text: String = row_value(row, 2, "preview_text")?;
-    let source_app: Option<String> = row_optional_value(row, 3, "source_app")?;
-    let created_at: i64 = row_value(row, 4, "created_at")?;
-    let last_used_at: i64 = row_value(row, 5, "last_used_at")?;
-    let text_content: Option<String> = row_optional_value(row, 6, "text_content")?;
-    let rich_content: Option<String> = row_optional_value(row, 7, "rich_content")?;
-    let original_path: Option<String> = row_optional_value(row, 8, "original_path")?;
-    let thumbnail_path: Option<String> = row_optional_value(row, 9, "thumbnail_path")?;
-    let mime_type: Option<String> = row_optional_value(row, 10, "mime_type")?;
-    let pixel_width: Option<i64> = row_optional_value(row, 11, "pixel_width")?;
-    let pixel_height: Option<i64> = row_optional_value(row, 12, "pixel_height")?;
-    let byte_size: Option<i64> = row_optional_value(row, 13, "byte_size")?;
-    let thumbnail_state: Option<String> = row_optional_value(row, 14, "thumbnail_state")?;
-    let file_count: i64 = row_value(row, 15, "file_count")?;
-    let primary_name: Option<String> = row_optional_value(row, 16, "primary_name")?;
-    let contains_directory: i64 = row_value(row, 17, "contains_directory")?;
+    let payload_type = payload_type_from_row(row, 1)?;
+    let content_type = content_type_from_row(row, 2)?;
+    let preview_text: String = row_value(row, 3, "preview_text")?;
+    let source_app: Option<String> = row_optional_value(row, 4, "source_app")?;
+    let created_at: i64 = row_value(row, 5, "created_at")?;
+    let last_used_at: i64 = row_value(row, 6, "last_used_at")?;
+    let text_content: Option<String> = row_optional_value(row, 7, "text_content")?;
+    let rich_content: Option<String> = row_optional_value(row, 8, "rich_content")?;
+    let original_path: Option<String> = row_optional_value(row, 9, "original_path")?;
+    let thumbnail_path: Option<String> = row_optional_value(row, 10, "thumbnail_path")?;
+    let mime_type: Option<String> = row_optional_value(row, 11, "mime_type")?;
+    let pixel_width: Option<i64> = row_optional_value(row, 12, "pixel_width")?;
+    let pixel_height: Option<i64> = row_optional_value(row, 13, "pixel_height")?;
+    let byte_size: Option<i64> = row_optional_value(row, 14, "byte_size")?;
+    let thumbnail_state: Option<String> = row_optional_value(row, 15, "thumbnail_state")?;
+    let file_count: i64 = row_value(row, 16, "file_count")?;
+    let primary_name: Option<String> = row_optional_value(row, 17, "primary_name")?;
+    let contains_directory: i64 = row_value(row, 18, "contains_directory")?;
 
     let image_meta = build_image_meta(
         mime_type.clone(),
@@ -95,6 +104,7 @@ pub fn map_detail_row(
 
     Ok(ClipboardRecordDetail {
         id,
+        payload_type,
         content_type,
         preview_text,
         source_app,

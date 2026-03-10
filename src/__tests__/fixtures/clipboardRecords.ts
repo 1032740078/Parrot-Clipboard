@@ -4,6 +4,7 @@ const countLines = (text: string): number => (text.length === 0 ? 0 : text.split
 
 export const buildRecord = (id: number, text: string, createdAt: number): ClipboardRecord => ({
   id,
+  payload_type: "text",
   content_type: "text",
   preview_text: text,
   text_content: text,
@@ -26,6 +27,7 @@ export const buildSemanticTextRecord = (
   sourceApp = "Notes"
 ): ClipboardRecord => ({
   id,
+  payload_type: "text",
   content_type: contentType,
   preview_text: text,
   text_content: text,
@@ -48,6 +50,7 @@ export const buildImageRecord = (
   dimensions: { width: number; height: number } = { width: 1280, height: 720 }
 ): ClipboardRecord => ({
   id,
+  payload_type: "image",
   content_type: "image",
   preview_text: title,
   source_app: "Finder",
@@ -73,6 +76,7 @@ export const buildFileRecord = (
   contentType: Extract<ContentType, "files" | "video" | "audio" | "document"> = "files"
 ): ClipboardRecord => ({
   id,
+  payload_type: "files",
   content_type: contentType,
   preview_text: count > 1 ? `${primaryName} +${count - 1}` : primaryName,
   source_app: "Finder",

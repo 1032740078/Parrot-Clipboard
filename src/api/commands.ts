@@ -11,6 +11,7 @@ import type {
   ClearHistoryResult,
   ClipboardRecordDetail,
   ClipboardRecordSummary,
+  ContentType,
   LegacyClipboardRecord,
   MonitoringStatus,
   PanelVisibilityReason,
@@ -45,6 +46,33 @@ export const getRecordSummaries = async (limit = 20): Promise<ClipboardRecordSum
     return records.map((record) => toClipboardRecordSummary(record));
   } catch (error) {
     logger.error("读取剪贴板摘要失败", { limit, error: normalizeError(error) });
+    throw error;
+  }
+};
+
+export const searchRecords = async (
+  query: string,
+  typeFilter?: Exclude<ContentType, never> | null,
+  limit = 20
+): Promise<ClipboardRecordSummary[]> => {
+  try {
+    const records = await invoke<unknown>("search_records", {
+      query,
+      type_filter: typeFilter ?? null,
+      limit,
+    });
+    if (!Array.isArray(records)) {
+      throw new Error("search_records 返回结果格式无效");
+    }
+
+    return records.map((record) => toClipboardRecordSummary(record));
+  } catch (error) {
+    logger.error("搜索剪贴板摘要失败", {
+      query,
+      type_filter: typeFilter,
+      limit,
+      error: normalizeError(error),
+    });
     throw error;
   }
 };

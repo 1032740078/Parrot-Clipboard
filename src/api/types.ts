@@ -1,5 +1,6 @@
 export type { ErrorCode, IpcError } from "../types/error";
 
+export type PayloadType = "text" | "image" | "files";
 export type ContentType = "text" | "image" | "files" | "link" | "video" | "audio" | "document";
 export type PasteMode = "original" | "plain_text";
 export type ThumbnailState = "pending" | "ready" | "failed";
@@ -61,6 +62,7 @@ export interface FilesDetail {
 
 export interface ClipboardRecordSummary {
   id: number;
+  payload_type: PayloadType;
   content_type: ContentType;
   preview_text: string;
   source_app?: string | null;

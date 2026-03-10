@@ -12,7 +12,7 @@ use crate::{
             ClipboardImageData,
         },
         query::{ClipboardRecordDetail, ClipboardRecordSummary, ThumbnailState},
-        types::{ContentType, RecordId},
+        types::{ContentType, PayloadType, RecordId},
     },
     config::AppConfig,
     error::AppError,
@@ -75,6 +75,12 @@ pub trait ClipboardRuntimeRepository: Send + Sync {
     ) -> Result<CaptureResult, AppError>;
 
     fn list_summaries(&self, limit: usize) -> Result<Vec<ClipboardRecordSummary>, AppError>;
+    fn search_summaries(
+        &self,
+        query: &str,
+        content_type: Option<ContentType>,
+        limit: usize,
+    ) -> Result<Vec<ClipboardRecordSummary>, AppError>;
     fn get_detail(&self, id: RecordId) -> Result<Option<ClipboardRecordDetail>, AppError>;
     fn update_text(
         &self,
@@ -126,8 +132,10 @@ impl ClipboardRuntimeRepository for SqliteClipboardRuntimeRepository {
     ) -> Result<CaptureResult, AppError> {
         let content_hash = text_sha256_hex(&text);
         let preview_text = text.clone();
+        let content_type = detect_text_content_type(&text);
         let record = upsert_text_record(
             &self.database,
+            content_type,
             &content_hash,
             &text,
             rich_content.as_deref(),
@@ -136,7 +144,7 @@ impl ClipboardRuntimeRepository for SqliteClipboardRuntimeRepository {
         )?;
         let prune_result = self
             .database
-            .prune_excess_records(ContentType::Text, self.config.max_text_records())?;
+            .prune_excess_records_by_payload(PayloadType::Text, self.config.max_text_records())?;
 
         Ok(CaptureResult {
             action: record.0,
@@ -152,7 +160,7 @@ impl ClipboardRuntimeRepository for SqliteClipboardRuntimeRepository {
     ) -> Result<CaptureResult, AppError> {
         let content_hash = image.sha256_hex();
         if let Some(existing_id) =
-            find_existing_id(&self.database, ContentType::Image, &content_hash)?
+            find_existing_id(&self.database, PayloadType::Image, &content_hash)?
         {
             let record = promote_record(&self.database, existing_id, captured_at)?;
             return Ok(CaptureResult {
@@ -188,8 +196,9 @@ impl ClipboardRuntimeRepository for SqliteClipboardRuntimeRepository {
         captured_at: i64,
     ) -> Result<CaptureResult, AppError> {
         let content_hash = files_sha256_hex(&items);
+        let content_type = detect_files_content_type(&items);
         if let Some(existing_id) =
-            find_existing_id(&self.database, ContentType::Files, &content_hash)?
+            find_existing_id(&self.database, PayloadType::Files, &content_hash)?
         {
             let record = promote_record(&self.database, existing_id, captured_at)?;
             return Ok(CaptureResult {
@@ -199,10 +208,16 @@ impl ClipboardRuntimeRepository for SqliteClipboardRuntimeRepository {
             });
         }
 
-        let record = insert_files_record(&self.database, &content_hash, &items, captured_at)?;
+        let record = insert_files_record(
+            &self.database,
+            content_type,
+            &content_hash,
+            &items,
+            captured_at,
+        )?;
         let prune_result = self
             .database
-            .prune_excess_records(ContentType::Files, self.config.max_file_records())?;
+            .prune_excess_records_by_payload(PayloadType::Files, self.config.max_file_records())?;
 
         Ok(CaptureResult {
             action: CaptureAction::Added,
@@ -213,6 +228,16 @@ impl ClipboardRuntimeRepository for SqliteClipboardRuntimeRepository {
 
     fn list_summaries(&self, limit: usize) -> Result<Vec<ClipboardRecordSummary>, AppError> {
         self.database.list_record_summaries(limit)
+    }
+
+    fn search_summaries(
+        &self,
+        query: &str,
+        content_type: Option<ContentType>,
+        limit: usize,
+    ) -> Result<Vec<ClipboardRecordSummary>, AppError> {
+        self.database
+            .search_record_summaries(query, content_type, limit)
     }
 
     fn get_detail(&self, id: RecordId) -> Result<Option<ClipboardRecordDetail>, AppError> {
@@ -311,18 +336,20 @@ impl ClipboardRuntimeRepository for SqliteClipboardRuntimeRepository {
 
 fn upsert_text_record(
     database: &SqliteConnectionManager,
+    content_type: ContentType,
     content_hash: &str,
     text: &str,
     rich_content: Option<&str>,
     preview_text: &str,
     captured_at: i64,
 ) -> Result<(CaptureAction, ClipboardRecordSummary), AppError> {
-    if let Some(existing_id) = find_existing_id(database, ContentType::Text, content_hash)? {
+    if let Some(existing_id) = find_existing_id(database, PayloadType::Text, content_hash)? {
         database.with_connection(|connection| {
             connection
                 .execute(
-                    "UPDATE clipboard_items SET text_content = ?1, rich_content = ?2, preview_text = ?3, search_text = ?4, payload_bytes = ?5, last_used_at = ?6 WHERE id = ?7",
+                    "UPDATE clipboard_items SET content_type = ?1, text_content = ?2, rich_content = ?3, preview_text = ?4, search_text = ?5, payload_bytes = ?6, last_used_at = ?7 WHERE id = ?8",
                     params![
+                        content_type.as_str(),
                         text,
                         rich_content,
                         preview_text,
@@ -347,8 +374,17 @@ fn upsert_text_record(
     let record_id = database.with_connection(|connection| {
         connection
             .execute(
-                "INSERT INTO clipboard_items (content_type, content_hash, text_content, rich_content, preview_text, search_text, source_app, file_count, payload_bytes, created_at, last_used_at) VALUES ('text', ?1, ?2, ?3, ?4, ?5, NULL, 0, ?6, ?7, ?7)",
-                params![content_hash, text, rich_content, preview_text, text, text.len() as i64, captured_at],
+                "INSERT INTO clipboard_items (payload_type, content_type, content_hash, text_content, rich_content, preview_text, search_text, source_app, file_count, payload_bytes, created_at, last_used_at) VALUES ('text', ?1, ?2, ?3, ?4, ?5, ?6, NULL, 0, ?7, ?8, ?8)",
+                params![
+                    content_type.as_str(),
+                    content_hash,
+                    text,
+                    rich_content,
+                    preview_text,
+                    text,
+                    text.len() as i64,
+                    captured_at
+                ],
             )
             .map_err(|error| AppError::Db(format!("insert text record failed: {error}")))?;
         let inserted_id = connection.last_insert_rowid();
@@ -374,17 +410,19 @@ fn update_text_record(
         .find_record_detail(id)?
         .ok_or_else(|| AppError::RecordNotFound(id.value()))?;
 
-    if detail.content_type != ContentType::Text {
+    if detail.payload_type != PayloadType::Text {
         return Err(AppError::InvalidParam("仅文本记录支持编辑".to_string()));
     }
 
     let content_hash = text_sha256_hex(text);
+    let content_type = detect_text_content_type(text);
 
     database.with_connection(|connection| {
         connection
             .execute(
-                "UPDATE clipboard_items SET content_hash = ?1, text_content = ?2, rich_content = NULL, preview_text = ?3, search_text = ?4, payload_bytes = ?5 WHERE id = ?6 AND content_type = 'text'",
+                "UPDATE clipboard_items SET content_type = ?1, content_hash = ?2, text_content = ?3, rich_content = NULL, preview_text = ?4, search_text = ?5, payload_bytes = ?6 WHERE id = ?7 AND payload_type = 'text'",
                 params![
+                    content_type.as_str(),
                     content_hash,
                     text,
                     text,
@@ -417,7 +455,7 @@ fn insert_image_record(
 ) -> Result<RecordId, AppError> {
     database.with_connection(|connection| {
         connection.execute(
-            "INSERT INTO clipboard_items (content_type, content_hash, text_content, rich_content, preview_text, search_text, source_app, file_count, payload_bytes, created_at, last_used_at) VALUES ('image', ?1, NULL, NULL, ?2, ?2, NULL, 0, ?3, ?4, ?4)",
+            "INSERT INTO clipboard_items (payload_type, content_type, content_hash, text_content, rich_content, preview_text, search_text, source_app, file_count, payload_bytes, created_at, last_used_at) VALUES ('image', 'image', ?1, NULL, NULL, ?2, ?2, NULL, 0, ?3, ?4, ?4)",
             params![
                 content_hash,
                 format!("图片 {}×{}", saved.pixel_width, saved.pixel_height),
@@ -438,14 +476,21 @@ fn insert_image_record(
 
 fn insert_files_record(
     database: &SqliteConnectionManager,
+    content_type: ContentType,
     content_hash: &str,
     items: &[ClipboardFileItem],
     captured_at: i64,
 ) -> Result<ClipboardRecordSummary, AppError> {
     let record_id = database.with_connection(|connection| {
         connection.execute(
-            "INSERT INTO clipboard_items (content_type, content_hash, text_content, rich_content, preview_text, search_text, source_app, file_count, payload_bytes, created_at, last_used_at) VALUES ('files', ?1, NULL, NULL, ?2, ?2, NULL, ?3, 0, ?4, ?4)",
-            params![content_hash, build_files_preview(items), items.len() as i64, captured_at],
+            "INSERT INTO clipboard_items (payload_type, content_type, content_hash, text_content, rich_content, preview_text, search_text, source_app, file_count, payload_bytes, created_at, last_used_at) VALUES ('files', ?1, ?2, NULL, NULL, ?3, ?3, NULL, ?4, 0, ?5, ?5)",
+            params![
+                content_type.as_str(),
+                content_hash,
+                build_files_preview(items),
+                items.len() as i64,
+                captured_at
+            ],
         ).map_err(|error| AppError::Db(format!("insert files item failed: {error}")))?;
         let item_id = connection.last_insert_rowid();
         for (index, item) in items.iter().enumerate() {
@@ -467,14 +512,14 @@ fn insert_files_record(
 
 fn find_existing_id(
     database: &SqliteConnectionManager,
-    content_type: ContentType,
+    payload_type: PayloadType,
     content_hash: &str,
 ) -> Result<Option<RecordId>, AppError> {
     database.with_connection(|connection| {
         connection
             .query_row(
-                "SELECT id FROM clipboard_items WHERE content_type = ?1 AND content_hash = ?2 LIMIT 1",
-                params![content_type.as_str(), content_hash],
+                "SELECT id FROM clipboard_items WHERE payload_type = ?1 AND content_hash = ?2 LIMIT 1",
+                params![payload_type.as_str(), content_hash],
                 |row| row.get::<_, i64>(0),
             )
             .optional()
@@ -486,6 +531,58 @@ fn find_existing_id(
             })
             .transpose()
     })
+}
+
+fn detect_text_content_type(text: &str) -> ContentType {
+    let normalized = text.trim();
+    let lower = normalized.to_ascii_lowercase();
+
+    if (lower.starts_with("http://") || lower.starts_with("https://"))
+        && !normalized.contains(char::is_whitespace)
+    {
+        return ContentType::Link;
+    }
+
+    ContentType::Text
+}
+
+fn detect_files_content_type(items: &[ClipboardFileItem]) -> ContentType {
+    let [single] = items else {
+        return ContentType::Files;
+    };
+
+    if single.entry_type != crate::clipboard::query::FileEntryType::File {
+        return ContentType::Files;
+    }
+
+    let extension = single
+        .extension
+        .as_deref()
+        .map(|value| value.to_ascii_lowercase());
+
+    match extension.as_deref() {
+        Some("png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "tif" | "tiff" | "heic") => {
+            ContentType::Image
+        }
+        Some("mp4" | "mov" | "m4v" | "avi" | "mkv" | "webm") => ContentType::Video,
+        Some("mp3" | "wav" | "aac" | "flac" | "m4a" | "ogg") => ContentType::Audio,
+        Some(
+            "pdf"
+            | "md"
+            | "txt"
+            | "rtf"
+            | "doc"
+            | "docx"
+            | "xls"
+            | "xlsx"
+            | "ppt"
+            | "pptx"
+            | "pages"
+            | "numbers"
+            | "key",
+        ) => ContentType::Document,
+        _ => ContentType::Files,
+    }
 }
 
 fn promote_record(
@@ -1034,12 +1131,15 @@ mod tests {
     }
 
     fn unique_test_dir(suffix: &str) -> PathBuf {
+        static NEXT_TEST_ID: std::sync::atomic::AtomicU64 =
+            std::sync::atomic::AtomicU64::new(1);
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system time should be after unix epoch")
             .as_nanos();
+        let unique_id = NEXT_TEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         env::temp_dir().join(format!(
-            "clipboard-manager-runtime-repository-test-{suffix}-{nanos}"
+            "clipboard-manager-runtime-repository-test-{suffix}-{nanos}-{unique_id}"
         ))
     }
 }

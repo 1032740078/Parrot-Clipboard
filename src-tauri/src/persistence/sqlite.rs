@@ -12,19 +12,20 @@ use rusqlite::{params, Connection};
 use crate::{
     clipboard::{
         query::{ClipboardRecordDetail, ClipboardRecordSummary, FileItemDetail, FilesDetail},
-        types::{ContentType, RecordId},
+        types::{ContentType, PayloadType, RecordId},
     },
     error::AppError,
 };
 
 use super::{
     migrations::{CURRENT_SCHEMA_VERSION, MIGRATIONS},
-    row_mapper::{content_type_from_row, map_detail_row, map_file_item_row, map_summary_row},
+    row_mapper::{map_detail_row, map_file_item_row, map_summary_row},
 };
 
 const SUMMARY_SELECT_SQL: &str = r#"
     SELECT
       ci.id,
+      ci.payload_type,
       ci.content_type,
       ci.preview_text,
       ci.source_app,
@@ -66,6 +67,7 @@ const SUMMARY_SELECT_SQL: &str = r#"
 const DETAIL_SELECT_SQL: &str = r#"
     SELECT
       ci.id,
+      ci.payload_type,
       ci.content_type,
       ci.preview_text,
       ci.source_app,
@@ -109,6 +111,46 @@ const FILE_ITEMS_SELECT_SQL: &str = r#"
     ORDER BY sort_order ASC, id ASC
 "#;
 
+const SEARCH_SUMMARY_SELECT_PREFIX_SQL: &str = r#"
+    SELECT
+      ci.id,
+      ci.payload_type,
+      ci.content_type,
+      ci.preview_text,
+      ci.source_app,
+      ci.created_at,
+      ci.last_used_at,
+      CASE
+        WHEN ci.text_content IS NULL THEN NULL
+        ELSE length(ci.text_content)
+      END AS text_char_count,
+      CASE
+        WHEN ci.text_content IS NULL THEN NULL
+        WHEN ci.text_content = '' THEN 0
+        ELSE length(ci.text_content) - length(replace(ci.text_content, char(10), '')) + 1
+      END AS text_line_count,
+      ia.thumbnail_path,
+      ia.mime_type,
+      ia.pixel_width,
+      ia.pixel_height,
+      ia.thumbnail_state,
+      ci.file_count,
+      (
+        SELECT fi.display_name
+        FROM file_items fi
+        WHERE fi.item_id = ci.id
+        ORDER BY fi.sort_order ASC
+        LIMIT 1
+      ) AS primary_name,
+      EXISTS(
+        SELECT 1
+        FROM file_items fi
+        WHERE fi.item_id = ci.id AND fi.entry_type = 'directory'
+      ) AS contains_directory
+    FROM clipboard_items ci
+    LEFT JOIN image_assets ia ON ia.item_id = ci.id
+"#;
+
 const RETENTION_CANDIDATES_SELECT_SQL: &str = r#"
     SELECT
       ci.id,
@@ -117,6 +159,18 @@ const RETENTION_CANDIDATES_SELECT_SQL: &str = r#"
     FROM clipboard_items ci
     LEFT JOIN image_assets ia ON ia.item_id = ci.id
     WHERE ci.content_type = ?1
+    ORDER BY ci.last_used_at ASC, ci.id ASC
+    LIMIT ?2
+"#;
+
+const RETENTION_CANDIDATES_BY_PAYLOAD_SQL: &str = r#"
+    SELECT
+      ci.id,
+      ia.original_path,
+      ia.thumbnail_path
+    FROM clipboard_items ci
+    LEFT JOIN image_assets ia ON ia.item_id = ci.id
+    WHERE ci.payload_type = ?1
     ORDER BY ci.last_used_at ASC, ci.id ASC
     LIMIT ?2
 "#;
@@ -262,8 +316,8 @@ impl SqliteConnectionManager {
                 return Ok(None);
             };
 
-            let content_type = content_type_from_row(row, 1)?;
-            let files_detail = if content_type == ContentType::Files {
+            let payload_type = super::row_mapper::payload_type_from_row(row, 1)?;
+            let files_detail = if payload_type == PayloadType::Files {
                 Some(FilesDetail {
                     items: load_file_items(connection, sql_id)?,
                 })
@@ -350,6 +404,132 @@ impl SqliteConnectionManager {
                     })
                     .collect(),
             })
+        })
+    }
+
+    pub fn prune_excess_records_by_payload(
+        &self,
+        payload_type: PayloadType,
+        max_records: usize,
+    ) -> Result<RetentionPruneResult, AppError> {
+        let payload_type_value = payload_type.as_str();
+
+        self.with_connection(|connection| {
+            let total_count: i64 = connection
+                .query_row(
+                    "SELECT COUNT(1) FROM clipboard_items WHERE payload_type = ?1",
+                    params![payload_type_value],
+                    |row| row.get(0),
+                )
+                .map_err(|error| {
+                    AppError::Db(format!(
+                        "count sqlite records for payload retention failed: {error}"
+                    ))
+                })?;
+
+            let total_count = usize::try_from(total_count).map_err(|_| {
+                AppError::Db(format!("invalid sqlite payload record count `{total_count}`"))
+            })?;
+
+            if total_count <= max_records {
+                return Ok(RetentionPruneResult::default());
+            }
+
+            let excess_count = total_count - max_records;
+            let candidates =
+                load_retention_candidates_by_payload(connection, payload_type_value, excess_count)?;
+            if candidates.is_empty() {
+                return Ok(RetentionPruneResult::default());
+            }
+
+            let transaction = connection.unchecked_transaction().map_err(|error| {
+                AppError::Db(format!(
+                    "start sqlite payload retention transaction failed: {error}"
+                ))
+            })?;
+
+            for candidate in &candidates {
+                let sql_id = i64::try_from(candidate.id).map_err(|_| {
+                    AppError::Db(format!("invalid sqlite delete id `{}`", candidate.id))
+                })?;
+                transaction
+                    .execute("DELETE FROM clipboard_items WHERE id = ?1", params![sql_id])
+                    .map_err(|error| {
+                        AppError::Db(format!(
+                            "delete sqlite payload retention candidate `{}` failed: {error}",
+                            candidate.id
+                        ))
+                    })?;
+            }
+
+            transaction.commit().map_err(|error| {
+                AppError::Db(format!(
+                    "commit sqlite payload retention transaction failed: {error}"
+                ))
+            })?;
+
+            Ok(RetentionPruneResult {
+                deleted_record_ids: candidates.iter().map(|candidate| candidate.id).collect(),
+                deleted_image_assets: candidates
+                    .into_iter()
+                    .filter_map(|candidate| {
+                        candidate
+                            .original_path
+                            .map(|original_path| ImageAssetCleanupPaths {
+                                original_path,
+                                thumbnail_path: candidate.thumbnail_path,
+                            })
+                    })
+                    .collect(),
+            })
+        })
+    }
+
+    pub fn search_record_summaries(
+        &self,
+        query: &str,
+        content_type: Option<ContentType>,
+        limit: usize,
+    ) -> Result<Vec<ClipboardRecordSummary>, AppError> {
+        let sql_limit = i64::try_from(limit)
+            .map_err(|_| AppError::Db(format!("invalid sqlite limit `{limit}`")))?;
+        let normalized_query = query.trim().to_lowercase();
+        let like_pattern = format!("%{normalized_query}%");
+
+        self.with_connection(|connection| {
+            let sql = if content_type.is_some() {
+                format!(
+                    "{SEARCH_SUMMARY_SELECT_PREFIX_SQL}\nWHERE lower(ci.search_text) LIKE ?1 AND ci.content_type = ?2\nORDER BY ci.last_used_at DESC, ci.id DESC\nLIMIT ?3"
+                )
+            } else {
+                format!(
+                    "{SEARCH_SUMMARY_SELECT_PREFIX_SQL}\nWHERE lower(ci.search_text) LIKE ?1\nORDER BY ci.last_used_at DESC, ci.id DESC\nLIMIT ?2"
+                )
+            };
+            let mut statement = connection.prepare(&sql).map_err(|error| {
+                AppError::Db(format!("prepare sqlite search query failed: {error}"))
+            })?;
+            let mut rows = if let Some(content_type) = content_type {
+                statement
+                    .query(params![like_pattern, content_type.as_str(), sql_limit])
+                    .map_err(|error| {
+                        AppError::Db(format!("execute sqlite search query failed: {error}"))
+                    })?
+            } else {
+                statement.query(params![like_pattern, sql_limit]).map_err(|error| {
+                    AppError::Db(format!("execute sqlite search query failed: {error}"))
+                })?
+            };
+
+            let mut summaries = Vec::new();
+            while let Some(row) = rows
+                .next()
+                .map_err(|error| AppError::Db(format!("iterate sqlite search rows failed: {error}")))?
+            {
+                summaries.push(map_summary_row(row)?);
+            }
+
+            Ok(summaries)
         })
     }
 
@@ -509,6 +689,60 @@ fn load_retention_candidates(
             thumbnail_path: row.get(2).map_err(|error| {
                 AppError::Db(format!(
                     "read sqlite retention thumbnail_path failed: {error}"
+                ))
+            })?,
+        });
+    }
+
+    Ok(candidates)
+}
+
+fn load_retention_candidates_by_payload(
+    connection: &Connection,
+    payload_type: &str,
+    excess_count: usize,
+) -> Result<Vec<RetentionCandidate>, AppError> {
+    let sql_limit = i64::try_from(excess_count)
+        .map_err(|_| AppError::Db(format!("invalid sqlite excess_count `{excess_count}`")))?;
+    let mut statement = connection
+        .prepare(RETENTION_CANDIDATES_BY_PAYLOAD_SQL)
+        .map_err(|error| {
+            AppError::Db(format!(
+                "prepare sqlite payload retention query failed: {error}"
+            ))
+        })?;
+    let mut rows = statement
+        .query(params![payload_type, sql_limit])
+        .map_err(|error| {
+            AppError::Db(format!(
+                "execute sqlite payload retention query failed: {error}"
+            ))
+        })?;
+
+    let mut candidates = Vec::new();
+    while let Some(row) = rows.next().map_err(|error| {
+        AppError::Db(format!(
+            "iterate sqlite payload retention rows failed: {error}"
+        ))
+    })? {
+        let id = row.get::<_, i64>(0).map_err(|error| {
+            AppError::Db(format!(
+                "read sqlite payload retention candidate id failed: {error}"
+            ))
+        })?;
+        let id = u64::try_from(id)
+            .map_err(|_| AppError::Db(format!("invalid sqlite payload retention id `{id}`")))?;
+
+        candidates.push(RetentionCandidate {
+            id,
+            original_path: row.get(1).map_err(|error| {
+                AppError::Db(format!(
+                    "read sqlite payload retention original_path failed: {error}"
+                ))
+            })?,
+            thumbnail_path: row.get(2).map_err(|error| {
+                AppError::Db(format!(
+                    "read sqlite payload retention thumbnail_path failed: {error}"
                 ))
             })?,
         });
@@ -789,9 +1023,10 @@ mod tests {
             .with_connection(|connection| {
                 connection
                     .execute(
-                        "INSERT INTO clipboard_items (id, content_type, content_hash, text_content, rich_content, preview_text, search_text, source_app, file_count, payload_bytes, created_at, last_used_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                        "INSERT INTO clipboard_items (id, payload_type, content_type, content_hash, text_content, rich_content, preview_text, search_text, source_app, file_count, payload_bytes, created_at, last_used_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
                         rusqlite::params![
                             1_i64,
+                            "text",
                             "text",
                             "empty-text-hash",
                             "",
@@ -1071,6 +1306,7 @@ mod tests {
                     r#"
                     INSERT INTO clipboard_items (
                       id,
+                      payload_type,
                       content_type,
                       content_hash,
                       text_content,
@@ -1083,10 +1319,10 @@ mod tests {
                       created_at,
                       last_used_at
                     ) VALUES
-                      (1, 'text', 'hash-text', '第一行
+                      (1, 'text', 'text', 'hash-text', '第一行
 第二行', '<p>第一行<br/>第二行</p>', '双行文本', '双行文本', 'Notes', 0, 12, 1000, 1500),
-                      (2, 'image', 'hash-image', NULL, NULL, '屏幕截图 2026-03-06 10.13.22', '屏幕截图 2026-03-06 10.13.22', 'Preview', 0, 4096, 2000, 2500),
-                      (3, 'files', 'hash-files', NULL, NULL, '合同.pdf 等 2 项', '合同.pdf 项目目录', 'Finder', 2, 0, 3000, 3500);
+                      (2, 'image', 'image', 'hash-image', NULL, NULL, '屏幕截图 2026-03-06 10.13.22', '屏幕截图 2026-03-06 10.13.22', 'Preview', 0, 4096, 2000, 2500),
+                      (3, 'files', 'files', 'hash-files', NULL, NULL, '合同.pdf 等 2 项', '合同.pdf 项目目录', 'Finder', 2, 0, 3000, 3500);
 
                     INSERT INTO image_assets (
                       item_id,
@@ -1142,7 +1378,7 @@ mod tests {
                 {
                     let mut insert_item = transaction
                         .prepare(
-                            "INSERT INTO clipboard_items (id, content_type, content_hash, text_content, rich_content, preview_text, search_text, source_app, file_count, payload_bytes, created_at, last_used_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                            "INSERT INTO clipboard_items (id, payload_type, content_type, content_hash, text_content, rich_content, preview_text, search_text, source_app, file_count, payload_bytes, created_at, last_used_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
                         )
                         .map_err(|error| {
                             AppError::Db(format!(
@@ -1180,6 +1416,7 @@ mod tests {
                                     .execute(rusqlite::params![
                                         record_id,
                                         "text",
+                                        "text",
                                         content_hash,
                                         text_content,
                                         Option::<String>::None,
@@ -1201,6 +1438,7 @@ mod tests {
                                 insert_item
                                     .execute(rusqlite::params![
                                         record_id,
+                                        "image",
                                         "image",
                                         content_hash,
                                         Option::<String>::None,
@@ -1240,6 +1478,7 @@ mod tests {
                                 insert_item
                                     .execute(rusqlite::params![
                                         record_id,
+                                        "files",
                                         "files",
                                         content_hash,
                                         Option::<String>::None,
@@ -1295,6 +1534,7 @@ mod tests {
                     r#"
                     INSERT INTO clipboard_items (
                       id,
+                      payload_type,
                       content_type,
                       content_hash,
                       text_content,
@@ -1307,12 +1547,12 @@ mod tests {
                       created_at,
                       last_used_at
                     ) VALUES
-                      (11, 'text', 'retention-text-1', 'old text', NULL, 'old text', 'old text', 'Notes', 0, 8, 1000, 1000),
-                      (12, 'text', 'retention-text-2', 'mid text', NULL, 'mid text', 'mid text', 'Notes', 0, 8, 2000, 2000),
-                      (13, 'text', 'retention-text-3', 'new text', NULL, 'new text', 'new text', 'Notes', 0, 8, 3000, 3000),
-                      (21, 'image', 'retention-image-1', NULL, NULL, 'old image', 'old image', 'Preview', 0, 4096, 1100, 1100),
-                      (22, 'image', 'retention-image-2', NULL, NULL, 'new image', 'new image', 'Preview', 0, 4096, 2200, 2200),
-                      (31, 'files', 'retention-files-1', NULL, NULL, 'keep files', 'keep files', 'Finder', 1, 0, 3300, 3300);
+                      (11, 'text', 'text', 'retention-text-1', 'old text', NULL, 'old text', 'old text', 'Notes', 0, 8, 1000, 1000),
+                      (12, 'text', 'text', 'retention-text-2', 'mid text', NULL, 'mid text', 'mid text', 'Notes', 0, 8, 2000, 2000),
+                      (13, 'text', 'text', 'retention-text-3', 'new text', NULL, 'new text', 'new text', 'Notes', 0, 8, 3000, 3000),
+                      (21, 'image', 'image', 'retention-image-1', NULL, NULL, 'old image', 'old image', 'Preview', 0, 4096, 1100, 1100),
+                      (22, 'image', 'image', 'retention-image-2', NULL, NULL, 'new image', 'new image', 'Preview', 0, 4096, 2200, 2200),
+                      (31, 'files', 'files', 'retention-files-1', NULL, NULL, 'keep files', 'keep files', 'Finder', 1, 0, 3300, 3300);
 
                     INSERT INTO image_assets (
                       item_id,
@@ -1360,6 +1600,7 @@ mod tests {
                     "
                     INSERT INTO clipboard_items (
                       id,
+                      payload_type,
                       content_type,
                       content_hash,
                       text_content,
@@ -1372,7 +1613,7 @@ mod tests {
                       created_at,
                       last_used_at
                     ) VALUES
-                      (41, 'image', 'orphan-scan-image', NULL, NULL, 'referenced image', 'referenced image', 'Preview', 0, 2048, 4100, 4100);
+                      (41, 'image', 'image', 'orphan-scan-image', NULL, NULL, 'referenced image', 'referenced image', 'Preview', 0, 2048, 4100, 4100);
 
                     INSERT INTO image_assets (
                       item_id,
@@ -1424,11 +1665,14 @@ mod tests {
     }
 
     fn unique_test_dir() -> PathBuf {
+        static NEXT_TEST_ID: std::sync::atomic::AtomicU64 =
+            std::sync::atomic::AtomicU64::new(1);
         let suffix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system time should be after unix epoch")
             .as_nanos();
-        env::temp_dir().join(format!("clipboard-manager-sqlite-test-{suffix}"))
+        let unique_id = NEXT_TEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        env::temp_dir().join(format!("clipboard-manager-sqlite-test-{suffix}-{unique_id}"))
     }
 
     fn cleanup_test_dir(database_path: &Path) {

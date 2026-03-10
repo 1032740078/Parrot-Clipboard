@@ -1,10 +1,10 @@
 import type { ClipboardRecord } from "../../types/clipboard";
-import { isFileRecord, isImageRecord, isTextRecord } from "../../types/clipboard";
 import type { ContextMenuActionState } from "../../stores/useUIStore";
 
-const supportsPlainTextPaste = (record: ClipboardRecord): boolean => {
-  return isTextRecord(record) || isFileRecord(record) || isImageRecord(record);
-};
+const supportsPlainTextPaste = (record: ClipboardRecord): boolean =>
+  record.payload_type === "text" ||
+  record.payload_type === "image" ||
+  record.payload_type === "files";
 
 export const buildCardContextMenuActions = (record: ClipboardRecord): ContextMenuActionState[] => [
   {

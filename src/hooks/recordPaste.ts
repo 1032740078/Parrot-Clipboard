@@ -3,12 +3,7 @@ import { showPermissionGuideWindow } from "../api/diagnostics";
 import { getErrorMessage } from "../api/errorHandler";
 import { logger, normalizeError } from "../api/logger";
 import type { PanelVisibilityReason, PasteMode } from "../api/types";
-import {
-  isFileRecord,
-  isImageRecord,
-  isTextRecord,
-  type ClipboardRecord,
-} from "../types/clipboard";
+import { isImageRecord, type ClipboardRecord } from "../types/clipboard";
 import { useClipboardStore, useSystemStore, useUIStore } from "../stores";
 
 interface ExecuteRecordPasteOptions {
@@ -22,9 +17,10 @@ interface ExecuteRecordPasteOptions {
 
 let pasteInFlight = false;
 
-const supportsPlainTextPaste = (record: ClipboardRecord): boolean => {
-  return isTextRecord(record) || isFileRecord(record) || isImageRecord(record);
-};
+const supportsPlainTextPaste = (record: ClipboardRecord): boolean =>
+  record.payload_type === "text" ||
+  record.payload_type === "image" ||
+  record.payload_type === "files";
 
 const hasMissingAccessibilityPermission = (): boolean => {
   const { permissionStatus } = useSystemStore.getState();
@@ -82,6 +78,7 @@ export const executeRecordPaste = async ({
     });
     logger.info("阻止非文本记录的纯文本粘贴", {
       record_id: record.id,
+      payload_type: record.payload_type,
       content_type: record.content_type,
       trigger,
       ...logContext,

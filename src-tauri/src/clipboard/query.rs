@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::types::ContentType;
+use super::types::{ContentType, PayloadType};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -85,6 +85,7 @@ pub struct FilesDetail {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ClipboardRecordSummary {
     pub id: u64,
+    pub payload_type: PayloadType,
     pub content_type: ContentType,
     pub preview_text: String,
     pub source_app: Option<String>,
@@ -98,6 +99,7 @@ pub struct ClipboardRecordSummary {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ClipboardRecordDetail {
     pub id: u64,
+    pub payload_type: PayloadType,
     pub content_type: ContentType,
     pub preview_text: String,
     pub source_app: Option<String>,
@@ -123,6 +125,7 @@ impl From<ClipboardRecordDetail> for ClipboardRecordSummary {
     fn from(value: ClipboardRecordDetail) -> Self {
         Self {
             id: value.id,
+            payload_type: value.payload_type,
             content_type: value.content_type,
             preview_text: value.preview_text,
             source_app: value.source_app,

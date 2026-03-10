@@ -370,7 +370,7 @@ mod tests {
                 CaptureAction, CaptureResult, ClipboardRuntimeRepository, RecordDeleteReason,
                 RecordUpdateReason,
             },
-            types::{ContentType, RecordId},
+            types::{ContentType, PayloadType, RecordId},
         },
         config::{
             schema::{BlacklistMatchType, BlacklistRule, PlatformKind},
@@ -896,6 +896,15 @@ mod tests {
             Ok(Vec::new())
         }
 
+        fn search_summaries(
+            &self,
+            _query: &str,
+            _content_type: Option<ContentType>,
+            _limit: usize,
+        ) -> Result<Vec<ClipboardRecordSummary>, AppError> {
+            Ok(Vec::new())
+        }
+
         fn get_detail(&self, _id: RecordId) -> Result<Option<ClipboardRecordDetail>, AppError> {
             Ok(None)
         }
@@ -1081,6 +1090,7 @@ mod tests {
     fn image_summary_pending(id: u64, last_used_at: i64) -> ClipboardRecordSummary {
         ClipboardRecordSummary {
             id,
+            payload_type: PayloadType::Image,
             content_type: ContentType::Image,
             preview_text: "图片 2×2".to_string(),
             source_app: None,
@@ -1101,6 +1111,7 @@ mod tests {
     fn image_summary_ready(id: u64, last_used_at: i64) -> ClipboardRecordSummary {
         ClipboardRecordSummary {
             id,
+            payload_type: PayloadType::Image,
             content_type: ContentType::Image,
             preview_text: "图片 2×2".to_string(),
             source_app: None,
@@ -1121,6 +1132,7 @@ mod tests {
     fn files_summary(id: u64, last_used_at: i64) -> ClipboardRecordSummary {
         ClipboardRecordSummary {
             id,
+            payload_type: PayloadType::Files,
             content_type: ContentType::Files,
             preview_text: "note.txt 等 3 项".to_string(),
             source_app: None,

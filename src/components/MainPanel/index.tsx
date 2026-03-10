@@ -6,9 +6,7 @@ import { showPermissionGuideWindow } from "../../api/diagnostics";
 import { getErrorMessage } from "../../api/errorHandler";
 import { logger, normalizeError } from "../../api/logger";
 import {
-  isFileFamilyRecord,
   isImageRecord,
-  isTextualRecord,
   toClipboardRecord,
   type VisibleQuickSlot,
 } from "../../types/clipboard";
@@ -101,9 +99,9 @@ export const MainPanel = () => {
   const selectedVisibleRecord =
     selectedVisibleIndex >= 0 ? filteredRecords[selectedVisibleIndex] : filteredRecords[0];
   const plainTextEnabled = selectedVisibleRecord
-    ? isTextualRecord(selectedVisibleRecord) ||
-      isFileFamilyRecord(selectedVisibleRecord) ||
-      isImageRecord(selectedVisibleRecord)
+    ? selectedVisibleRecord.payload_type === "text" ||
+      selectedVisibleRecord.payload_type === "files" ||
+      selectedVisibleRecord.payload_type === "image"
     : false;
   const panelMotionVariants = getPanelMotionVariants(prefersReducedMotion());
   const pasteBlockedByPermission =

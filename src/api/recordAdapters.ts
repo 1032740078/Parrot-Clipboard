@@ -3,6 +3,7 @@ import type {
   LegacyClipboardRecord,
   NewRecordPayload,
   NewRecordPayloadV2,
+  PayloadType,
   PasteResult,
   RecordUpdatedPayload,
 } from "./types";
@@ -28,6 +29,30 @@ const toContentType = (value: unknown): ClipboardRecordSummary["content_type"] =
     value === "document"
   ) {
     return value;
+  }
+
+  return "text";
+};
+
+const toPayloadType = (
+  payloadType: unknown,
+  contentType: ClipboardRecordSummary["content_type"]
+): PayloadType => {
+  if (payloadType === "text" || payloadType === "image" || payloadType === "files") {
+    return payloadType;
+  }
+
+  if (contentType === "image") {
+    return "image";
+  }
+
+  if (
+    contentType === "files" ||
+    contentType === "video" ||
+    contentType === "audio" ||
+    contentType === "document"
+  ) {
+    return "files";
   }
 
   return "text";
@@ -100,10 +125,12 @@ export const toClipboardRecordSummary = (value: unknown): ClipboardRecordSummary
   const record = toRecordObject(value);
   const previewText = toPreviewText(record);
   const contentType = toContentType(record.content_type);
+  const payloadType = toPayloadType(record.payload_type, contentType);
   const createdAt = toNumber(record.created_at);
 
   return {
     id: toNumber(record.id),
+    payload_type: payloadType,
     content_type: contentType,
     preview_text: previewText,
     source_app: toNullableString(record.source_app),

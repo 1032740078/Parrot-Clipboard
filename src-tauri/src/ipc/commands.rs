@@ -4,7 +4,7 @@ use crate::{
     clipboard::{
         query::{ClipboardRecordDetail, ClipboardRecordSummary, PasteResult},
         runtime_repository::{RecordDeleteReason, RecordUpdateReason},
-        types::{PasteMode, RecordId},
+        types::{ContentType, PasteMode, RecordId},
     },
     config::{
         schema::{
@@ -90,6 +90,47 @@ pub fn get_records(
         limit,
         returned_count = records.len(),
         "ipc get_records completed"
+    );
+    Ok(records)
+}
+
+#[tauri::command]
+pub fn search_records(
+    query: String,
+    type_filter: Option<String>,
+    limit: usize,
+    state: State<'_, AppState>,
+) -> Result<Vec<ClipboardRecordSummary>, AppError> {
+    tracing::debug!(query = query.as_str(), ?type_filter, limit, "ipc search_records requested");
+
+    if limit == 0 {
+        return Err(AppError::InvalidParam("limit must be > 0".to_string()));
+    }
+    if limit > 500 {
+        return Err(AppError::InvalidParam("limit must be <= 500".to_string()));
+    }
+    if query.chars().count() > 200 {
+        return Err(AppError::InvalidParam(
+            "query must be <= 200 chars".to_string(),
+        ));
+    }
+
+    let semantic_filter = type_filter
+        .as_deref()
+        .map(|value| {
+            ContentType::from_db(value)
+                .ok_or_else(|| AppError::InvalidParam(format!("unsupported type_filter `{value}`")))
+        })
+        .transpose()?;
+
+    let records = state
+        .repository
+        .search_summaries(&query, semantic_filter, limit)?;
+    tracing::debug!(
+        query = query.as_str(),
+        ?semantic_filter,
+        returned_count = records.len(),
+        "ipc search_records completed"
     );
     Ok(records)
 }

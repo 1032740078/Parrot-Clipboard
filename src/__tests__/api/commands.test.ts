@@ -15,6 +15,7 @@ import {
   getRecordDetail,
   getRecords,
   getRecordSummaries,
+  searchRecords,
   hidePanel,
   pasteRecord,
   pasteRecordResult,
@@ -24,6 +25,7 @@ import {
 
 const summaryRecord = {
   id: 2,
+  payload_type: "text" as const,
   content_type: "text" as const,
   preview_text: "B",
   source_app: "Notes",
@@ -83,6 +85,7 @@ describe("api/commands", () => {
     await expect(getRecordSummaries(20)).resolves.toEqual([
       {
         id: 2,
+        payload_type: "text",
         content_type: "text",
         preview_text: "B",
         source_app: null,
@@ -162,6 +165,52 @@ describe("api/commands", () => {
     expect(invokeCalls[1]).toEqual({
       command: "get_records",
       args: { limit: 20 },
+    });
+  });
+
+  it("searchRecords 调用 search_records 并兼容 payload_type 缺失的旧结果", async () => {
+    __setInvokeHandler(async () => [
+      summaryRecord,
+      {
+        id: 3,
+        content_type: "document",
+        preview_text: "meeting-agenda.md",
+        source_app: "Finder",
+        created_at: 1000,
+        last_used_at: 1000,
+        text_meta: null,
+        image_meta: null,
+        files_meta: {
+          count: 1,
+          primary_name: "meeting-agenda.md",
+          contains_directory: false,
+        },
+      },
+    ]);
+
+    await expect(searchRecords("meeting", "document", 50)).resolves.toEqual([
+      summaryRecord,
+      {
+        id: 3,
+        payload_type: "files",
+        content_type: "document",
+        preview_text: "meeting-agenda.md",
+        source_app: "Finder",
+        created_at: 1000,
+        last_used_at: 1000,
+        text_meta: null,
+        image_meta: null,
+        files_meta: {
+          count: 1,
+          primary_name: "meeting-agenda.md",
+          contains_directory: false,
+        },
+      },
+    ]);
+
+    expect(invokeCalls[0]).toEqual({
+      command: "search_records",
+      args: { query: "meeting", type_filter: "document", limit: 50 },
     });
   });
 

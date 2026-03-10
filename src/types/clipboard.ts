@@ -9,6 +9,7 @@ export type {
   ImageDetail,
   ImageMeta,
   PasteMode,
+  PayloadType,
   TextMeta,
   ThumbnailState,
 } from "../api/types";

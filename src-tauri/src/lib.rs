@@ -204,6 +204,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             ipc::commands::get_records,
+            ipc::commands::search_records,
             ipc::commands::get_record_detail,
             ipc::commands::update_text_record,
             ipc::commands::delete_record,
