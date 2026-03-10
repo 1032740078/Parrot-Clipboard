@@ -335,11 +335,10 @@ describe("components/SettingsWindowPlaceholder", () => {
   });
 
   it("保存通用设置时会同步主题到 DOM 并传递自启动状态", async () => {
-    setupComponent();
+    setupComponent(); // 默认 launch_at_login: true
     await screen.findByText("设置中心");
 
     fireEvent.click(screen.getByLabelText("浅色"));
-    fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: "保存本页" }));
 
     expect(await screen.findByText("通用设置已保存")).toBeInTheDocument();
@@ -351,7 +350,7 @@ describe("components/SettingsWindowPlaceholder", () => {
         (call) =>
           call.command === "update_general_settings" &&
           call.args?.theme === "light" &&
-          call.args?.launch_at_login === false
+          call.args?.launch_at_login === true
       )
     ).toBe(true);
   });

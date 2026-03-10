@@ -27,7 +27,7 @@ export const updateGeneralSettings = async (
     return await invoke<SettingsSnapshot>("update_general_settings", {
       theme: payload.theme,
       language: payload.language,
-      launchAtLogin: payload.launch_at_login,
+      launch_at_login: payload.launch_at_login,
     });
   } catch (error) {
     logger.error("保存通用设置失败", { payload, error: normalizeError(error) });

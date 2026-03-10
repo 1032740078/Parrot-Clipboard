@@ -120,7 +120,7 @@ describe("api/settings", () => {
         args: {
           theme: "dark",
           language: "zh-CN",
-          launchAtLogin: false,
+          launch_at_login: false,
         },
       },
       {
