@@ -59,7 +59,7 @@ pub fn create_autostart_service(
 
     #[cfg(target_os = "windows")]
     {
-        return Ok(WindowsAutostartService::initialize(app_handle)?);
+        return Ok(windows::WindowsAutostartService::initialize(app_handle)?);
     }
 
     #[cfg(target_os = "linux")]

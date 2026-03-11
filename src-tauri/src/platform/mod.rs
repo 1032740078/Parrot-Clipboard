@@ -82,7 +82,7 @@ pub fn create_platform_clipboard() -> Result<Arc<dyn PlatformClipboard>, AppErro
 
     #[cfg(target_os = "windows")]
     {
-        Ok(Arc::new(WindowsPlatformClipboard::new()?))
+        Ok(Arc::new(windows::WindowsPlatformClipboard::new()?))
     }
 
     #[cfg(target_os = "linux")]
@@ -104,7 +104,7 @@ pub fn create_platform_key_simulator() -> Result<Arc<dyn PlatformKeySimulator>, 
 
     #[cfg(target_os = "windows")]
     {
-        Ok(Arc::new(WindowsKeySimulator))
+        Ok(Arc::new(windows::WindowsKeySimulator))
     }
 
     #[cfg(target_os = "linux")]

@@ -15,10 +15,10 @@ use crate::{
     tray,
 };
 
-use self::position::{
-    calculate_macos_display_point_from_mouse_location, calculate_panel_frame_for_work_area,
-    select_target_work_area, WorkArea,
-};
+use self::position::{calculate_panel_frame_for_work_area, select_target_work_area, WorkArea};
+
+#[cfg(target_os = "macos")]
+use self::position::calculate_macos_display_point_from_mouse_location;
 
 #[cfg(target_os = "macos")]
 use objc::{
