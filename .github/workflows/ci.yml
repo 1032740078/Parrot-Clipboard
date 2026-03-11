@@ -125,7 +125,25 @@ jobs:
       - name: Install deps
         run: pnpm install --frozen-lockfile
       - name: Build unsigned bundles
+        if: runner.os != 'Windows'
         run: pnpm tauri build --no-sign --bundles ${{ matrix.bundles }}
+      - name: Build unsigned bundles (Windows with retry)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $maxAttempts = 3
+          for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+            Write-Host "Windows bundle build attempt $attempt/$maxAttempts"
+            pnpm tauri build --no-sign --bundles ${{ matrix.bundles }}
+            if ($LASTEXITCODE -eq 0) {
+              exit 0
+            }
+            if ($attempt -eq $maxAttempts) {
+              exit $LASTEXITCODE
+            }
+            Write-Warning "Windows bundle build failed, probably due to transient external download/network issues. Retrying in 20 seconds..."
+            Start-Sleep -Seconds 20
+          }
       - name: Package macOS DMG in headless-safe mode
         if: runner.os == 'macOS'
         run: bash scripts/package-macos-dmg.sh
