@@ -28,7 +28,10 @@
       "csp": null,
       "assetProtocol": {
         "enable": true,
-        "scope": ["$APPDATA/images/**", "$APPLOCALDATA/images/**"]
+        "scope": [
+          "$APPDATA/images/**",
+          "$APPLOCALDATA/images/**"
+        ]
       }
     }
   },
@@ -48,7 +51,10 @@
     "longDescription": "鹦鹉剪贴板（Parrot Clipboard）是一个基于 Tauri 的桌面应用，用于管理文本、图片与文件剪贴板历史，提供搜索、预览、回粘、权限引导、更新检查与发布级稳定性能力。",
     "windows": {
       "digestAlgorithm": "sha256",
-      "signCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File ../scripts/sign-windows.ps1 %1"
+      "signCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File ../scripts/sign-windows.ps1 %1",
+      "wix": {
+        "language": "zh-CN"
+      }
     },
     "macOS": {
       "bundleName": "鹦鹉剪贴板"
