@@ -381,7 +381,11 @@ mod tests {
         let elapsed = started_at.elapsed();
 
         assert!(PathBuf::from(&thumbnail_path).exists());
-        let budget_ms = if std::env::var_os("CI").is_some() { 80 } else { 50 };
+        let budget_ms = if std::env::var_os("CI").is_some() {
+            80
+        } else {
+            50
+        };
         assert!(
             elapsed < Duration::from_millis(budget_ms),
             "thumbnail generation took {:?}, expected < {}ms",
