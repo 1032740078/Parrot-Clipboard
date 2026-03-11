@@ -292,6 +292,7 @@ export const AboutWindow = () => {
 
   return (
     <main className="glass-window min-h-screen rounded-2xl text-[var(--app-fg)] backdrop-blur-2xl transition-colors">
+      <h1 className="sr-only">关于</h1>
       <div className="glass-window-titlebar flex h-12 items-center justify-between px-5">
         <span className="text-xs font-medium tracking-wide text-slate-400">关于</span>
         <button

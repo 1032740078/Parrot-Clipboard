@@ -136,6 +136,21 @@
       : JSON.parse(JSON.stringify(defaultOrphanCleanupSummary));
 
   const clone = (value) => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
+  const readArg = (args, camelKey, snakeKey) => {
+    if (!args || typeof args !== "object") {
+      return undefined;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(args, camelKey)) {
+      return args[camelKey];
+    }
+
+    if (snakeKey && Object.prototype.hasOwnProperty.call(args, snakeKey)) {
+      return args[snakeKey];
+    }
+
+    return undefined;
+  };
   const convertFileSrc = (filePath, protocol = 'asset') => {
     if (typeof filePath !== 'string' || filePath.length === 0) {
       return '';
@@ -553,7 +568,8 @@
             theme: args?.theme ?? settingsSnapshot.general.theme,
             language: args?.language ?? settingsSnapshot.general.language,
             launch_at_login: Boolean(
-              args?.launch_at_login ?? settingsSnapshot.general.launch_at_login
+              readArg(args, "launchAtLogin", "launch_at_login") ??
+                settingsSnapshot.general.launch_at_login
             ),
           },
         };
@@ -566,21 +582,29 @@
           ...settingsSnapshot,
           history: {
             max_text_records: Number(
-              args?.max_text_records ?? settingsSnapshot.history.max_text_records
+              readArg(args, "maxTextRecords", "max_text_records") ??
+                settingsSnapshot.history.max_text_records
             ),
             max_image_records: Number(
-              args?.max_image_records ?? settingsSnapshot.history.max_image_records
+              readArg(args, "maxImageRecords", "max_image_records") ??
+                settingsSnapshot.history.max_image_records
             ),
             max_file_records: Number(
-              args?.max_file_records ?? settingsSnapshot.history.max_file_records
+              readArg(args, "maxFileRecords", "max_file_records") ??
+                settingsSnapshot.history.max_file_records
             ),
             max_image_storage_mb: Number(
-              args?.max_image_storage_mb ?? settingsSnapshot.history.max_image_storage_mb
+              readArg(args, "maxImageStorageMb", "max_image_storage_mb") ??
+                settingsSnapshot.history.max_image_storage_mb
             ),
             capture_images: Boolean(
-              args?.capture_images ?? settingsSnapshot.history.capture_images
+              readArg(args, "captureImages", "capture_images") ??
+                settingsSnapshot.history.capture_images
             ),
-            capture_files: Boolean(args?.capture_files ?? settingsSnapshot.history.capture_files),
+            capture_files: Boolean(
+              readArg(args, "captureFiles", "capture_files") ??
+                settingsSnapshot.history.capture_files
+            ),
           },
         };
         return clone(settingsSnapshot);
@@ -636,11 +660,13 @@
       }
 
       if (command === "create_blacklist_rule") {
-        const normalizedIdentifier = normalizeIdentifier(args?.app_identifier);
+        const normalizedIdentifier = normalizeIdentifier(
+          readArg(args, "appIdentifier", "app_identifier")
+        );
         const duplicated = settingsSnapshot.privacy.blacklist_rules.some(
           (rule) =>
             rule.platform === args?.platform &&
-            rule.match_type === args?.match_type &&
+            rule.match_type === readArg(args, "matchType", "match_type") &&
             normalizeIdentifier(rule.app_identifier) === normalizedIdentifier
         );
         if (duplicated) {
@@ -654,11 +680,11 @@
               ...settingsSnapshot.privacy.blacklist_rules,
               {
                 id: `rule-${settingsSnapshot.privacy.blacklist_rules.length + 1}`,
-                app_name: String(args?.app_name ?? ""),
+                app_name: String(readArg(args, "appName", "app_name") ?? ""),
                 platform: args?.platform,
-                match_type: args?.match_type,
+                match_type: readArg(args, "matchType", "match_type"),
                 app_identifier: normalizedIdentifier,
-                enabled: true,
+                enabled: Boolean(args?.enabled ?? true),
                 created_at: 1700000000000,
                 updated_at: 1700000000000,
               },
@@ -676,11 +702,14 @@
               rule.id === args?.id
                 ? {
                     ...rule,
-                    app_name: String(args?.app_name ?? rule.app_name),
+                    app_name: String(
+                      readArg(args, "appName", "app_name") ?? rule.app_name
+                    ),
                     platform: args?.platform ?? rule.platform,
-                    match_type: args?.match_type ?? rule.match_type,
+                    match_type:
+                      readArg(args, "matchType", "match_type") ?? rule.match_type,
                     app_identifier: normalizeIdentifier(
-                      args?.app_identifier ?? rule.app_identifier
+                      readArg(args, "appIdentifier", "app_identifier") ?? rule.app_identifier
                     ),
                     enabled: Boolean(args?.enabled),
                     updated_at: 1700000001000,
@@ -747,6 +776,22 @@
         return null;
       }
 
+      if (command === "show_preview_window") {
+        return null;
+      }
+
+      if (command === "close_preview_window_command") {
+        return null;
+      }
+
+      if (command === "show_permission_guide_window") {
+        return null;
+      }
+
+      if (command === "close_permission_guide_window_command") {
+        return null;
+      }
+
       if (command === "paste_record") {
         const record = records.find((item) => item.id === args.id);
         if (!record) {
@@ -789,7 +834,9 @@
       }
 
       if (command === "clear_history") {
-        if (args?.confirm_token !== "confirm-clear-history-v0.3") {
+        if (
+          readArg(args, "confirmToken", "confirm_token") !== "confirm-clear-history-v0.3"
+        ) {
           throw { code: "INVALID_PARAM", message: "invalid confirm token" };
         }
 

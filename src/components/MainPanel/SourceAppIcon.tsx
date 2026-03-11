@@ -44,6 +44,7 @@ const loadSourceAppIconUrl = async (sourceApp: string): Promise<string | null> =
   }
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const __resetSourceAppIconCache = (): void => {
   for (const iconUrl of iconUrlCache.values()) {
     if (iconUrl) {
@@ -67,7 +68,6 @@ export const SourceAppIcon = ({ sourceApp }: SourceAppIconProps) => {
 
   useEffect(() => {
     if (!normalizedSourceApp) {
-      setIconUrl(null);
       return;
     }
 

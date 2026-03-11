@@ -308,7 +308,7 @@ fn upscale_for_ocr(image: &RgbaImage) -> RgbaImage {
     let target_scale = if image.height() >= MIN_OCR_TARGET_HEIGHT_PX {
         1
     } else {
-        (MIN_OCR_TARGET_HEIGHT_PX + image.height() - 1) / image.height()
+        MIN_OCR_TARGET_HEIGHT_PX.div_ceil(image.height())
     }
     .clamp(1, MAX_OCR_UPSCALE_FACTOR);
 

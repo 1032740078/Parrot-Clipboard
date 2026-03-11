@@ -853,14 +853,18 @@ export const SettingsWindowPlaceholder = () => {
       setPendingAction(null);
       try {
         await forceCloseWindow();
-      } catch {}
+      } catch (error) {
+        logger.error("关闭设置窗口失败", { error: normalizeError(error) });
+      }
     }
   };
 
   const handleRequestCloseWindow = async (): Promise<void> => {
     try {
       await requestWindowClose();
-    } catch {}
+    } catch (error) {
+      logger.error("请求关闭设置窗口失败", { error: normalizeError(error) });
+    }
   };
 
   const applyShortcutCandidate = async (candidate: string): Promise<void> => {

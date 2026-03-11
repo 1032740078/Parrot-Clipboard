@@ -1,6 +1,6 @@
 import {
   useEffect,
-  useEffectEvent,
+  useCallback,
   useMemo,
   useRef,
   useState,
@@ -108,7 +108,7 @@ export const PreviewWindow = () => {
     draftTextRef.current = visibleText;
   }, [activeDetail, recordId, visibleText]);
 
-  const persistDraftText = useEffectEvent(async (): Promise<void> => {
+  const persistDraftText = useCallback(async (): Promise<void> => {
     const currentDetail = activeDetailRef.current;
     if (!currentDetail || !isTextRecord(currentDetail)) {
       return;
@@ -150,9 +150,9 @@ export const PreviewWindow = () => {
     savePromiseRef.current = savePromise;
     saveTextInFlightRef.current = nextText;
     await savePromise;
-  });
+  }, []);
 
-  const flushPendingTextSave = useEffectEvent(async (): Promise<void> => {
+  const flushPendingTextSave = useCallback(async (): Promise<void> => {
     if (saveTimerRef.current !== null) {
       window.clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
@@ -180,7 +180,7 @@ export const PreviewWindow = () => {
     } catch {
       return;
     }
-  });
+  }, [persistDraftText]);
 
   const { requestWindowClose, subscribeCloseRequested } = useTauriWindowClose({
     beforeClose: flushPendingTextSave,
@@ -225,7 +225,7 @@ export const PreviewWindow = () => {
       unlistenRecordDeleted?.();
       unlistenCloseRequested?.();
     };
-  }, []);
+  }, [flushPendingTextSave, requestWindowClose, subscribeCloseRequested]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
@@ -239,7 +239,7 @@ export const PreviewWindow = () => {
     return () => {
       window.removeEventListener("keydown", handleKeyDown, true);
     };
-  }, []);
+  }, [requestWindowClose]);
 
   useEffect(() => {
     const currentDetail = activeDetail;
@@ -274,7 +274,7 @@ export const PreviewWindow = () => {
         saveTimerRef.current = null;
       }
     };
-  }, [activeDetail, status, visibleText]);
+  }, [activeDetail, persistDraftText, status, visibleText]);
 
   useEffect(() => {
     if (!imageDragging) {

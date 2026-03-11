@@ -358,6 +358,7 @@ impl ClipboardRuntimeRepository for SqliteClipboardRuntimeRepository {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn upsert_text_record(
     database: &SqliteConnectionManager,
     content_type: ContentType,

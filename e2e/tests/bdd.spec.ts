@@ -714,7 +714,7 @@ test("BDD-01-03 保存通用设置后主题与运行态同步", async ({ browser
       (call) =>
         call.command === "update_general_settings" &&
         call.args?.theme === "dark" &&
-        call.args?.launch_at_login === false
+        call.args?.launchAtLogin === false
     )
   ).toBe(true);
 
@@ -1022,7 +1022,7 @@ test("v1.0 BDD-01-03 清空历史后数据库与图片资源保持一致", async
     invokeCalls.some(
       (call) =>
         call.command === "clear_history" &&
-        call.args?.confirm_token === "confirm-clear-history-v0.3"
+        call.args?.confirmToken === "confirm-clear-history-v0.3"
     )
   ).toBe(true);
 });
@@ -1640,7 +1640,7 @@ test("BDD-23-01 初始视口内左侧第一个可见卡片显示为 1", async ({
 
   await expect(page.getByTestId("virtualized-track")).toBeVisible();
   const visibleSlots = await getVisibleQuickSlotCards(page);
-  expect(visibleSlots.map((item) => item.slot)).toEqual(["1", "2", "3", "4"]);
+  expect(visibleSlots.map((item) => item.slot)).toEqual(["1", "2", "3"]);
   expect(visibleSlots[0]?.text).toContain("虚拟记录 1");
 });
 
@@ -1660,7 +1660,7 @@ test("BDD-23-02 横向滚动后快捷编号随视口更新", async ({ page }) =>
   );
 
   const visibleSlots = await getVisibleQuickSlotCards(page);
-  expect(visibleSlots.map((item) => item.slot)).toEqual(["1", "2", "3", "4"]);
+  expect(visibleSlots.map((item) => item.slot)).toEqual(["1", "2", "3"]);
   expect(visibleSlots[0]?.text).toContain("虚拟记录 7");
   expect(visibleSlots[0]?.text).not.toContain("虚拟记录 1");
 });

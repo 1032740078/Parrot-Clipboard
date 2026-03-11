@@ -29,6 +29,7 @@ pub struct PasteService {
 }
 
 impl PasteService {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         repository: Arc<dyn ClipboardRuntimeRepository>,
         monitor: Arc<dyn crate::clipboard::monitor::ClipboardMonitorControl>,

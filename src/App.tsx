@@ -4,6 +4,7 @@ import { clearHistory, getRuntimeStatus } from "./api/commands";
 import {
   closePermissionGuideWindow,
   getPermissionStatus,
+  openAccessibilitySettings,
   showPermissionGuideWindow,
 } from "./api/diagnostics";
 import { getSettingsSnapshot } from "./api/settings";
@@ -11,6 +12,7 @@ import { getErrorMessage } from "./api/errorHandler";
 import { logger, normalizeError } from "./api/logger";
 import { MainPanel } from "./components/MainPanel";
 import { ConfirmDialog } from "./components/common/ConfirmDialog";
+import { PermissionGuideDialog } from "./components/common/PermissionGuideDialog";
 import { Toast } from "./components/common/Toast";
 import { useSystemEvents } from "./hooks/useSystemEvents";
 import { useThemeSync } from "./hooks/useThemeSync";
@@ -26,17 +28,20 @@ function App() {
   const closePermissionGuide = useUIStore((state) => state.closePermissionGuide);
   const openPermissionGuide = useUIStore((state) => state.openPermissionGuide);
   const showToast = useUIStore((state) => state.showToast);
+  const permissionGuideVisible = useUIStore((state) => state.permissionGuideVisible);
 
   const hydrateRuntimeStatus = useSystemStore((state) => state.hydrateRuntimeStatus);
   const setPermissionStatus = useSystemStore((state) => state.setPermissionStatus);
   const setTrayAvailable = useSystemStore((state) => state.setTrayAvailable);
   const hydrateSettings = useSettingsStore((state) => state.hydrateSettings);
   const themeMode = useSettingsStore((state) => state.themeMode);
+  const permissionStatus = useSystemStore((state) => state.permissionStatus);
 
   const [isClearingHistory, setIsClearingHistory] = useState(false);
+  const [isCheckingPermission, setIsCheckingPermission] = useState(false);
 
   const syncPermission = useCallback(
-    async (autoOpenGuide: boolean): Promise<void> => {
+    async (autoOpenGuide: boolean) => {
       try {
         const status = await getPermissionStatus();
         setPermissionStatus(status);
@@ -46,13 +51,15 @@ function App() {
             openPermissionGuide();
             await showPermissionGuideWindow();
           }
-          return;
+          return status;
         }
 
         closePermissionGuide();
         await closePermissionGuideWindow();
+        return status;
       } catch (error) {
         logger.error("读取权限状态失败", { error: normalizeError(error) });
+        return undefined;
       }
     },
     [closePermissionGuide, openPermissionGuide, setPermissionStatus]
@@ -178,6 +185,34 @@ function App() {
     }
   };
 
+  const handlePermissionGuideOpenSettings = async (): Promise<void> => {
+    try {
+      await openAccessibilitySettings();
+    } catch (error) {
+      showToast({
+        level: "error",
+        message: getErrorMessage(error),
+        duration: 2200,
+      });
+    }
+  };
+
+  const handleRetryPermission = async (): Promise<void> => {
+    setIsCheckingPermission(true);
+    try {
+      const status = await syncPermission(false);
+      if (status?.platform === "macos" && status.accessibility === "granted") {
+        showToast({
+          level: "info",
+          message: "辅助功能权限已就绪",
+          duration: 2200,
+        });
+      }
+    } finally {
+      setIsCheckingPermission(false);
+    }
+  };
+
   return (
     <main
       className="min-h-screen bg-transparent text-[var(--app-fg)] transition-colors"
@@ -193,6 +228,18 @@ function App() {
         onConfirm={handleConfirmClearHistory}
         title="确认清空全部历史？"
         visible={Boolean(clearHistoryDialog)}
+      />
+      <PermissionGuideDialog
+        checking={isCheckingPermission}
+        onLater={closePermissionGuide}
+        onOpenSettings={() => {
+          void handlePermissionGuideOpenSettings();
+        }}
+        onRetry={() => {
+          void handleRetryPermission();
+        }}
+        permissionStatus={permissionStatus}
+        visible={permissionGuideVisible}
       />
       <Toast
         duration={toast?.duration}

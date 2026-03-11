@@ -1,5 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useEffectEvent, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 interface CloseRequestedEvent {
   preventDefault: () => void;
@@ -25,10 +25,21 @@ export const useTauriWindowClose = ({
   onCloseError,
 }: UseTauriWindowCloseOptions = {}): UseTauriWindowCloseResult => {
   const bypassCloseRequestedRef = useRef(false);
+  const beforeCloseRef = useRef(beforeClose);
+  const shouldPreventCloseRef = useRef(shouldPreventClose);
+  const onPreventCloseRef = useRef(onPreventClose);
+  const onCloseErrorRef = useRef(onCloseError);
 
-  const forceCloseWindow = useEffectEvent(async (): Promise<void> => {
-    if (beforeClose) {
-      await beforeClose();
+  useEffect(() => {
+    beforeCloseRef.current = beforeClose;
+    shouldPreventCloseRef.current = shouldPreventClose;
+    onPreventCloseRef.current = onPreventClose;
+    onCloseErrorRef.current = onCloseError;
+  }, [beforeClose, shouldPreventClose, onPreventClose, onCloseError]);
+
+  const forceCloseWindow = useCallback(async (): Promise<void> => {
+    if (beforeCloseRef.current) {
+      await beforeCloseRef.current();
     }
 
     bypassCloseRequestedRef.current = true;
@@ -36,22 +47,22 @@ export const useTauriWindowClose = ({
       await getCurrentWindow().close();
     } catch (error) {
       bypassCloseRequestedRef.current = false;
-      onCloseError?.(error);
+      onCloseErrorRef.current?.(error);
       throw error;
     }
-  });
+  }, []);
 
-  const requestWindowClose = useEffectEvent(async (): Promise<boolean> => {
-    if (shouldPreventClose?.()) {
-      onPreventClose?.();
+  const requestWindowClose = useCallback(async (): Promise<boolean> => {
+    if (shouldPreventCloseRef.current?.()) {
+      onPreventCloseRef.current?.();
       return false;
     }
 
     await forceCloseWindow();
     return true;
-  });
+  }, [forceCloseWindow]);
 
-  const handleCloseRequested = useEffectEvent(
+  const handleCloseRequested = useCallback(
     async (event: CloseRequestedEvent): Promise<boolean> => {
       if (bypassCloseRequestedRef.current) {
         bypassCloseRequestedRef.current = false;
@@ -60,8 +71,8 @@ export const useTauriWindowClose = ({
 
       event.preventDefault();
 
-      if (shouldPreventClose?.()) {
-        onPreventClose?.();
+      if (shouldPreventCloseRef.current?.()) {
+        onPreventCloseRef.current?.();
         return false;
       }
 
@@ -71,14 +82,15 @@ export const useTauriWindowClose = ({
       } catch {
         return false;
       }
-    }
+    },
+    [forceCloseWindow]
   );
 
-  const subscribeCloseRequested = useEffectEvent(async (): Promise<() => void> => {
+  const subscribeCloseRequested = useCallback(async (): Promise<() => void> => {
     return await getCurrentWindow().onCloseRequested((event) => {
       void handleCloseRequested(event);
     });
-  });
+  }, [handleCloseRequested]);
 
   return {
     forceCloseWindow,

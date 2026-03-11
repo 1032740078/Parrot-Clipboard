@@ -35,7 +35,7 @@ pub fn detect_accessibility_permission() -> Result<Option<AccessibilityPermissio
 {
     #[cfg(target_os = "macos")]
     {
-        return Ok(Some(macos::detect_accessibility_permission()));
+        Ok(Some(macos::detect_accessibility_permission()))
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -47,7 +47,7 @@ pub fn detect_accessibility_permission() -> Result<Option<AccessibilityPermissio
 pub fn open_accessibility_settings() -> Result<(), AppError> {
     #[cfg(target_os = "macos")]
     {
-        return macos::open_accessibility_settings();
+        macos::open_accessibility_settings()
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -64,7 +64,7 @@ pub fn resolve_source_app_icon_png(
 ) -> Result<Option<Vec<u8>>, AppError> {
     #[cfg(target_os = "macos")]
     {
-        return macos::resolve_source_app_icon_png(source_app, size);
+        macos::resolve_source_app_icon_png(source_app, size)
     }
 
     #[cfg(not(target_os = "macos"))]

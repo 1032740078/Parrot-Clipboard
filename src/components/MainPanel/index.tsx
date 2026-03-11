@@ -18,6 +18,7 @@ import { buildCardContextMenuActions } from "./contextMenuActions";
 import { resolveContextMenuPosition } from "./contextMenuPosition";
 import { getPanelMotionVariants, prefersReducedMotion } from "./motion";
 import { PauseHint } from "./PauseHint";
+import { PreviewOverlay } from "./PreviewOverlay";
 import { buildSearchSessionKey, filterClipboardRecords, PANEL_TYPE_FILTER_OPTIONS } from "./search";
 import { SkeletonCard } from "./SkeletonCard";
 
@@ -625,6 +626,7 @@ export const MainPanel = () => {
               void handleContextMenuAction(actionKey);
             }}
           />
+          <PreviewOverlay />
         </>
       ) : null}
     </AnimatePresence>
