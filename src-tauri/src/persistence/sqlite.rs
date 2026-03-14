@@ -11,7 +11,10 @@ use rusqlite::{params, Connection};
 
 use crate::{
     clipboard::{
-        query::{ClipboardRecordDetail, ClipboardRecordSummary, FileItemDetail, FilesDetail},
+        query::{
+            ClipboardRecordDetail, ClipboardRecordSummary, FileItemDetail, FilesDetail,
+            PreviewStatus,
+        },
         types::{ContentType, PayloadType, RecordId},
     },
     error::AppError,
@@ -19,7 +22,7 @@ use crate::{
 
 use super::{
     migrations::{CURRENT_SCHEMA_VERSION, MIGRATIONS},
-    row_mapper::{map_detail_row, map_file_item_row, map_summary_row},
+    row_mapper::{map_detail_row, map_file_item_row, map_summary_row, PreviewAssetRow},
 };
 
 const SUMMARY_SELECT_SQL: &str = r#"
@@ -94,7 +97,12 @@ const DETAIL_SELECT_SQL: &str = r#"
         SELECT 1
         FROM file_items fi
         WHERE fi.item_id = ci.id AND fi.entry_type = 'directory'
-      ) AS contains_directory
+      ) AS contains_directory,
+      ci.primary_uri,
+      ci.preview_renderer,
+      ci.preview_status,
+      ci.preview_error_code,
+      ci.preview_error_message
     FROM clipboard_items ci
     LEFT JOIN image_assets ia ON ia.item_id = ci.id
     WHERE ci.id = ?1
@@ -109,6 +117,20 @@ const FILE_ITEMS_SELECT_SQL: &str = r#"
     FROM file_items
     WHERE item_id = ?1
     ORDER BY sort_order ASC, id ASC
+"#;
+
+const PREVIEW_ASSETS_SELECT_SQL: &str = r#"
+    SELECT
+      asset_role,
+      storage_path,
+      text_content,
+      mime_type,
+      byte_size,
+      status,
+      updated_at
+    FROM preview_assets
+    WHERE item_id = ?1
+    ORDER BY asset_role ASC, id ASC
 "#;
 
 const SEARCH_SUMMARY_SELECT_PREFIX_SQL: &str = r#"
@@ -324,8 +346,9 @@ impl SqliteConnectionManager {
             } else {
                 None
             };
+            let preview_assets = load_preview_assets(connection, sql_id)?;
 
-            map_detail_row(row, files_detail).map(Some)
+            map_detail_row(row, files_detail, preview_assets).map(Some)
         })
     }
 
@@ -645,6 +668,56 @@ fn load_file_items(connection: &Connection, item_id: i64) -> Result<Vec<FileItem
     }
 
     Ok(items)
+}
+
+fn load_preview_assets(
+    connection: &Connection,
+    item_id: i64,
+) -> Result<Vec<PreviewAssetRow>, AppError> {
+    let mut statement = connection.prepare(PREVIEW_ASSETS_SELECT_SQL).map_err(|error| {
+        AppError::Db(format!("prepare sqlite preview assets query failed: {error}"))
+    })?;
+    let mut rows = statement.query(params![item_id]).map_err(|error| {
+        AppError::Db(format!("execute sqlite preview assets query failed: {error}"))
+    })?;
+
+    let mut assets = Vec::new();
+    while let Some(row) = rows.next().map_err(|error| {
+        AppError::Db(format!("iterate sqlite preview asset rows failed: {error}"))
+    })? {
+        let status: String = row.get(5).map_err(|error| {
+            AppError::Db(format!("read sqlite preview asset status failed: {error}"))
+        })?;
+        let status = PreviewStatus::from_db(&status).ok_or_else(|| {
+            AppError::Db(format!(
+                "unsupported preview asset status `{status}` in sqlite row"
+            ))
+        })?;
+
+        assets.push(PreviewAssetRow {
+            asset_role: row.get(0).map_err(|error| {
+                AppError::Db(format!("read sqlite preview asset role failed: {error}"))
+            })?,
+            storage_path: row.get(1).map_err(|error| {
+                AppError::Db(format!("read sqlite preview asset storage_path failed: {error}"))
+            })?,
+            text_content: row.get(2).map_err(|error| {
+                AppError::Db(format!("read sqlite preview asset text_content failed: {error}"))
+            })?,
+            mime_type: row.get(3).map_err(|error| {
+                AppError::Db(format!("read sqlite preview asset mime_type failed: {error}"))
+            })?,
+            byte_size: row.get(4).map_err(|error| {
+                AppError::Db(format!("read sqlite preview asset byte_size failed: {error}"))
+            })?,
+            status,
+            updated_at: row.get(6).map_err(|error| {
+                AppError::Db(format!("read sqlite preview asset updated_at failed: {error}"))
+            })?,
+        });
+    }
+
+    Ok(assets)
 }
 
 #[derive(Debug, Clone)]

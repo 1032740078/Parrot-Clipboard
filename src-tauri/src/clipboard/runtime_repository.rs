@@ -373,7 +373,7 @@ fn upsert_text_record(
         database.with_connection(|connection| {
             connection
                 .execute(
-                    "UPDATE clipboard_items SET content_type = ?1, text_content = ?2, rich_content = ?3, preview_text = ?4, search_text = ?5, payload_bytes = ?6, last_used_at = ?7, source_app = COALESCE(?8, source_app) WHERE id = ?9",
+                    "UPDATE clipboard_items SET content_type = ?1, text_content = ?2, rich_content = ?3, preview_text = ?4, search_text = ?5, payload_bytes = ?6, primary_uri = ?7, preview_renderer = ?8, preview_status = ?9, preview_error_code = NULL, preview_error_message = NULL, preview_updated_at = ?10, last_used_at = ?10, source_app = COALESCE(?11, source_app) WHERE id = ?12",
                     params![
                         content_type.as_str(),
                         text,
@@ -381,6 +381,9 @@ fn upsert_text_record(
                         preview_text,
                         text,
                         text.len() as i64,
+                        primary_uri_for_text(content_type, text),
+                        preview_renderer_for_text(content_type),
+                        preview_status_for_content(content_type),
                         captured_at,
                         source_app,
                         existing_id.value() as i64
@@ -401,7 +404,7 @@ fn upsert_text_record(
     let record_id = database.with_connection(|connection| {
         connection
             .execute(
-                "INSERT INTO clipboard_items (payload_type, content_type, content_hash, text_content, rich_content, preview_text, search_text, source_app, file_count, payload_bytes, created_at, last_used_at) VALUES ('text', ?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8, ?9, ?9)",
+                "INSERT INTO clipboard_items (payload_type, content_type, content_hash, text_content, rich_content, preview_text, search_text, source_app, file_count, payload_bytes, primary_uri, preview_renderer, preview_status, preview_error_code, preview_error_message, preview_updated_at, created_at, last_used_at) VALUES ('text', ?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8, ?9, ?10, ?11, NULL, NULL, ?12, ?12, ?12)",
                 params![
                     content_type.as_str(),
                     content_hash,
@@ -411,6 +414,9 @@ fn upsert_text_record(
                     text,
                     source_app,
                     text.len() as i64,
+                    primary_uri_for_text(content_type, text),
+                    preview_renderer_for_text(content_type),
+                    preview_status_for_content(content_type),
                     captured_at
                 ],
             )
@@ -448,7 +454,7 @@ fn update_text_record(
     database.with_connection(|connection| {
         connection
             .execute(
-                "UPDATE clipboard_items SET content_type = ?1, content_hash = ?2, text_content = ?3, rich_content = NULL, preview_text = ?4, search_text = ?5, payload_bytes = ?6 WHERE id = ?7 AND payload_type = 'text'",
+                "UPDATE clipboard_items SET content_type = ?1, content_hash = ?2, text_content = ?3, rich_content = NULL, preview_text = ?4, search_text = ?5, payload_bytes = ?6, primary_uri = ?7, preview_renderer = ?8, preview_status = ?9, preview_error_code = NULL, preview_error_message = NULL, preview_updated_at = ?10 WHERE id = ?11 AND payload_type = 'text'",
                 params![
                     content_type.as_str(),
                     content_hash,
@@ -456,6 +462,10 @@ fn update_text_record(
                     text,
                     text,
                     text.len() as i64,
+                    primary_uri_for_text(content_type, text),
+                    preview_renderer_for_text(content_type),
+                    preview_status_for_content(content_type),
+                    _updated_at,
                     id.value() as i64
                 ],
             )
@@ -484,12 +494,13 @@ fn insert_image_record(
 ) -> Result<RecordId, AppError> {
     database.with_connection(|connection| {
         connection.execute(
-            "INSERT INTO clipboard_items (payload_type, content_type, content_hash, text_content, rich_content, preview_text, search_text, source_app, file_count, payload_bytes, created_at, last_used_at) VALUES ('image', 'image', ?1, NULL, NULL, ?2, ?2, ?3, 0, ?4, ?5, ?5)",
+            "INSERT INTO clipboard_items (payload_type, content_type, content_hash, text_content, rich_content, preview_text, search_text, source_app, file_count, payload_bytes, primary_uri, preview_renderer, preview_status, preview_error_code, preview_error_message, preview_updated_at, created_at, last_used_at) VALUES ('image', 'image', ?1, NULL, NULL, ?2, ?2, ?3, 0, ?4, ?5, 'image', 'ready', NULL, NULL, ?6, ?6, ?6)",
             params![
                 content_hash,
                 format!("图片 {}×{}", saved.pixel_width, saved.pixel_height),
                 source_app,
                 saved.byte_size,
+                saved.original_path,
                 captured_at
             ],
         ).map_err(|error| AppError::Db(format!("insert image item failed: {error}")))?;
@@ -512,15 +523,22 @@ fn insert_files_record(
     source_app: Option<&str>,
     captured_at: i64,
 ) -> Result<ClipboardRecordSummary, AppError> {
+    let primary_uri = primary_uri_for_files(content_type, items);
+    let preview_renderer = preview_renderer_for_files(content_type, items);
+    let preview_status = preview_status_for_content(content_type);
+
     let record_id = database.with_connection(|connection| {
         connection.execute(
-            "INSERT INTO clipboard_items (payload_type, content_type, content_hash, text_content, rich_content, preview_text, search_text, source_app, file_count, payload_bytes, created_at, last_used_at) VALUES ('files', ?1, ?2, NULL, NULL, ?3, ?3, ?4, ?5, 0, ?6, ?6)",
+            "INSERT INTO clipboard_items (payload_type, content_type, content_hash, text_content, rich_content, preview_text, search_text, source_app, file_count, payload_bytes, primary_uri, preview_renderer, preview_status, preview_error_code, preview_error_message, preview_updated_at, created_at, last_used_at) VALUES ('files', ?1, ?2, NULL, NULL, ?3, ?3, ?4, ?5, 0, ?6, ?7, ?8, NULL, NULL, ?9, ?9, ?9)",
             params![
                 content_type.as_str(),
                 content_hash,
                 build_files_preview(items),
                 source_app,
                 items.len() as i64,
+                primary_uri,
+                preview_renderer,
+                preview_status,
                 captured_at
             ],
         ).map_err(|error| AppError::Db(format!("insert files item failed: {error}")))?;
@@ -603,6 +621,63 @@ fn detect_files_content_type(items: &[ClipboardFileItem]) -> ContentType {
             | "pages" | "numbers" | "key",
         ) => ContentType::Document,
         _ => ContentType::Files,
+    }
+}
+
+fn preview_renderer_for_text(content_type: ContentType) -> &'static str {
+    match content_type {
+        ContentType::Link => "link",
+        _ => "text",
+    }
+}
+
+fn preview_renderer_for_files(content_type: ContentType, items: &[ClipboardFileItem]) -> &'static str {
+    match content_type {
+        ContentType::Image => "image",
+        ContentType::Audio => "audio",
+        ContentType::Video => "video",
+        ContentType::Document => {
+            let is_pdf = items
+                .first()
+                .and_then(|item| item.extension.as_deref())
+                .map(|value| value.eq_ignore_ascii_case("pdf"))
+                .unwrap_or(false);
+
+            if is_pdf {
+                "pdf"
+            } else {
+                "document"
+            }
+        }
+        ContentType::Files => "file_list",
+        ContentType::Link => "link",
+        ContentType::Text => "text",
+    }
+}
+
+fn preview_status_for_content(content_type: ContentType) -> &'static str {
+    match content_type {
+        ContentType::Text | ContentType::Image | ContentType::Files => "ready",
+        ContentType::Link | ContentType::Audio | ContentType::Video | ContentType::Document => {
+            "pending"
+        }
+    }
+}
+
+fn primary_uri_for_text(content_type: ContentType, text: &str) -> Option<String> {
+    match content_type {
+        ContentType::Link => Some(text.trim().to_string()),
+        _ => None,
+    }
+}
+
+fn primary_uri_for_files(content_type: ContentType, items: &[ClipboardFileItem]) -> Option<String> {
+    match content_type {
+        ContentType::Image
+        | ContentType::Audio
+        | ContentType::Video
+        | ContentType::Document => items.first().map(|item| item.path.to_string_lossy().to_string()),
+        _ => None,
     }
 }
 

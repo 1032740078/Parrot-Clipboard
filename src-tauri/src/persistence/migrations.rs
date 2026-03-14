@@ -1,4 +1,4 @@
-pub const CURRENT_SCHEMA_VERSION: u32 = 3;
+pub const CURRENT_SCHEMA_VERSION: u32 = 4;
 
 pub const MIGRATIONS: &[(u32, &str)] = &[
     (
@@ -129,6 +129,70 @@ pub const MIGRATIONS: &[(u32, &str)] = &[
           ON clipboard_items(payload_type, last_used_at DESC, id DESC);
 
         PRAGMA foreign_keys = ON;
+        "#,
+    ),
+    (
+        4,
+        r#"
+        ALTER TABLE clipboard_items ADD COLUMN primary_uri TEXT;
+        ALTER TABLE clipboard_items ADD COLUMN preview_renderer TEXT NOT NULL DEFAULT 'summary'
+          CHECK (preview_renderer IN ('text', 'image', 'audio', 'video', 'pdf', 'document', 'link', 'file_list', 'summary'));
+        ALTER TABLE clipboard_items ADD COLUMN preview_status TEXT NOT NULL DEFAULT 'pending'
+          CHECK (preview_status IN ('pending', 'ready', 'failed', 'unsupported'));
+        ALTER TABLE clipboard_items ADD COLUMN preview_error_code TEXT;
+        ALTER TABLE clipboard_items ADD COLUMN preview_error_message TEXT;
+        ALTER TABLE clipboard_items ADD COLUMN preview_updated_at INTEGER;
+
+        CREATE TABLE IF NOT EXISTS preview_assets (
+          id            INTEGER PRIMARY KEY AUTOINCREMENT,
+          item_id       INTEGER NOT NULL,
+          asset_role    TEXT NOT NULL,
+          storage_path  TEXT,
+          text_content  TEXT,
+          mime_type     TEXT,
+          byte_size     INTEGER NOT NULL DEFAULT 0,
+          generator     TEXT,
+          status        TEXT NOT NULL DEFAULT 'ready'
+            CHECK (status IN ('pending', 'ready', 'failed', 'unsupported')),
+          created_at    INTEGER NOT NULL,
+          updated_at    INTEGER NOT NULL,
+          FOREIGN KEY(item_id) REFERENCES clipboard_items(id) ON DELETE CASCADE,
+          UNIQUE(item_id, asset_role)
+        );
+
+        UPDATE clipboard_items
+        SET
+          primary_uri = CASE
+            WHEN content_type = 'link' THEN text_content
+            ELSE primary_uri
+          END,
+          preview_renderer = CASE
+            WHEN content_type = 'text' THEN 'text'
+            WHEN content_type = 'image' THEN 'image'
+            WHEN content_type = 'audio' THEN 'audio'
+            WHEN content_type = 'video' THEN 'video'
+            WHEN content_type = 'document' THEN 'document'
+            WHEN content_type = 'link' THEN 'link'
+            WHEN content_type = 'files' THEN 'file_list'
+            ELSE 'summary'
+          END,
+          preview_status = CASE
+            WHEN content_type IN ('text', 'image', 'files') THEN 'ready'
+            ELSE 'pending'
+          END,
+          preview_updated_at = COALESCE(preview_updated_at, last_used_at);
+
+        CREATE INDEX IF NOT EXISTS idx_clipboard_items_preview_status_last_used_at
+          ON clipboard_items(preview_status, last_used_at DESC, id DESC);
+
+        CREATE INDEX IF NOT EXISTS idx_clipboard_items_primary_uri
+          ON clipboard_items(primary_uri);
+
+        CREATE INDEX IF NOT EXISTS idx_preview_assets_item_id_asset_role
+          ON preview_assets(item_id, asset_role);
+
+        CREATE INDEX IF NOT EXISTS idx_preview_assets_status_updated_at
+          ON preview_assets(status, updated_at DESC, id DESC);
         "#,
     ),
 ];

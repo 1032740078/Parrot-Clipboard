@@ -4,6 +4,17 @@ export type PayloadType = "text" | "image" | "files";
 export type ContentType = "text" | "image" | "files" | "link" | "video" | "audio" | "document";
 export type PasteMode = "original" | "plain_text";
 export type ThumbnailState = "pending" | "ready" | "failed";
+export type PreviewStatus = "pending" | "ready" | "failed" | "unsupported";
+export type PreviewRenderer =
+  | "text"
+  | "image"
+  | "audio"
+  | "video"
+  | "pdf"
+  | "document"
+  | "link"
+  | "file_list"
+  | "summary";
 export type RecordUpdatedReason = "promoted" | "thumbnail_ready" | "thumbnail_failed";
 export type RecordDeletedReason = "manual" | "retention";
 export type PlatformKind = "macos" | "windows" | "linux";
@@ -60,6 +71,44 @@ export interface FilesDetail {
   items: FileItemDetail[];
 }
 
+export interface AudioPreviewDetail {
+  src: string;
+  mime_type?: string | null;
+  duration_ms?: number | null;
+  byte_size?: number | null;
+}
+
+export interface VideoPreviewDetail {
+  src: string;
+  mime_type?: string | null;
+  duration_ms?: number | null;
+  pixel_width?: number | null;
+  pixel_height?: number | null;
+  poster_path?: string | null;
+}
+
+export type DocumentKind = "pdf" | "doc" | "docx" | "xls" | "xlsx" | "ppt" | "pptx";
+
+export interface DocumentPreviewDetail {
+  document_kind: DocumentKind;
+  preview_status: PreviewStatus;
+  page_count?: number | null;
+  sheet_names?: string[] | null;
+  slide_count?: number | null;
+  html_path?: string | null;
+  text_content?: string | null;
+}
+
+export interface LinkPreviewDetail {
+  url: string;
+  title?: string | null;
+  site_name?: string | null;
+  description?: string | null;
+  cover_image?: string | null;
+  content_text?: string | null;
+  fetched_at?: number | null;
+}
+
 export interface ClipboardRecordSummary {
   id: number;
   payload_type: PayloadType;
@@ -78,6 +127,15 @@ export interface ClipboardRecordDetail extends ClipboardRecordSummary {
   rich_content?: string | null;
   image_detail?: ImageDetail | null;
   files_detail?: FilesDetail | null;
+  primary_uri?: string | null;
+  preview_renderer?: PreviewRenderer | null;
+  preview_status?: PreviewStatus | null;
+  preview_error_code?: string | null;
+  preview_error_message?: string | null;
+  audio_detail?: AudioPreviewDetail | null;
+  video_detail?: VideoPreviewDetail | null;
+  document_detail?: DocumentPreviewDetail | null;
+  link_detail?: LinkPreviewDetail | null;
 }
 
 export interface PasteResult {
@@ -123,6 +181,25 @@ export interface PreviewWindowRequestedPayload {
 export interface PreviewWindowVisibilityChangedPayload {
   visible: boolean;
   record_id?: number | null;
+}
+
+export interface PreviewAssetUpdatedPayload {
+  record_id: number;
+  preview_status: PreviewStatus;
+  renderer: PreviewRenderer;
+  updated_at: number;
+}
+
+export interface PreviewAssetFailedPayload extends PreviewAssetUpdatedPayload {
+  error_code?: string | null;
+  error_message?: string | null;
+}
+
+export interface PreviewPreparationResult {
+  id: number;
+  preview_status: PreviewStatus;
+  renderer: PreviewRenderer;
+  updated_at: number;
 }
 
 export interface PermissionGuideWindowVisibilityChangedPayload {
