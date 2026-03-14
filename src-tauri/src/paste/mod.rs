@@ -965,6 +965,15 @@ mod tests {
             rich_content,
             image_detail: None,
             files_detail: None,
+            primary_uri: None,
+            preview_renderer: None,
+            preview_status: None,
+            preview_error_code: None,
+            preview_error_message: None,
+            audio_detail: None,
+            video_detail: None,
+            document_detail: None,
+            link_detail: None,
         }
     }
 
@@ -1002,6 +1011,15 @@ mod tests {
                 byte_size,
             }),
             files_detail: None,
+            primary_uri: None,
+            preview_renderer: None,
+            preview_status: None,
+            preview_error_code: None,
+            preview_error_message: None,
+            audio_detail: None,
+            video_detail: None,
+            document_detail: None,
+            link_detail: None,
         }
     }
 
@@ -1056,6 +1074,15 @@ mod tests {
                     })
                     .collect(),
             }),
+            primary_uri: None,
+            preview_renderer: None,
+            preview_status: None,
+            preview_error_code: None,
+            preview_error_message: None,
+            audio_detail: None,
+            video_detail: None,
+            document_detail: None,
+            link_detail: None,
         }
     }
 
@@ -1080,6 +1107,15 @@ mod tests {
             rich_content: None,
             image_detail: None,
             files_detail: Some(FilesDetail { items: Vec::new() }),
+            primary_uri: None,
+            preview_renderer: None,
+            preview_status: None,
+            preview_error_code: None,
+            preview_error_message: None,
+            audio_detail: None,
+            video_detail: None,
+            document_detail: None,
+            link_detail: None,
         }
     }
 

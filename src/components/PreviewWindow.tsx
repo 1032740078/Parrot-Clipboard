@@ -22,6 +22,7 @@ import type { ClipboardRecordDetail } from "../types/clipboard";
 import { isFileRecord, isImageRecord, isTextRecord } from "../types/clipboard";
 import { toPreviewSrc } from "./MainPanel/previewAsset";
 import { PreviewEditor } from "./PreviewEditor";
+import { AudioPreview } from "./preview/AudioPreview";
 
 const AUTO_SAVE_DELAY_MS = 400;
 const IMAGE_MIN_SCALE = 1;
@@ -38,6 +39,27 @@ const getTextValue = (detail: ClipboardRecordDetail | null): string => {
   }
 
   return detail.text_content ?? detail.preview_text;
+};
+
+const isRenderablePreviewReady = (detail: ClipboardRecordDetail | null): boolean => {
+  if (!detail) {
+    return false;
+  }
+
+  const previewStatus = detail.preview_status ?? "ready";
+  return previewStatus === "ready";
+};
+
+const shouldIgnoreSpaceClose = (target: EventTarget | null): boolean => {
+  if (target instanceof HTMLMediaElement) {
+    return true;
+  }
+
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  return Boolean(target.closest("[data-preview-allows-space='true']"));
 };
 
 const resolveInitialRecordId = (): number | null => {
@@ -111,7 +133,11 @@ export const PreviewWindow = () => {
   }, [activeDetail, recordId, visibleText]);
 
   useEffect(() => {
-    if (status !== "ready" || !activeDetail || hasPlayedRevealSoundRef.current) {
+    if (
+      status !== "ready" ||
+      !isRenderablePreviewReady(activeDetail) ||
+      hasPlayedRevealSoundRef.current
+    ) {
       return;
     }
 
@@ -240,7 +266,13 @@ export const PreviewWindow = () => {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === "Escape" || event.code === "Space") {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        void requestWindowClose();
+        return;
+      }
+
+      if (event.code === "Space" && !shouldIgnoreSpaceClose(event.target)) {
         event.preventDefault();
         void requestWindowClose();
       }
@@ -510,6 +542,10 @@ export const PreviewWindow = () => {
             <div className="text-sm text-zinc-500">预览不可用</div>
           )}
         </div>
+      ) : null}
+
+      {status === "ready" && activeDetail?.preview_renderer === "audio" ? (
+        <AudioPreview detail={activeDetail} key={activeDetail.id} />
       ) : null}
 
       {status === "ready" && activeDetail && isFileRecord(activeDetail) ? (

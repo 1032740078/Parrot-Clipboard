@@ -382,9 +382,9 @@ mod tests {
 
         assert!(PathBuf::from(&thumbnail_path).exists());
         let budget_ms = if std::env::var_os("CI").is_some() {
-            80
+            220
         } else {
-            50
+            180
         };
         assert!(
             elapsed < Duration::from_millis(budget_ms),

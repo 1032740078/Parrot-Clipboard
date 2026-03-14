@@ -5,6 +5,16 @@ export const toPreviewSrc = (path?: string | null): string | null => {
     return null;
   }
 
+  if (
+    path.startsWith("http://") ||
+    path.startsWith("https://") ||
+    path.startsWith("data:") ||
+    path.startsWith("blob:") ||
+    path.startsWith("asset://")
+  ) {
+    return path;
+  }
+
   try {
     return convertFileSrc(path);
   } catch {

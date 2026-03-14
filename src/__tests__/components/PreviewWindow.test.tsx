@@ -15,7 +15,7 @@ import {
 } from "../../__mocks__/@tauri-apps/api/window";
 import { PreviewWindow } from "../../components/PreviewWindow";
 import { __resetRecordPreviewDetailCache } from "../../hooks/useRecordPreviewDetail";
-import { buildImageRecord, buildRecord } from "../fixtures/clipboardRecords";
+import { buildFileRecord, buildImageRecord, buildRecord } from "../fixtures/clipboardRecords";
 
 const { playPreviewRevealed } = vi.hoisted(() => ({
   playPreviewRevealed: vi.fn(),
@@ -248,5 +248,217 @@ describe("PreviewWindow", () => {
     fireEvent.mouseUp(window);
 
     expect(canvas.getAttribute("style")).toContain("translate(30px, 45px) scale(1.12)");
+  });
+
+  it("音频记录会渲染播放器和基础元信息", async () => {
+    const record = buildFileRecord(9, "voice-note.mp3", 1000, 1, false, "audio");
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "get_record_detail") {
+        return {
+          ...record,
+          id: args?.id ?? 9,
+          text_content: null,
+          rich_content: null,
+          image_detail: null,
+          files_detail: {
+            items: [
+              {
+                path: "/tmp/voice-note.mp3",
+                display_name: "voice-note.mp3",
+                entry_type: "file",
+                extension: "mp3",
+              },
+            ],
+          },
+          preview_renderer: "audio",
+          preview_status: "ready",
+          preview_error_code: null,
+          preview_error_message: null,
+          audio_detail: {
+            src: "/tmp/voice-note.mp3",
+            mime_type: "audio/mpeg",
+            duration_ms: 12_000,
+            byte_size: 4_096,
+          },
+          video_detail: null,
+          document_detail: null,
+          link_detail: null,
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<PreviewWindow />);
+
+    const audioPlayer = await screen.findByTestId("preview-audio-player");
+    expect(audioPlayer).toHaveAttribute("src", "asset:///tmp/voice-note.mp3");
+    expect(screen.getByText("audio/mpeg")).toBeInTheDocument();
+    expect(screen.getByTestId("preview-audio-duration")).toHaveTextContent("00:12");
+    expect(screen.getByTestId("preview-audio-path")).toHaveTextContent("/tmp/voice-note.mp3");
+  });
+
+  it("音频元信息加载后会刷新时长显示", async () => {
+    const record = buildFileRecord(9, "voice-note.mp3", 1000, 1, false, "audio");
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "get_record_detail") {
+        return {
+          ...record,
+          id: args?.id ?? 9,
+          text_content: null,
+          rich_content: null,
+          image_detail: null,
+          files_detail: {
+            items: [
+              {
+                path: "/tmp/voice-note.mp3",
+                display_name: "voice-note.mp3",
+                entry_type: "file",
+                extension: "mp3",
+              },
+            ],
+          },
+          preview_renderer: "audio",
+          preview_status: "ready",
+          preview_error_code: null,
+          preview_error_message: null,
+          audio_detail: {
+            src: "/tmp/voice-note.mp3",
+            mime_type: "audio/mpeg",
+            duration_ms: null,
+            byte_size: 4_096,
+          },
+          video_detail: null,
+          document_detail: null,
+          link_detail: null,
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<PreviewWindow />);
+
+    const audioPlayer = await screen.findByTestId("preview-audio-player");
+    expect(screen.getByTestId("preview-audio-duration")).toHaveTextContent("未知时长");
+
+    const originalDurationDescriptor = Object.getOwnPropertyDescriptor(
+      HTMLMediaElement.prototype,
+      "duration"
+    );
+
+    Object.defineProperty(HTMLMediaElement.prototype, "duration", {
+      configurable: true,
+      get: () => 18.4,
+    });
+
+    try {
+      fireEvent(audioPlayer, new Event("loadedmetadata", { bubbles: true }));
+
+      await waitFor(() => {
+        expect(screen.getByTestId("preview-audio-duration")).toHaveTextContent("00:18");
+      });
+    } finally {
+      if (originalDurationDescriptor) {
+        Object.defineProperty(HTMLMediaElement.prototype, "duration", originalDurationDescriptor);
+      }
+    }
+  });
+
+  it("音频播放器聚焦时按空格不会关闭预览窗口", async () => {
+    const record = buildFileRecord(9, "voice-note.mp3", 1000, 1, false, "audio");
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "get_record_detail") {
+        return {
+          ...record,
+          id: args?.id ?? 9,
+          text_content: null,
+          rich_content: null,
+          image_detail: null,
+          files_detail: {
+            items: [
+              {
+                path: "/tmp/voice-note.mp3",
+                display_name: "voice-note.mp3",
+                entry_type: "file",
+                extension: "mp3",
+              },
+            ],
+          },
+          preview_renderer: "audio",
+          preview_status: "ready",
+          preview_error_code: null,
+          preview_error_message: null,
+          audio_detail: {
+            src: "/tmp/voice-note.mp3",
+            mime_type: "audio/mpeg",
+            duration_ms: 12_000,
+            byte_size: 4_096,
+          },
+          video_detail: null,
+          document_detail: null,
+          link_detail: null,
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<PreviewWindow />);
+
+    const audioPlayer = await screen.findByTestId("preview-audio-player");
+    fireEvent.keyDown(audioPlayer, { key: " ", code: "Space" });
+
+    expect(__getMockCloseCallCount()).toBe(0);
+  });
+
+  it("音频源不可用时显示降级态", async () => {
+    const record = buildFileRecord(9, "missing.mp3", 1000, 1, false, "audio");
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "get_record_detail") {
+        return {
+          ...record,
+          id: args?.id ?? 9,
+          text_content: null,
+          rich_content: null,
+          image_detail: null,
+          files_detail: {
+            items: [
+              {
+                path: "/tmp/missing.mp3",
+                display_name: "missing.mp3",
+                entry_type: "file",
+                extension: "mp3",
+              },
+            ],
+          },
+          preview_renderer: "audio",
+          preview_status: "failed",
+          preview_error_code: "MEDIA_DECODE_FAILED",
+          preview_error_message: "音频源不可用或当前环境无法解码。",
+          audio_detail: {
+            src: "/tmp/missing.mp3",
+            mime_type: "audio/mpeg",
+            duration_ms: null,
+            byte_size: null,
+          },
+          video_detail: null,
+          document_detail: null,
+          link_detail: null,
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<PreviewWindow />);
+
+    expect(await screen.findByTestId("preview-audio-fallback")).toBeInTheDocument();
+    expect(screen.getByText("无法预览当前音频")).toBeInTheDocument();
+    expect(screen.getByText("音频源不可用或当前环境无法解码。")).toBeInTheDocument();
   });
 });

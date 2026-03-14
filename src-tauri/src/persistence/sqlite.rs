@@ -950,7 +950,7 @@ mod tests {
     use super::SqliteConnectionManager;
     use crate::{
         clipboard::{
-            query::{FileEntryType, ThumbnailState},
+            query::{FileEntryType, PreviewRenderer, PreviewStatus, ThumbnailState},
             types::{ContentType, RecordId},
         },
         error::AppError,
@@ -1237,6 +1237,46 @@ mod tests {
             FileEntryType::Directory
         );
         assert!(files_detail.image_detail.is_none());
+
+        cleanup_test_dir(&database_path);
+    }
+
+    #[test]
+    fn find_record_detail_builds_audio_preview_payload() {
+        let test_dir = unique_test_dir();
+        let database_path = test_dir.join("clipboard.db");
+        let audio_path = test_dir.join("voice-note.mp3");
+        fs::create_dir_all(&test_dir).expect("audio fixture directory should be created");
+        fs::write(&audio_path, vec![1_u8; 4096]).expect("audio fixture should be written");
+
+        let manager = SqliteConnectionManager::initialize_at(&database_path)
+            .expect("sqlite database should initialize");
+        seed_audio_preview_record(&manager, &audio_path);
+
+        let detail = manager
+            .find_record_detail(RecordId::new(9))
+            .expect("audio detail query should succeed")
+            .expect("audio detail should exist");
+
+        assert_eq!(detail.content_type, ContentType::Audio);
+        assert_eq!(detail.preview_renderer, Some(PreviewRenderer::Audio));
+        assert_eq!(detail.preview_status, Some(PreviewStatus::Ready));
+        assert_eq!(
+            detail.audio_detail.as_ref().map(|value| value.src.as_str()),
+            Some(audio_path.to_string_lossy().as_ref())
+        );
+        assert_eq!(
+            detail
+                .audio_detail
+                .as_ref()
+                .and_then(|value| value.mime_type.as_deref()),
+            Some("audio/mpeg")
+        );
+        assert_eq!(
+            detail.audio_detail.as_ref().and_then(|value| value.byte_size),
+            Some(4096)
+        );
+        assert!(detail.video_detail.is_none());
 
         cleanup_test_dir(&database_path);
     }
@@ -1662,6 +1702,78 @@ mod tests {
                 Ok(())
             })
             .expect("retention seed data should be inserted");
+    }
+
+    fn seed_audio_preview_record(manager: &SqliteConnectionManager, audio_path: &Path) {
+        let audio_path = audio_path.to_string_lossy();
+
+        manager
+            .with_connection(|connection| {
+                connection
+                    .execute_batch(&format!(
+                        r#"
+                        INSERT INTO clipboard_items (
+                          id,
+                          payload_type,
+                          content_type,
+                          content_hash,
+                          text_content,
+                          rich_content,
+                          preview_text,
+                          search_text,
+                          source_app,
+                          file_count,
+                          payload_bytes,
+                          primary_uri,
+                          preview_renderer,
+                          preview_status,
+                          created_at,
+                          last_used_at
+                        ) VALUES (
+                          9,
+                          'files',
+                          'audio',
+                          'audio-preview-hash',
+                          NULL,
+                          NULL,
+                          'voice-note.mp3',
+                          'voice-note.mp3',
+                          'Finder',
+                          1,
+                          4096,
+                          '{audio_path}',
+                          'audio',
+                          'ready',
+                          9000,
+                          9000
+                        );
+
+                        INSERT INTO file_items (
+                          item_id,
+                          sort_order,
+                          path,
+                          display_name,
+                          entry_type,
+                          extension,
+                          created_at
+                        ) VALUES (
+                          9,
+                          0,
+                          '{audio_path}',
+                          'voice-note.mp3',
+                          'file',
+                          'mp3',
+                          9000
+                        );
+                        "#
+                    ))
+                    .map_err(|error| {
+                        AppError::Db(format!("seed sqlite audio preview record failed: {error}"))
+                    })?;
+
+                Ok(())
+            })
+            .expect("audio preview seed data should be inserted");
     }
 
     fn seed_orphan_scan_record(

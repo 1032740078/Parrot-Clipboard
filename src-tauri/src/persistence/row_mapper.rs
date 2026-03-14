@@ -522,10 +522,13 @@ fn build_link_detail(
         })
         .transpose()?;
 
-    let url = payload
+    let Some(url) = payload
         .as_ref()
         .map(|value| value.url.clone())
-        .or_else(|| primary_uri.map(str::to_string))?;
+        .or_else(|| primary_uri.map(str::to_string))
+    else {
+        return Ok(None);
+    };
 
     Ok(Some(LinkPreviewDetail {
         url,
