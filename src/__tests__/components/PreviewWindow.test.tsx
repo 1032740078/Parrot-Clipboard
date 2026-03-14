@@ -461,4 +461,208 @@ describe("PreviewWindow", () => {
     expect(screen.getByText("无法预览当前音频")).toBeInTheDocument();
     expect(screen.getByText("音频源不可用或当前环境无法解码。")).toBeInTheDocument();
   });
+
+  it("视频记录会渲染播放器和基础元信息", async () => {
+    const record = buildFileRecord(9, "demo.mp4", 1000, 1, false, "video");
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "get_record_detail") {
+        return {
+          ...record,
+          id: args?.id ?? 9,
+          text_content: null,
+          rich_content: null,
+          image_detail: null,
+          files_detail: {
+            items: [
+              {
+                path: "/tmp/demo.mp4",
+                display_name: "demo.mp4",
+                entry_type: "file",
+                extension: "mp4",
+              },
+            ],
+          },
+          preview_renderer: "video",
+          preview_status: "ready",
+          preview_error_code: null,
+          preview_error_message: null,
+          audio_detail: null,
+          video_detail: {
+            src: "/tmp/demo.mp4",
+            mime_type: "video/mp4",
+            duration_ms: 65_000,
+            pixel_width: 1920,
+            pixel_height: 1080,
+            poster_path: "/tmp/demo-poster.png",
+          },
+          document_detail: null,
+          link_detail: null,
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<PreviewWindow />);
+
+    const videoPlayer = await screen.findByTestId("preview-video-player");
+    expect(videoPlayer).toHaveAttribute("src", "asset:///tmp/demo.mp4");
+    expect(videoPlayer).toHaveAttribute("poster", "asset:///tmp/demo-poster.png");
+    expect(screen.getByText("video/mp4")).toBeInTheDocument();
+    expect(screen.getByTestId("preview-video-duration")).toHaveTextContent("01:05");
+    expect(screen.getByTestId("preview-video-resolution")).toHaveTextContent("1920 × 1080");
+    expect(screen.getByTestId("preview-video-path")).toHaveTextContent("/tmp/demo.mp4");
+  });
+
+  it("视频元信息加载后会刷新时长与分辨率显示", async () => {
+    const record = buildFileRecord(9, "demo.mp4", 1000, 1, false, "video");
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "get_record_detail") {
+        return {
+          ...record,
+          id: args?.id ?? 9,
+          text_content: null,
+          rich_content: null,
+          image_detail: null,
+          files_detail: {
+            items: [
+              {
+                path: "/tmp/demo.mp4",
+                display_name: "demo.mp4",
+                entry_type: "file",
+                extension: "mp4",
+              },
+            ],
+          },
+          preview_renderer: "video",
+          preview_status: "ready",
+          preview_error_code: null,
+          preview_error_message: null,
+          audio_detail: null,
+          video_detail: {
+            src: "/tmp/demo.mp4",
+            mime_type: "video/mp4",
+            duration_ms: null,
+            pixel_width: null,
+            pixel_height: null,
+            poster_path: null,
+          },
+          document_detail: null,
+          link_detail: null,
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<PreviewWindow />);
+
+    const videoPlayer = await screen.findByTestId("preview-video-player");
+    expect(screen.getByTestId("preview-video-duration")).toHaveTextContent("未知时长");
+    expect(screen.getByTestId("preview-video-resolution")).toHaveTextContent("分辨率未知");
+
+    const originalDurationDescriptor = Object.getOwnPropertyDescriptor(
+      HTMLMediaElement.prototype,
+      "duration"
+    );
+    const originalVideoWidthDescriptor = Object.getOwnPropertyDescriptor(
+      HTMLVideoElement.prototype,
+      "videoWidth"
+    );
+    const originalVideoHeightDescriptor = Object.getOwnPropertyDescriptor(
+      HTMLVideoElement.prototype,
+      "videoHeight"
+    );
+
+    Object.defineProperty(HTMLMediaElement.prototype, "duration", {
+      configurable: true,
+      get: () => 42.4,
+    });
+    Object.defineProperty(HTMLVideoElement.prototype, "videoWidth", {
+      configurable: true,
+      get: () => 1280,
+    });
+    Object.defineProperty(HTMLVideoElement.prototype, "videoHeight", {
+      configurable: true,
+      get: () => 720,
+    });
+
+    try {
+      fireEvent(videoPlayer, new Event("loadedmetadata", { bubbles: true }));
+
+      await waitFor(() => {
+        expect(screen.getByTestId("preview-video-duration")).toHaveTextContent("00:42");
+      });
+      expect(screen.getByTestId("preview-video-resolution")).toHaveTextContent("1280 × 720");
+    } finally {
+      if (originalDurationDescriptor) {
+        Object.defineProperty(HTMLMediaElement.prototype, "duration", originalDurationDescriptor);
+      }
+      if (originalVideoWidthDescriptor) {
+        Object.defineProperty(
+          HTMLVideoElement.prototype,
+          "videoWidth",
+          originalVideoWidthDescriptor
+        );
+      }
+      if (originalVideoHeightDescriptor) {
+        Object.defineProperty(
+          HTMLVideoElement.prototype,
+          "videoHeight",
+          originalVideoHeightDescriptor
+        );
+      }
+    }
+  });
+
+  it("视频源不可用时显示降级态", async () => {
+    const record = buildFileRecord(9, "broken.mp4", 1000, 1, false, "video");
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "get_record_detail") {
+        return {
+          ...record,
+          id: args?.id ?? 9,
+          text_content: null,
+          rich_content: null,
+          image_detail: null,
+          files_detail: {
+            items: [
+              {
+                path: "/tmp/broken.mp4",
+                display_name: "broken.mp4",
+                entry_type: "file",
+                extension: "mp4",
+              },
+            ],
+          },
+          preview_renderer: "video",
+          preview_status: "failed",
+          preview_error_code: "MEDIA_DECODE_FAILED",
+          preview_error_message: "视频源不可用或当前环境无法解码。",
+          audio_detail: null,
+          video_detail: {
+            src: "/tmp/broken.mp4",
+            mime_type: "video/mp4",
+            duration_ms: null,
+            pixel_width: null,
+            pixel_height: null,
+            poster_path: null,
+          },
+          document_detail: null,
+          link_detail: null,
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<PreviewWindow />);
+
+    expect(await screen.findByTestId("preview-video-fallback")).toBeInTheDocument();
+    expect(screen.getByText("无法预览当前视频")).toBeInTheDocument();
+    expect(screen.getByText("视频源不可用或当前环境无法解码。")).toBeInTheDocument();
+  });
 });

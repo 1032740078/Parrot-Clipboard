@@ -1282,6 +1282,42 @@ mod tests {
     }
 
     #[test]
+    fn find_record_detail_builds_video_preview_payload() {
+        let test_dir = unique_test_dir();
+        let database_path = test_dir.join("clipboard.db");
+        let video_path = test_dir.join("demo.mp4");
+        fs::create_dir_all(&test_dir).expect("video fixture directory should be created");
+        fs::write(&video_path, vec![2_u8; 8192]).expect("video fixture should be written");
+
+        let manager = SqliteConnectionManager::initialize_at(&database_path)
+            .expect("sqlite database should initialize");
+        seed_video_preview_record(&manager, &video_path);
+
+        let detail = manager
+            .find_record_detail(RecordId::new(10))
+            .expect("video detail query should succeed")
+            .expect("video detail should exist");
+
+        assert_eq!(detail.content_type, ContentType::Video);
+        assert_eq!(detail.preview_renderer, Some(PreviewRenderer::Video));
+        assert_eq!(detail.preview_status, Some(PreviewStatus::Ready));
+        assert_eq!(
+            detail.video_detail.as_ref().map(|value| value.src.as_str()),
+            Some(video_path.to_string_lossy().as_ref())
+        );
+        assert_eq!(
+            detail
+                .video_detail
+                .as_ref()
+                .and_then(|value| value.mime_type.as_deref()),
+            Some("video/mp4")
+        );
+        assert!(detail.audio_detail.is_none());
+
+        cleanup_test_dir(&database_path);
+    }
+
+    #[test]
     fn find_record_detail_returns_none_when_record_missing() {
         let database_path = unique_test_dir().join("clipboard.db");
         let manager = SqliteConnectionManager::initialize_at(&database_path)
@@ -1774,6 +1810,78 @@ mod tests {
                 Ok(())
             })
             .expect("audio preview seed data should be inserted");
+    }
+
+    fn seed_video_preview_record(manager: &SqliteConnectionManager, video_path: &Path) {
+        let video_path = video_path.to_string_lossy();
+
+        manager
+            .with_connection(|connection| {
+                connection
+                    .execute_batch(&format!(
+                        r#"
+                        INSERT INTO clipboard_items (
+                          id,
+                          payload_type,
+                          content_type,
+                          content_hash,
+                          text_content,
+                          rich_content,
+                          preview_text,
+                          search_text,
+                          source_app,
+                          file_count,
+                          payload_bytes,
+                          primary_uri,
+                          preview_renderer,
+                          preview_status,
+                          created_at,
+                          last_used_at
+                        ) VALUES (
+                          10,
+                          'files',
+                          'video',
+                          'video-preview-hash',
+                          NULL,
+                          NULL,
+                          'demo.mp4',
+                          'demo.mp4',
+                          'Finder',
+                          1,
+                          8192,
+                          '{video_path}',
+                          'video',
+                          'ready',
+                          10000,
+                          10000
+                        );
+
+                        INSERT INTO file_items (
+                          item_id,
+                          sort_order,
+                          path,
+                          display_name,
+                          entry_type,
+                          extension,
+                          created_at
+                        ) VALUES (
+                          10,
+                          0,
+                          '{video_path}',
+                          'demo.mp4',
+                          'file',
+                          'mp4',
+                          10000
+                        );
+                        "#
+                    ))
+                    .map_err(|error| {
+                        AppError::Db(format!("seed sqlite video preview record failed: {error}"))
+                    })?;
+
+                Ok(())
+            })
+            .expect("video preview seed data should be inserted");
     }
 
     fn seed_orphan_scan_record(
