@@ -544,12 +544,18 @@
           text_content:
             typeof record.text_content === "string"
               ? record.text_content
-              : record.content_type === "text"
+              : record.content_type === "text" || record.content_type === "link"
                 ? record.preview_text
                 : null,
           rich_content: record.rich_content ?? null,
           image_detail: record.content_type === "image" ? record.image_detail ?? null : null,
-          files_detail: record.content_type === "files" ? record.files_detail ?? null : null,
+          files_detail:
+            record.content_type === "files" ||
+            record.content_type === "audio" ||
+            record.content_type === "video" ||
+            record.content_type === "document"
+              ? record.files_detail ?? null
+              : null,
         });
       }
 

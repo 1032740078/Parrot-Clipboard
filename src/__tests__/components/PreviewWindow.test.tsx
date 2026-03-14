@@ -4,21 +4,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   __resetInvokeMock,
   __setInvokeHandler,
+  invokeCalls,
 } from "../../__mocks__/@tauri-apps/api/core";
-import {
-  __emitMockEvent,
-  __resetEventMock,
-} from "../../__mocks__/@tauri-apps/api/event";
-import {
-  __getMockCloseCallCount,
-  __resetWindowMock,
-} from "../../__mocks__/@tauri-apps/api/window";
+import { __emitMockEvent, __resetEventMock } from "../../__mocks__/@tauri-apps/api/event";
+import { __getMockCloseCallCount, __resetWindowMock } from "../../__mocks__/@tauri-apps/api/window";
 import { PreviewWindow } from "../../components/PreviewWindow";
 import { __resetRecordPreviewDetailCache } from "../../hooks/useRecordPreviewDetail";
 import { buildFileRecord, buildImageRecord, buildRecord } from "../fixtures/clipboardRecords";
 
 const { playPreviewRevealed } = vi.hoisted(() => ({
   playPreviewRevealed: vi.fn(),
+}));
+
+const { openUrlMock } = vi.hoisted(() => ({
+  openUrlMock: vi.fn(),
 }));
 
 vi.mock("../../audio/soundEffectService", () => ({
@@ -29,6 +28,10 @@ vi.mock("../../audio/soundEffectService", () => ({
   },
 }));
 
+vi.mock("@tauri-apps/plugin-opener", () => ({
+  openUrl: openUrlMock,
+}));
+
 describe("PreviewWindow", () => {
   beforeEach(() => {
     __resetInvokeMock();
@@ -37,6 +40,8 @@ describe("PreviewWindow", () => {
     __resetRecordPreviewDetailCache();
     window.history.replaceState({}, "", "/?window=preview&recordId=9");
     playPreviewRevealed.mockClear();
+    openUrlMock.mockReset();
+    openUrlMock.mockResolvedValue(undefined);
   });
 
   it("按 Esc 会关闭当前预览窗口", async () => {
@@ -767,5 +772,486 @@ describe("PreviewWindow", () => {
     expect(await screen.findByTestId("preview-pdf-fallback")).toBeInTheDocument();
     expect(screen.getByText("无法预览当前 PDF")).toBeInTheDocument();
     expect(screen.getByText("PDF 文件不可访问或渲染失败。")).toBeInTheDocument();
+  });
+
+  it("DOCX 文稿会渲染结构化正文预览", async () => {
+    const record = buildFileRecord(9, "meeting.docx", 1000, 1, false, "document");
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "get_record_detail") {
+        return {
+          ...record,
+          id: args?.id ?? 9,
+          text_content: null,
+          rich_content: null,
+          image_detail: null,
+          files_detail: {
+            items: [
+              {
+                path: "/tmp/meeting.docx",
+                display_name: "meeting.docx",
+                entry_type: "file",
+                extension: "docx",
+              },
+            ],
+          },
+          preview_renderer: "document",
+          preview_status: "ready",
+          preview_error_code: null,
+          preview_error_message: null,
+          audio_detail: null,
+          video_detail: null,
+          document_detail: {
+            document_kind: "docx",
+            preview_status: "ready",
+            page_count: null,
+            sheet_names: null,
+            slide_count: null,
+            html_path: null,
+            text_content: "第一段会议纪要\n\n第二段行动项",
+          },
+          link_detail: null,
+          primary_uri: "/tmp/meeting.docx",
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<PreviewWindow />);
+
+    expect(await screen.findByTestId("preview-document-text-content")).toHaveTextContent(
+      "第一段会议纪要"
+    );
+    expect(screen.getByTestId("preview-document-path")).toHaveTextContent("/tmp/meeting.docx");
+    expect(screen.getAllByText("Word 文稿")).toHaveLength(2);
+  });
+
+  it("待准备的文稿预览会自动触发 prepare_record_preview 后再展示正文", async () => {
+    const record = buildFileRecord(9, "meeting.docx", 1000, 1, false, "document");
+    let detailReadCount = 0;
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "get_record_detail") {
+        detailReadCount += 1;
+        const isPrepared = detailReadCount > 1;
+
+        return {
+          ...record,
+          id: args?.id ?? 9,
+          text_content: null,
+          rich_content: null,
+          image_detail: null,
+          files_detail: {
+            items: [
+              {
+                path: "/tmp/meeting.docx",
+                display_name: "meeting.docx",
+                entry_type: "file",
+                extension: "docx",
+              },
+            ],
+          },
+          preview_renderer: "document",
+          preview_status: isPrepared ? "ready" : "pending",
+          preview_error_code: null,
+          preview_error_message: null,
+          audio_detail: null,
+          video_detail: null,
+          document_detail: {
+            document_kind: "docx",
+            preview_status: isPrepared ? "ready" : "pending",
+            page_count: null,
+            sheet_names: null,
+            slide_count: null,
+            html_path: null,
+            text_content: isPrepared ? "自动准备完成后的正文" : null,
+          },
+          link_detail: null,
+          primary_uri: "/tmp/meeting.docx",
+        };
+      }
+
+      if (command === "prepare_record_preview") {
+        return {
+          id: 9,
+          preview_status: "ready",
+          renderer: "document",
+          updated_at: 1234,
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<PreviewWindow />);
+
+    expect(await screen.findByTestId("preview-document-text-content")).toHaveTextContent(
+      "自动准备完成后的正文"
+    );
+    expect(invokeCalls.filter((call) => call.command === "prepare_record_preview")).toHaveLength(1);
+  });
+
+  it("XLSX 文稿会渲染工作表名称与摘要", async () => {
+    const record = buildFileRecord(9, "sales.xlsx", 1000, 1, false, "document");
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "get_record_detail") {
+        return {
+          ...record,
+          id: args?.id ?? 9,
+          text_content: null,
+          rich_content: null,
+          image_detail: null,
+          files_detail: {
+            items: [
+              {
+                path: "/tmp/sales.xlsx",
+                display_name: "sales.xlsx",
+                entry_type: "file",
+                extension: "xlsx",
+              },
+            ],
+          },
+          preview_renderer: "document",
+          preview_status: "ready",
+          preview_error_code: null,
+          preview_error_message: null,
+          audio_detail: null,
+          video_detail: null,
+          document_detail: {
+            document_kind: "xlsx",
+            preview_status: "ready",
+            page_count: null,
+            sheet_names: ["概览", "明细"],
+            slide_count: null,
+            html_path: null,
+            text_content: "工作表：概览\n收入 | 1200",
+          },
+          link_detail: null,
+          primary_uri: "/tmp/sales.xlsx",
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<PreviewWindow />);
+
+    expect(await screen.findByTestId("preview-document-sheet-list")).toHaveTextContent("概览");
+    expect(screen.getByTestId("preview-document-sheet-list")).toHaveTextContent("明细");
+    expect(screen.getByTestId("preview-document-text-content")).toHaveTextContent("收入 | 1200");
+    expect(screen.getByTestId("preview-document-sheet-count")).toHaveTextContent("2 个工作表");
+  });
+
+  it("PPTX 文稿会渲染幻灯片摘要", async () => {
+    const record = buildFileRecord(9, "roadmap.pptx", 1000, 1, false, "document");
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "get_record_detail") {
+        return {
+          ...record,
+          id: args?.id ?? 9,
+          text_content: null,
+          rich_content: null,
+          image_detail: null,
+          files_detail: {
+            items: [
+              {
+                path: "/tmp/roadmap.pptx",
+                display_name: "roadmap.pptx",
+                entry_type: "file",
+                extension: "pptx",
+              },
+            ],
+          },
+          preview_renderer: "document",
+          preview_status: "ready",
+          preview_error_code: null,
+          preview_error_message: null,
+          audio_detail: null,
+          video_detail: null,
+          document_detail: {
+            document_kind: "pptx",
+            preview_status: "ready",
+            page_count: null,
+            sheet_names: null,
+            slide_count: 6,
+            html_path: null,
+            text_content: "第 1 张幻灯片\n版本目标\n\n第 2 张幻灯片\n路线图",
+          },
+          link_detail: null,
+          primary_uri: "/tmp/roadmap.pptx",
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<PreviewWindow />);
+
+    expect(await screen.findByTestId("preview-document-text-content")).toHaveTextContent(
+      "版本目标"
+    );
+    expect(screen.getByTestId("preview-document-slide-count")).toHaveTextContent("共 6 张幻灯片");
+  });
+
+  it("旧版 Office 文稿不支持时显示明确降级态", async () => {
+    const record = buildFileRecord(9, "legacy.doc", 1000, 1, false, "document");
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "get_record_detail") {
+        return {
+          ...record,
+          id: args?.id ?? 9,
+          text_content: null,
+          rich_content: null,
+          image_detail: null,
+          files_detail: {
+            items: [
+              {
+                path: "/tmp/legacy.doc",
+                display_name: "legacy.doc",
+                entry_type: "file",
+                extension: "doc",
+              },
+            ],
+          },
+          preview_renderer: "document",
+          preview_status: "unsupported",
+          preview_error_code: "LEGACY_OFFICE_UNSUPPORTED",
+          preview_error_message: "当前版本暂不引入 LibreOffice，旧版 Office 文稿仅提供降级展示。",
+          audio_detail: null,
+          video_detail: null,
+          document_detail: {
+            document_kind: "doc",
+            preview_status: "unsupported",
+            page_count: null,
+            sheet_names: null,
+            slide_count: null,
+            html_path: null,
+            text_content: null,
+          },
+          link_detail: null,
+          primary_uri: "/tmp/legacy.doc",
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<PreviewWindow />);
+
+    expect(await screen.findByTestId("preview-document-fallback")).toBeInTheDocument();
+    expect(screen.getByText("无法预览当前文稿")).toBeInTheDocument();
+    expect(
+      screen.getByText("当前版本暂不引入 LibreOffice，旧版 Office 文稿仅提供降级展示。")
+    ).toBeInTheDocument();
+  });
+
+  it("文稿预览准备中时显示等待态文案", async () => {
+    const record = buildFileRecord(9, "draft.docx", 1000, 1, false, "document");
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "get_record_detail") {
+        return {
+          ...record,
+          id: args?.id ?? 9,
+          text_content: null,
+          rich_content: null,
+          image_detail: null,
+          files_detail: {
+            items: [
+              {
+                path: "/tmp/draft.docx",
+                display_name: "draft.docx",
+                entry_type: "file",
+                extension: "docx",
+              },
+            ],
+          },
+          preview_renderer: "document",
+          preview_status: "pending",
+          preview_error_code: null,
+          preview_error_message: null,
+          audio_detail: null,
+          video_detail: null,
+          document_detail: {
+            document_kind: "docx",
+            preview_status: "pending",
+            page_count: null,
+            sheet_names: null,
+            slide_count: null,
+            html_path: null,
+            text_content: null,
+          },
+          link_detail: null,
+          primary_uri: "/tmp/draft.docx",
+        };
+      }
+
+      if (command === "prepare_record_preview") {
+        return {
+          id: 9,
+          preview_status: "pending",
+          renderer: "document",
+          updated_at: 1234,
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<PreviewWindow />);
+
+    expect(await screen.findByTestId("preview-document-fallback")).toBeInTheDocument();
+    expect(screen.getByText("文稿预览准备中")).toBeInTheDocument();
+  });
+
+  it("链接记录会渲染标题摘要并支持在默认浏览器打开", async () => {
+    const record = buildRecord(9, "https://example.com/posts/9", 1000);
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "get_record_detail") {
+        return {
+          ...record,
+          id: args?.id ?? 9,
+          content_type: "link",
+          text_content: "https://example.com/posts/9",
+          rich_content: null,
+          image_detail: null,
+          files_detail: null,
+          preview_renderer: "link",
+          preview_status: "ready",
+          preview_error_code: null,
+          preview_error_message: null,
+          audio_detail: null,
+          video_detail: null,
+          document_detail: null,
+          link_detail: {
+            url: "https://example.com/posts/9",
+            title: "季度复盘",
+            site_name: "示例站点",
+            description: "本页展示季度复盘摘要。",
+            cover_image: "https://example.com/cover.png",
+            content_text: "这是正文的第一段内容。",
+            fetched_at: 1_739_488_800_000,
+          },
+          primary_uri: "https://example.com/posts/9",
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<PreviewWindow />);
+
+    expect(await screen.findByText("季度复盘")).toBeInTheDocument();
+    expect(screen.getByTestId("preview-link-site-name")).toHaveTextContent("示例站点");
+    expect(screen.getByTestId("preview-link-description")).toHaveTextContent(
+      "本页展示季度复盘摘要。"
+    );
+    expect(screen.getByTestId("preview-link-content-text")).toHaveTextContent(
+      "这是正文的第一段内容。"
+    );
+    expect(screen.getByTestId("preview-link-cover-image")).toHaveAttribute(
+      "src",
+      "https://example.com/cover.png"
+    );
+
+    fireEvent.click(screen.getByTestId("preview-link-open-button"));
+
+    await waitFor(() => {
+      expect(openUrlMock).toHaveBeenCalledWith("https://example.com/posts/9");
+    });
+  });
+
+  it("链接抓取失败时保留 URL 并显示降级态", async () => {
+    const record = buildRecord(9, "https://example.com/unavailable", 1000);
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "get_record_detail") {
+        return {
+          ...record,
+          id: args?.id ?? 9,
+          content_type: "link",
+          text_content: "https://example.com/unavailable",
+          rich_content: null,
+          image_detail: null,
+          files_detail: null,
+          preview_renderer: "link",
+          preview_status: "failed",
+          preview_error_code: "LINK_FETCH_FAILED",
+          preview_error_message: "链接内容抓取失败：request timed out",
+          audio_detail: null,
+          video_detail: null,
+          document_detail: null,
+          link_detail: {
+            url: "https://example.com/unavailable",
+            title: null,
+            site_name: null,
+            description: null,
+            cover_image: null,
+            content_text: null,
+            fetched_at: null,
+          },
+          primary_uri: "https://example.com/unavailable",
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<PreviewWindow />);
+
+    expect(await screen.findByTestId("preview-link-fallback")).toBeInTheDocument();
+    expect(screen.getByTestId("preview-link-url")).toHaveTextContent(
+      "https://example.com/unavailable"
+    );
+    expect(screen.getByText("链接内容抓取失败：request timed out")).toBeInTheDocument();
+  });
+
+  it("链接预览打开浏览器失败时显示错误提示", async () => {
+    const record = buildRecord(9, "https://example.com/open-failed", 1000);
+    openUrlMock.mockRejectedValueOnce(new Error("browser unavailable"));
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "get_record_detail") {
+        return {
+          ...record,
+          id: args?.id ?? 9,
+          content_type: "link",
+          text_content: "https://example.com/open-failed",
+          rich_content: null,
+          image_detail: null,
+          files_detail: null,
+          preview_renderer: "link",
+          preview_status: "ready",
+          preview_error_code: null,
+          preview_error_message: null,
+          audio_detail: null,
+          video_detail: null,
+          document_detail: null,
+          link_detail: {
+            url: "https://example.com/open-failed",
+            title: "打开失败示例",
+            site_name: "示例站点",
+            description: null,
+            cover_image: null,
+            content_text: null,
+            fetched_at: 1_739_488_800_000,
+          },
+          primary_uri: "https://example.com/open-failed",
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<PreviewWindow />);
+
+    fireEvent.click(await screen.findByTestId("preview-link-open-button"));
+
+    expect(await screen.findByText("browser unavailable")).toBeInTheDocument();
   });
 });

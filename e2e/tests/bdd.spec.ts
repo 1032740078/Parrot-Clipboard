@@ -15,7 +15,8 @@ type BlacklistMatchType = "bundle_id" | "process_name" | "app_id" | "wm_class";
 
 interface ClipboardRecord {
   id: number;
-  content_type: "text" | "image" | "files";
+  payload_type?: "text" | "image" | "files";
+  content_type: "text" | "image" | "files" | "link" | "audio" | "video" | "document";
   preview_text: string;
   source_app?: string | null;
   created_at: number;
@@ -52,6 +53,29 @@ interface ClipboardRecord {
       entry_type: "file" | "directory";
       extension?: string | null;
     }>;
+  } | null;
+  primary_uri?: string | null;
+  preview_renderer?: "text" | "image" | "audio" | "video" | "pdf" | "document" | "link" | "file_list";
+  preview_status?: "pending" | "ready" | "failed" | "unsupported";
+  preview_error_code?: string | null;
+  preview_error_message?: string | null;
+  document_detail?: {
+    document_kind: "pdf" | "doc" | "docx" | "xls" | "xlsx" | "ppt" | "pptx";
+    preview_status: "pending" | "ready" | "failed" | "unsupported";
+    page_count?: number | null;
+    sheet_names?: string[] | null;
+    slide_count?: number | null;
+    html_path?: string | null;
+    text_content?: string | null;
+  } | null;
+  link_detail?: {
+    url: string;
+    title?: string | null;
+    site_name?: string | null;
+    description?: string | null;
+    cover_image?: string | null;
+    content_text?: string | null;
+    fetched_at?: number | null;
   } | null;
 }
 
@@ -1912,4 +1936,103 @@ test("BDD-31-02 右键菜单可对目标卡片直接打开完整预览", async (
 
   const invokeCalls = await getInvokeCalls(page);
   expect(invokeCalls.some((call) => call.command === "get_record_detail" && call.args?.id === 2)).toBe(true);
+});
+
+test("BDD-51-11 Office 文稿在预览窗口中显示结构化内容", async ({ page }) => {
+  await gotoWithScenario(page, {
+    route: "/?window=preview&recordId=51",
+    records: [
+      {
+        id: 51,
+        payload_type: "files",
+        content_type: "document",
+        preview_text: "meeting.docx",
+        source_app: "Finder",
+        created_at: 5_100,
+        last_used_at: 5_100,
+        text_meta: null,
+        image_meta: null,
+        files_meta: {
+          count: 1,
+          primary_name: "meeting.docx",
+          contains_directory: false,
+        },
+        files_detail: {
+          items: [
+            {
+              path: "/tmp/meeting.docx",
+              display_name: "meeting.docx",
+              entry_type: "file",
+              extension: "docx",
+            },
+          ],
+        },
+        primary_uri: "/tmp/meeting.docx",
+        preview_renderer: "document",
+        preview_status: "ready",
+        preview_error_code: null,
+        preview_error_message: null,
+        document_detail: {
+          document_kind: "docx",
+          preview_status: "ready",
+          page_count: null,
+          sheet_names: null,
+          slide_count: null,
+          html_path: null,
+          text_content: "第一段会议纪要\n\n第二段待办事项",
+        },
+        link_detail: null,
+      },
+    ],
+  });
+
+  await expect(page.getByText("文稿预览")).toBeVisible();
+  await expect(page.getByTestId("preview-document-text-content")).toContainText("第一段会议纪要");
+  await expect(page.getByTestId("preview-document-path")).toContainText("/tmp/meeting.docx");
+});
+
+test("BDD-51-12 超链接记录在预览窗口中显示标题与摘要", async ({ page }) => {
+  await gotoWithScenario(page, {
+    route: "/?window=preview&recordId=52",
+    records: [
+      {
+        id: 52,
+        payload_type: "text",
+        content_type: "link",
+        preview_text: "https://example.com/article",
+        source_app: "Safari",
+        created_at: 5_200,
+        last_used_at: 5_200,
+        text_meta: {
+          char_count: 27,
+          line_count: 1,
+        },
+        image_meta: null,
+        files_meta: null,
+        text_content: "https://example.com/article",
+        rich_content: null,
+        primary_uri: "https://example.com/article",
+        preview_renderer: "link",
+        preview_status: "ready",
+        preview_error_code: null,
+        preview_error_message: null,
+        document_detail: null,
+        link_detail: {
+          url: "https://example.com/article",
+          title: "季度复盘",
+          site_name: "示例站点",
+          description: "本页展示季度复盘摘要。",
+          cover_image: null,
+          content_text: "这是正文第一段内容。",
+          fetched_at: 1_739_488_800_000,
+        },
+      },
+    ],
+  });
+
+  await expect(page.getByText("链接预览")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "季度复盘" })).toBeVisible();
+  await expect(page.getByTestId("preview-link-site-name")).toContainText("示例站点");
+  await expect(page.getByTestId("preview-link-description")).toContainText("季度复盘摘要");
+  await expect(page.getByTestId("preview-link-open-button")).toBeVisible();
 });

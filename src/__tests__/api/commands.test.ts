@@ -11,6 +11,7 @@ import {
   getLogDirectory,
   getMonitoringStatus,
   getPlatformCapabilities,
+  prepareRecordPreview,
   getRuntimeStatus,
   getRecordDetail,
   getSourceAppIconPng,
@@ -149,6 +150,32 @@ describe("api/commands", () => {
     expect(invokeCalls[0]).toEqual({
       command: "sync_preview_window_record",
       args: { recordId: 9 },
+    });
+  });
+
+  it("prepareRecordPreview 调用预览准备命令并返回状态结果", async () => {
+    __setInvokeHandler(async (command) => {
+      if (command === "prepare_record_preview") {
+        return {
+          id: 9,
+          preview_status: "ready",
+          renderer: "document",
+          updated_at: 1234,
+        };
+      }
+
+      return undefined;
+    });
+
+    await expect(prepareRecordPreview(9)).resolves.toEqual({
+      id: 9,
+      preview_status: "ready",
+      renderer: "document",
+      updated_at: 1234,
+    });
+    expect(invokeCalls[0]).toEqual({
+      command: "prepare_record_preview",
+      args: { id: 9 },
     });
   });
 
@@ -342,6 +369,7 @@ describe("api/commands", () => {
     await expect(getRecords(1)).rejects.toThrow("boom");
     await expect(getRecordSummaries(1)).rejects.toThrow("boom");
     await expect(getRecordDetail(1)).rejects.toThrow("boom");
+    await expect(prepareRecordPreview(1)).rejects.toThrow("boom");
     await expect(updateTextRecord(1, "x")).rejects.toThrow("boom");
     await expect(pasteRecord(1)).rejects.toThrow("boom");
     await expect(pasteRecordResult(1)).rejects.toThrow("boom");
