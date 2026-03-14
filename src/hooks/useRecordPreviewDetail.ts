@@ -1,11 +1,15 @@
 import { useEffect, useReducer } from "react";
 
-import { getRecordDetail } from "../api/commands";
+import { getRecordDetail, prepareRecordPreview } from "../api/commands";
 import { getErrorMessage } from "../api/errorHandler";
 import { logger, normalizeError } from "../api/logger";
 import type { ClipboardRecordDetail } from "../types/clipboard";
 
 const previewDetailCache = new Map<number, ClipboardRecordDetail>();
+
+const shouldPreparePreview = (detail: ClipboardRecordDetail): boolean =>
+  detail.preview_status === "pending" &&
+  (detail.preview_renderer === "document" || detail.preview_renderer === "link");
 
 export const __resetRecordPreviewDetailCache = (): void => {
   previewDetailCache.clear();
@@ -84,14 +88,8 @@ const previewDetailReducer = (
   }
 };
 
-export const useRecordPreviewDetail = (
-  recordId: number | null
-): UseRecordPreviewDetailResult => {
-  const [state, dispatch] = useReducer(
-    previewDetailReducer,
-    recordId,
-    buildPreviewDetailState
-  );
+export const useRecordPreviewDetail = (recordId: number | null): UseRecordPreviewDetailResult => {
+  const [state, dispatch] = useReducer(previewDetailReducer, recordId, buildPreviewDetailState);
 
   useEffect(() => {
     if (recordId === null) {
@@ -111,7 +109,13 @@ export const useRecordPreviewDetail = (
 
     const loadDetail = async (): Promise<void> => {
       try {
-        const nextDetail = await getRecordDetail(recordId);
+        let nextDetail = await getRecordDetail(recordId);
+
+        if (shouldPreparePreview(nextDetail)) {
+          await prepareRecordPreview(recordId);
+          nextDetail = await getRecordDetail(recordId);
+        }
+
         previewDetailCache.set(recordId, nextDetail);
         if (cancelled) {
           return;

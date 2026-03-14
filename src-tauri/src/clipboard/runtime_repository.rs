@@ -11,7 +11,13 @@ use crate::{
             build_files_preview, files_sha256_hex, text_sha256_hex, ClipboardFileItem,
             ClipboardImageData,
         },
-        query::{ClipboardRecordDetail, ClipboardRecordSummary, ThumbnailState},
+        preview_preparer::{
+            prepare_document_preview, prepare_link_preview, PreparedPreview, PreparedPreviewAsset,
+        },
+        query::{
+            ClipboardRecordDetail, ClipboardRecordSummary, PreviewPreparationResult,
+            PreviewRenderer, PreviewStatus, ThumbnailState,
+        },
         types::{ContentType, PayloadType, RecordId},
     },
     config::AppConfig,
@@ -85,6 +91,11 @@ pub trait ClipboardRuntimeRepository: Send + Sync {
         limit: usize,
     ) -> Result<Vec<ClipboardRecordSummary>, AppError>;
     fn get_detail(&self, id: RecordId) -> Result<Option<ClipboardRecordDetail>, AppError>;
+    fn prepare_preview(
+        &self,
+        id: RecordId,
+        prepared_at: i64,
+    ) -> Result<PreviewPreparationResult, AppError>;
     fn update_text(
         &self,
         id: RecordId,
@@ -266,6 +277,60 @@ impl ClipboardRuntimeRepository for SqliteClipboardRuntimeRepository {
 
     fn get_detail(&self, id: RecordId) -> Result<Option<ClipboardRecordDetail>, AppError> {
         self.database.find_record_detail(id)
+    }
+
+    fn prepare_preview(
+        &self,
+        id: RecordId,
+        prepared_at: i64,
+    ) -> Result<PreviewPreparationResult, AppError> {
+        let detail = self
+            .database
+            .find_record_detail(id)?
+            .ok_or_else(|| AppError::RecordNotFound(id.value()))?;
+        let renderer = detail.preview_renderer.clone().unwrap_or_else(|| {
+            detail_default_preview_renderer(&detail.content_type, detail.files_detail.as_ref())
+        });
+        let should_persist = matches!(
+            renderer,
+            PreviewRenderer::Document | PreviewRenderer::Pdf | PreviewRenderer::Link
+        );
+        let prepared = match renderer.clone() {
+            PreviewRenderer::Document | PreviewRenderer::Pdf => {
+                let source_path = detail
+                    .primary_uri
+                    .as_deref()
+                    .or_else(|| detail_first_file_path(detail.files_detail.as_ref()))
+                    .ok_or_else(|| {
+                        AppError::InvalidParam("当前文稿记录缺少可用源文件路径".to_string())
+                    })?;
+                prepare_document_preview(source_path)
+            }
+            PreviewRenderer::Link => {
+                let url = detail.primary_uri.as_deref().ok_or_else(|| {
+                    AppError::InvalidParam("当前链接记录缺少可用 URL".to_string())
+                })?;
+                prepare_link_preview(url, prepared_at)
+            }
+            _ => PreparedPreview {
+                renderer,
+                status: detail.preview_status.unwrap_or(PreviewStatus::Ready),
+                error_code: detail.preview_error_code.clone(),
+                error_message: detail.preview_error_message.clone(),
+                assets: Vec::new(),
+            },
+        };
+
+        if should_persist {
+            persist_prepared_preview(&self.database, id, prepared_at, &prepared)?;
+        }
+
+        Ok(PreviewPreparationResult {
+            id: id.value(),
+            preview_status: prepared.status,
+            renderer: prepared.renderer,
+            updated_at: prepared_at,
+        })
     }
 
     fn update_text(
@@ -631,7 +696,10 @@ fn preview_renderer_for_text(content_type: ContentType) -> &'static str {
     }
 }
 
-fn preview_renderer_for_files(content_type: ContentType, items: &[ClipboardFileItem]) -> &'static str {
+fn preview_renderer_for_files(
+    content_type: ContentType,
+    items: &[ClipboardFileItem],
+) -> &'static str {
     match content_type {
         ContentType::Image => "image",
         ContentType::Audio => "audio",
@@ -659,8 +727,114 @@ fn preview_status_for_content(content_type: ContentType, preview_renderer: &str)
     match content_type {
         ContentType::Text | ContentType::Image | ContentType::Files => "ready",
         ContentType::Document if preview_renderer == "pdf" => "ready",
-        ContentType::Link | ContentType::Audio | ContentType::Video | ContentType::Document => "pending",
+        ContentType::Link | ContentType::Audio | ContentType::Video | ContentType::Document => {
+            "pending"
+        }
     }
+}
+
+fn detail_default_preview_renderer(
+    content_type: &ContentType,
+    files_detail: Option<&crate::clipboard::query::FilesDetail>,
+) -> PreviewRenderer {
+    match content_type {
+        ContentType::Text => PreviewRenderer::Text,
+        ContentType::Image => PreviewRenderer::Image,
+        ContentType::Audio => PreviewRenderer::Audio,
+        ContentType::Video => PreviewRenderer::Video,
+        ContentType::Link => PreviewRenderer::Link,
+        ContentType::Files => PreviewRenderer::FileList,
+        ContentType::Document => {
+            let is_pdf = files_detail
+                .and_then(|detail| detail.items.first())
+                .and_then(|item| item.extension.as_deref())
+                .map(|value| value.eq_ignore_ascii_case("pdf"))
+                .unwrap_or(false);
+
+            if is_pdf {
+                PreviewRenderer::Pdf
+            } else {
+                PreviewRenderer::Document
+            }
+        }
+    }
+}
+
+fn detail_first_file_path(
+    files_detail: Option<&crate::clipboard::query::FilesDetail>,
+) -> Option<&str> {
+    files_detail?.items.first().map(|item| item.path.as_str())
+}
+
+fn persist_prepared_preview(
+    database: &SqliteConnectionManager,
+    id: RecordId,
+    prepared_at: i64,
+    prepared: &PreparedPreview,
+) -> Result<(), AppError> {
+    database.with_connection(|connection| {
+        let transaction = connection.unchecked_transaction().map_err(|error| {
+            AppError::Db(format!(
+                "start sqlite preview preparation transaction failed: {error}"
+            ))
+        })?;
+
+        transaction
+            .execute(
+                "DELETE FROM preview_assets WHERE item_id = ?1",
+                params![id.value() as i64],
+            )
+            .map_err(|error| AppError::Db(format!("clear preview assets failed: {error}")))?;
+
+        for asset in &prepared.assets {
+            insert_prepared_preview_asset(&transaction, id, prepared_at, asset)?;
+        }
+
+        transaction
+            .execute(
+                "UPDATE clipboard_items SET preview_renderer = ?1, preview_status = ?2, preview_error_code = ?3, preview_error_message = ?4, preview_updated_at = ?5 WHERE id = ?6",
+                params![
+                    prepared.renderer.as_str(),
+                    prepared.status.as_str(),
+                    prepared.error_code.as_deref(),
+                    prepared.error_message.as_deref(),
+                    prepared_at,
+                    id.value() as i64
+                ],
+            )
+            .map_err(|error| AppError::Db(format!("update preview state failed: {error}")))?;
+
+        transaction.commit().map_err(|error| {
+            AppError::Db(format!(
+                "commit sqlite preview preparation transaction failed: {error}"
+            ))
+        })?;
+        Ok(())
+    })
+}
+
+fn insert_prepared_preview_asset(
+    connection: &rusqlite::Transaction<'_>,
+    id: RecordId,
+    prepared_at: i64,
+    asset: &PreparedPreviewAsset,
+) -> Result<(), AppError> {
+    connection
+        .execute(
+            "INSERT INTO preview_assets (item_id, asset_role, storage_path, text_content, mime_type, byte_size, status, updated_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+            params![
+                id.value() as i64,
+                asset.asset_role.as_str(),
+                asset.storage_path.as_deref(),
+                asset.text_content.as_deref(),
+                asset.mime_type.as_deref(),
+                asset.byte_size,
+                asset.status.as_str(),
+                prepared_at
+            ],
+        )
+        .map_err(|error| AppError::Db(format!("insert preview asset failed: {error}")))?;
+    Ok(())
 }
 
 fn primary_uri_for_text(content_type: ContentType, text: &str) -> Option<String> {
@@ -672,10 +846,11 @@ fn primary_uri_for_text(content_type: ContentType, text: &str) -> Option<String>
 
 fn primary_uri_for_files(content_type: ContentType, items: &[ClipboardFileItem]) -> Option<String> {
     match content_type {
-        ContentType::Image
-        | ContentType::Audio
-        | ContentType::Video
-        | ContentType::Document => items.first().map(|item| item.path.to_string_lossy().to_string()),
+        ContentType::Image | ContentType::Audio | ContentType::Video | ContentType::Document => {
+            items
+                .first()
+                .map(|item| item.path.to_string_lossy().to_string())
+        }
         _ => None,
     }
 }
@@ -767,10 +942,15 @@ fn _normalize_paths(paths: &[PathBuf]) -> Vec<PathBuf> {
 mod tests {
     use std::{
         env, fs,
+        io::Write,
+        net::TcpListener,
         path::{Path, PathBuf},
         sync::Arc,
+        thread,
         time::{SystemTime, UNIX_EPOCH},
     };
+
+    use zip::write::SimpleFileOptions;
 
     use crate::{
         clipboard::{
@@ -1532,6 +1712,184 @@ mod tests {
         assert!(results.is_empty());
     }
 
+    #[test]
+    fn prepare_preview_for_docx_updates_detail_to_ready() {
+        let context = TestContext::new("prepare-preview-docx");
+        let repository = context.repository();
+        let docx_path = context.root_dir.join("fixtures").join("meeting.docx");
+        write_zip_entries(
+            &docx_path,
+            &[(
+                "word/document.xml",
+                r#"<w:document><w:body><w:p><w:r><w:t>第一段纪要</w:t></w:r></w:p><w:p><w:r><w:t>第二段行动项</w:t></w:r></w:p></w:body></w:document>"#,
+            )],
+        );
+
+        let captured = repository
+            .capture_files(
+                vec![ClipboardFileItem::from_path(docx_path.clone())],
+                None,
+                1_000,
+            )
+            .expect("docx capture should succeed");
+        assert_eq!(captured.record.content_type, ContentType::Document);
+
+        let preparation = repository
+            .prepare_preview(RecordId::new(captured.record.id), 2_000)
+            .expect("preview preparation should succeed");
+
+        assert_eq!(
+            preparation.preview_status,
+            crate::clipboard::query::PreviewStatus::Ready
+        );
+        let detail = repository
+            .get_detail(RecordId::new(captured.record.id))
+            .expect("detail query should succeed")
+            .expect("detail should exist");
+        assert_eq!(
+            detail.preview_status,
+            Some(crate::clipboard::query::PreviewStatus::Ready)
+        );
+        assert_eq!(
+            detail
+                .document_detail
+                .as_ref()
+                .and_then(|document| document.text_content.as_deref()),
+            Some("第一段纪要\n第二段行动项")
+        );
+    }
+
+    #[test]
+    fn prepare_preview_for_legacy_office_marks_record_unsupported() {
+        let context = TestContext::new("prepare-preview-legacy-doc");
+        let repository = context.repository();
+        let doc_path = context.root_dir.join("fixtures").join("legacy.doc");
+        fs::create_dir_all(doc_path.parent().expect("doc parent should exist"))
+            .expect("fixtures dir should exist");
+        fs::write(&doc_path, "legacy").expect("legacy doc should be created");
+
+        let captured = repository
+            .capture_files(vec![ClipboardFileItem::from_path(doc_path)], None, 1_000)
+            .expect("legacy doc capture should succeed");
+
+        let preparation = repository
+            .prepare_preview(RecordId::new(captured.record.id), 2_000)
+            .expect("legacy preview preparation should succeed");
+
+        assert_eq!(
+            preparation.preview_status,
+            crate::clipboard::query::PreviewStatus::Unsupported
+        );
+        let detail = repository
+            .get_detail(RecordId::new(captured.record.id))
+            .expect("detail query should succeed")
+            .expect("detail should exist");
+        assert_eq!(
+            detail.preview_status,
+            Some(crate::clipboard::query::PreviewStatus::Unsupported)
+        );
+        assert_eq!(
+            detail.preview_error_code.as_deref(),
+            Some("LEGACY_OFFICE_UNSUPPORTED")
+        );
+    }
+
+    #[test]
+    fn prepare_preview_for_link_updates_detail_summary() {
+        let context = TestContext::new("prepare-preview-link");
+        let repository = context.repository();
+        let listener = TcpListener::bind("127.0.0.1:0").expect("listener should bind");
+        let address = listener.local_addr().expect("listener addr should exist");
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("server should accept");
+            let response = concat!(
+                "HTTP/1.1 200 OK\r\n",
+                "Content-Type: text/html; charset=utf-8\r\n",
+                "Connection: close\r\n\r\n",
+                "<html><head><title>原始标题</title>",
+                "<meta property=\"og:title\" content=\"季度复盘\" />",
+                "<meta property=\"og:site_name\" content=\"示例站点\" />",
+                "<meta name=\"description\" content=\"回顾季度重点指标。\" />",
+                "</head><body><main><p>这里是正文内容。</p></main></body></html>"
+            );
+            stream
+                .write_all(response.as_bytes())
+                .expect("response should be written");
+        });
+
+        let url = format!("http://{address}/review");
+        let captured = repository
+            .capture_text(url.clone(), None, Some("Safari".to_string()), 1_000)
+            .expect("link capture should succeed");
+
+        let preparation = repository
+            .prepare_preview(RecordId::new(captured.record.id), 2_000)
+            .expect("link preview preparation should succeed");
+        server.join().expect("server thread should join");
+
+        assert_eq!(
+            preparation.renderer,
+            crate::clipboard::query::PreviewRenderer::Link
+        );
+        assert_eq!(
+            preparation.preview_status,
+            crate::clipboard::query::PreviewStatus::Ready
+        );
+
+        let detail = repository
+            .get_detail(RecordId::new(captured.record.id))
+            .expect("detail query should succeed")
+            .expect("detail should exist");
+        let link_detail = detail.link_detail.expect("link detail should exist");
+        assert_eq!(link_detail.title.as_deref(), Some("季度复盘"));
+        assert_eq!(link_detail.site_name.as_deref(), Some("示例站点"));
+        assert_eq!(
+            link_detail.description.as_deref(),
+            Some("回顾季度重点指标。")
+        );
+        assert!(link_detail
+            .content_text
+            .as_deref()
+            .unwrap_or_default()
+            .contains("这里是正文内容"));
+    }
+
+    #[test]
+    fn prepare_preview_for_unreachable_link_marks_record_failed() {
+        let context = TestContext::new("prepare-preview-link-failed");
+        let repository = context.repository();
+        let url = "http://127.0.0.1:9/unreachable".to_string();
+
+        let captured = repository
+            .capture_text(url.clone(), None, Some("Safari".to_string()), 1_000)
+            .expect("link capture should succeed");
+
+        let preparation = repository
+            .prepare_preview(RecordId::new(captured.record.id), 2_000)
+            .expect("link preview preparation should succeed");
+
+        assert_eq!(
+            preparation.preview_status,
+            crate::clipboard::query::PreviewStatus::Failed
+        );
+        let detail = repository
+            .get_detail(RecordId::new(captured.record.id))
+            .expect("detail query should succeed")
+            .expect("detail should exist");
+        assert_eq!(
+            detail.preview_status,
+            Some(crate::clipboard::query::PreviewStatus::Failed)
+        );
+        assert_eq!(
+            detail.preview_error_code.as_deref(),
+            Some("LINK_FETCH_FAILED")
+        );
+        assert_eq!(
+            detail.link_detail.as_ref().map(|link| link.url.as_str()),
+            Some(url.as_str())
+        );
+    }
+
     fn unique_test_dir(suffix: &str) -> PathBuf {
         static NEXT_TEST_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let nanos = SystemTime::now()
@@ -1542,5 +1900,24 @@ mod tests {
         env::temp_dir().join(format!(
             "clipboard-manager-runtime-repository-test-{suffix}-{nanos}-{unique_id}"
         ))
+    }
+
+    fn write_zip_entries(path: &Path, entries: &[(&str, &str)]) {
+        fs::create_dir_all(path.parent().expect("zip parent should exist"))
+            .expect("zip parent dir should exist");
+        let file = fs::File::create(path).expect("zip file should be created");
+        let mut writer = zip::ZipWriter::new(file);
+        let options = SimpleFileOptions::default();
+
+        for (entry_name, content) in entries {
+            writer
+                .start_file(*entry_name, options)
+                .expect("zip entry should start");
+            writer
+                .write_all(content.as_bytes())
+                .expect("zip entry should be written");
+        }
+
+        writer.finish().expect("zip writer should finish");
     }
 }

@@ -297,7 +297,10 @@ pub fn close_preview_window(app_handle: &AppHandle) -> Result<(), AppError> {
     Ok(())
 }
 
-pub fn sync_preview_window_record(app_handle: &AppHandle, record_id: u64) -> Result<bool, AppError> {
+pub fn sync_preview_window_record(
+    app_handle: &AppHandle,
+    record_id: u64,
+) -> Result<bool, AppError> {
     let runtime = TauriPreviewWindowRuntime::new(app_handle.clone());
     sync_record_with_runtime(&runtime, record_id)
 }
@@ -325,7 +328,10 @@ fn show_or_focus_with_runtime(
     Ok(action)
 }
 
-fn sync_record_with_runtime(runtime: &dyn PreviewWindowRuntime, record_id: u64) -> Result<bool, AppError> {
+fn sync_record_with_runtime(
+    runtime: &dyn PreviewWindowRuntime,
+    record_id: u64,
+) -> Result<bool, AppError> {
     if !runtime.window_exists() {
         return Ok(false);
     }

@@ -674,11 +674,17 @@ fn load_preview_assets(
     connection: &Connection,
     item_id: i64,
 ) -> Result<Vec<PreviewAssetRow>, AppError> {
-    let mut statement = connection.prepare(PREVIEW_ASSETS_SELECT_SQL).map_err(|error| {
-        AppError::Db(format!("prepare sqlite preview assets query failed: {error}"))
-    })?;
+    let mut statement = connection
+        .prepare(PREVIEW_ASSETS_SELECT_SQL)
+        .map_err(|error| {
+            AppError::Db(format!(
+                "prepare sqlite preview assets query failed: {error}"
+            ))
+        })?;
     let mut rows = statement.query(params![item_id]).map_err(|error| {
-        AppError::Db(format!("execute sqlite preview assets query failed: {error}"))
+        AppError::Db(format!(
+            "execute sqlite preview assets query failed: {error}"
+        ))
     })?;
 
     let mut assets = Vec::new();
@@ -699,20 +705,30 @@ fn load_preview_assets(
                 AppError::Db(format!("read sqlite preview asset role failed: {error}"))
             })?,
             storage_path: row.get(1).map_err(|error| {
-                AppError::Db(format!("read sqlite preview asset storage_path failed: {error}"))
+                AppError::Db(format!(
+                    "read sqlite preview asset storage_path failed: {error}"
+                ))
             })?,
             text_content: row.get(2).map_err(|error| {
-                AppError::Db(format!("read sqlite preview asset text_content failed: {error}"))
+                AppError::Db(format!(
+                    "read sqlite preview asset text_content failed: {error}"
+                ))
             })?,
             mime_type: row.get(3).map_err(|error| {
-                AppError::Db(format!("read sqlite preview asset mime_type failed: {error}"))
+                AppError::Db(format!(
+                    "read sqlite preview asset mime_type failed: {error}"
+                ))
             })?,
             byte_size: row.get(4).map_err(|error| {
-                AppError::Db(format!("read sqlite preview asset byte_size failed: {error}"))
+                AppError::Db(format!(
+                    "read sqlite preview asset byte_size failed: {error}"
+                ))
             })?,
             status,
             updated_at: row.get(6).map_err(|error| {
-                AppError::Db(format!("read sqlite preview asset updated_at failed: {error}"))
+                AppError::Db(format!(
+                    "read sqlite preview asset updated_at failed: {error}"
+                ))
             })?,
         });
     }
@@ -1273,7 +1289,10 @@ mod tests {
             Some("audio/mpeg")
         );
         assert_eq!(
-            detail.audio_detail.as_ref().and_then(|value| value.byte_size),
+            detail
+                .audio_detail
+                .as_ref()
+                .and_then(|value| value.byte_size),
             Some(4096)
         );
         assert!(detail.video_detail.is_none());

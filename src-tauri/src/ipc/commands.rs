@@ -2,7 +2,9 @@ use tauri::State;
 
 use crate::{
     clipboard::{
-        query::{ClipboardRecordDetail, ClipboardRecordSummary, PasteResult},
+        query::{
+            ClipboardRecordDetail, ClipboardRecordSummary, PasteResult, PreviewPreparationResult,
+        },
         runtime_repository::{RecordDeleteReason, RecordUpdateReason},
         types::{ContentType, PasteMode, RecordId},
     },
@@ -153,6 +155,24 @@ pub fn get_record_detail(
         .repository
         .get_detail(RecordId::new(id))?
         .ok_or(AppError::RecordNotFound(id))
+}
+
+#[tauri::command]
+pub fn prepare_record_preview(
+    id: u64,
+    state: State<'_, AppState>,
+) -> Result<PreviewPreparationResult, AppError> {
+    tracing::info!(record_id = id, "ipc prepare_record_preview requested");
+    let result = state
+        .repository
+        .prepare_preview(RecordId::new(id), now_ms())?;
+    tracing::info!(
+        record_id = id,
+        renderer = result.renderer.as_str(),
+        preview_status = result.preview_status.as_str(),
+        "ipc prepare_record_preview completed"
+    );
+    Ok(result)
 }
 
 #[tauri::command]
@@ -749,7 +769,11 @@ pub fn sync_preview_window_record(
     app_handle: tauri::AppHandle,
 ) -> Result<bool, AppError> {
     let synced = sync_preview_window_record_runtime(&app_handle, record_id)?;
-    tracing::debug!(record_id, synced, "ipc sync_preview_window_record completed");
+    tracing::debug!(
+        record_id,
+        synced,
+        "ipc sync_preview_window_record completed"
+    );
     Ok(synced)
 }
 

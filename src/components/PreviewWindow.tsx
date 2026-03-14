@@ -23,6 +23,8 @@ import { isFileRecord, isImageRecord, isTextRecord } from "../types/clipboard";
 import { toPreviewSrc } from "./MainPanel/previewAsset";
 import { PreviewEditor } from "./PreviewEditor";
 import { AudioPreview } from "./preview/AudioPreview";
+import { DocumentPreview } from "./preview/DocumentPreview";
+import { LinkPreview } from "./preview/LinkPreview";
 import { PdfPreview } from "./preview/PdfPreview";
 import { VideoPreview } from "./preview/VideoPreview";
 
@@ -110,8 +112,7 @@ export const PreviewWindow = () => {
   const visibleText = draftText ?? getTextValue(activeDetail);
   const saveError = saveErrorState.recordId === recordId ? saveErrorState.message : null;
   const imageScale = imageViewState.recordId === recordId ? imageViewState.scale : IMAGE_MIN_SCALE;
-  const imageOffset =
-    imageViewState.recordId === recordId ? imageViewState.offset : { x: 0, y: 0 };
+  const imageOffset = imageViewState.recordId === recordId ? imageViewState.offset : { x: 0, y: 0 };
   const imageDragging = imageViewState.recordId === recordId ? imageViewState.dragging : false;
   const currentRecordIdRef = useRef(recordId);
   const activeDetailRef = useRef<ClipboardRecordDetail | null>(activeDetail);
@@ -334,8 +335,7 @@ export const PreviewWindow = () => {
 
       setImageViewState((previous) => ({
         recordId: currentRecordIdRef.current,
-        scale:
-          previous.recordId === currentRecordIdRef.current ? previous.scale : IMAGE_MIN_SCALE,
+        scale: previous.recordId === currentRecordIdRef.current ? previous.scale : IMAGE_MIN_SCALE,
         offset: {
           x: origin.offsetX + (event.clientX - origin.mouseX),
           y: origin.offsetY + (event.clientY - origin.mouseY),
@@ -347,10 +347,8 @@ export const PreviewWindow = () => {
     const handleMouseUp = (): void => {
       setImageViewState((previous) => ({
         recordId: currentRecordIdRef.current,
-        scale:
-          previous.recordId === currentRecordIdRef.current ? previous.scale : IMAGE_MIN_SCALE,
-        offset:
-          previous.recordId === currentRecordIdRef.current ? previous.offset : { x: 0, y: 0 },
+        scale: previous.recordId === currentRecordIdRef.current ? previous.scale : IMAGE_MIN_SCALE,
+        offset: previous.recordId === currentRecordIdRef.current ? previous.offset : { x: 0, y: 0 },
         dragging: false,
       }));
       imageDragOriginRef.current = null;
@@ -439,10 +437,8 @@ export const PreviewWindow = () => {
     };
     setImageViewState((previous) => ({
       recordId: currentRecordIdRef.current,
-      scale:
-        previous.recordId === currentRecordIdRef.current ? previous.scale : IMAGE_MIN_SCALE,
-      offset:
-        previous.recordId === currentRecordIdRef.current ? previous.offset : { x: 0, y: 0 },
+      scale: previous.recordId === currentRecordIdRef.current ? previous.scale : IMAGE_MIN_SCALE,
+      offset: previous.recordId === currentRecordIdRef.current ? previous.offset : { x: 0, y: 0 },
       dragging: true,
     }));
   };
@@ -556,6 +552,14 @@ export const PreviewWindow = () => {
 
       {status === "ready" && activeDetail?.preview_renderer === "pdf" ? (
         <PdfPreview detail={activeDetail} key={activeDetail.id} />
+      ) : null}
+
+      {status === "ready" && activeDetail?.preview_renderer === "document" ? (
+        <DocumentPreview detail={activeDetail} key={activeDetail.id} />
+      ) : null}
+
+      {status === "ready" && activeDetail?.preview_renderer === "link" ? (
+        <LinkPreview detail={activeDetail} key={activeDetail.id} />
       ) : null}
 
       {status === "ready" && activeDetail && isFileRecord(activeDetail) ? (

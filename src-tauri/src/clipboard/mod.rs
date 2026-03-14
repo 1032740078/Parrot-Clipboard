@@ -3,6 +3,7 @@ pub mod filter;
 pub mod history;
 pub mod monitor;
 pub mod payload;
+pub mod preview_preparer;
 pub mod query;
 pub mod record;
 pub mod repository;

@@ -18,6 +18,7 @@ import type {
   PasteMode,
   PasteResult,
   PlatformCapabilities,
+  PreviewPreparationResult,
   RuntimeStatus,
 } from "./types";
 
@@ -82,6 +83,15 @@ export const getRecordDetail = async (id: number): Promise<ClipboardRecordDetail
     return await invoke<ClipboardRecordDetail>("get_record_detail", { id });
   } catch (error) {
     logger.error("读取剪贴板记录详情失败", { id, error: normalizeError(error) });
+    throw error;
+  }
+};
+
+export const prepareRecordPreview = async (id: number): Promise<PreviewPreparationResult> => {
+  try {
+    return await invoke<PreviewPreparationResult>("prepare_record_preview", { id });
+  } catch (error) {
+    logger.error("准备剪贴板记录预览失败", { id, error: normalizeError(error) });
     throw error;
   }
 };

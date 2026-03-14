@@ -144,8 +144,11 @@ pub fn map_detail_row(
         byte_size,
     )?;
     let files_meta = build_files_meta(file_count, primary_name, contains_directory)?;
-    let preview_renderer =
-        build_preview_renderer(preview_renderer_raw.as_deref(), &content_type, files_detail.as_ref())?;
+    let preview_renderer = build_preview_renderer(
+        preview_renderer_raw.as_deref(),
+        &content_type,
+        files_detail.as_ref(),
+    )?;
     let preview_status = build_preview_status(
         preview_status_raw.as_deref(),
         &content_type,
@@ -484,7 +487,9 @@ fn build_document_detail(
         .and_then(|asset| asset.text_content.as_deref())
         .map(|payload| {
             serde_json::from_str::<DocumentOutlinePayload>(payload).map_err(|error| {
-                AppError::Db(format!("parse document outline preview asset failed: {error}"))
+                AppError::Db(format!(
+                    "parse document outline preview asset failed: {error}"
+                ))
             })
         })
         .transpose()?;
@@ -508,9 +513,13 @@ fn build_document_detail(
         document_kind,
         preview_status: effective_status,
         page_count: outline.as_ref().and_then(|payload| payload.page_count),
-        sheet_names: outline.as_ref().and_then(|payload| payload.sheet_names.clone()),
+        sheet_names: outline
+            .as_ref()
+            .and_then(|payload| payload.sheet_names.clone()),
         slide_count: outline.as_ref().and_then(|payload| payload.slide_count),
-        html_path: outline.as_ref().and_then(|payload| payload.html_path.clone()),
+        html_path: outline
+            .as_ref()
+            .and_then(|payload| payload.html_path.clone()),
         text_content,
     }))
 }
@@ -550,7 +559,9 @@ fn build_link_detail(
         site_name: payload.as_ref().and_then(|value| value.site_name.clone()),
         description: payload.as_ref().and_then(|value| value.description.clone()),
         cover_image: payload.as_ref().and_then(|value| value.cover_image.clone()),
-        content_text: payload.as_ref().and_then(|value| value.content_text.clone()),
+        content_text: payload
+            .as_ref()
+            .and_then(|value| value.content_text.clone()),
         fetched_at: payload.as_ref().and_then(|value| value.fetched_at),
     }))
 }

@@ -299,6 +299,13 @@ mod tests {
         fn get_detail(&self, id: RecordId) -> Result<Option<ClipboardRecordDetail>, AppError> {
             Ok(self.detail.clone().filter(|detail| detail.id == id.value()))
         }
+        fn prepare_preview(
+            &self,
+            _id: RecordId,
+            _prepared_at: i64,
+        ) -> Result<crate::clipboard::query::PreviewPreparationResult, AppError> {
+            unreachable!()
+        }
         fn update_text(
             &self,
             _id: RecordId,

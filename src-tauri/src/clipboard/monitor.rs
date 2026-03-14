@@ -996,6 +996,14 @@ mod tests {
             Ok(None)
         }
 
+        fn prepare_preview(
+            &self,
+            _id: RecordId,
+            _prepared_at: i64,
+        ) -> Result<crate::clipboard::query::PreviewPreparationResult, AppError> {
+            unreachable!()
+        }
+
         fn update_text(
             &self,
             _id: RecordId,
