@@ -8,6 +8,7 @@ import {
   type WheelEvent as ReactWheelEvent,
 } from "react";
 
+import { soundEffectService } from "../audio/soundEffectService";
 import { updateTextRecord } from "../api/commands";
 import { getErrorMessage } from "../api/errorHandler";
 import { onPreviewWindowRequested, onRecordDeleted } from "../api/events";
@@ -95,6 +96,7 @@ export const PreviewWindow = () => {
   const savePromiseRef = useRef<Promise<void> | null>(null);
   const saveTextInFlightRef = useRef<string | null>(null);
   const imageStageRef = useRef<HTMLDivElement | null>(null);
+  const hasPlayedRevealSoundRef = useRef(false);
   const imageDragOriginRef = useRef<{
     mouseX: number;
     mouseY: number;
@@ -107,6 +109,15 @@ export const PreviewWindow = () => {
     activeDetailRef.current = activeDetail;
     draftTextRef.current = visibleText;
   }, [activeDetail, recordId, visibleText]);
+
+  useEffect(() => {
+    if (status !== "ready" || !activeDetail || hasPlayedRevealSoundRef.current) {
+      return;
+    }
+
+    soundEffectService.playPreviewRevealed();
+    hasPlayedRevealSoundRef.current = true;
+  }, [activeDetail, status]);
 
   const persistDraftText = useCallback(async (): Promise<void> => {
     const currentDetail = activeDetailRef.current;

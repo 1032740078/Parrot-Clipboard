@@ -21,6 +21,7 @@ import {
   pasteRecord,
   pasteRecordResult,
   setMonitoring,
+  syncPreviewWindowRecord,
   updateTextRecord,
 } from "../../api/commands";
 
@@ -133,6 +134,22 @@ describe("api/commands", () => {
       { command: "update_text_record", args: { id: 2, text: "B-updated" } },
       { command: "paste_record", args: { id: 2, mode: "original" } },
     ]);
+  });
+
+  it("syncPreviewWindowRecord 调用轻量联动命令并返回同步结果", async () => {
+    __setInvokeHandler(async (command) => {
+      if (command === "sync_preview_window_record") {
+        return true;
+      }
+
+      return undefined;
+    });
+
+    await expect(syncPreviewWindowRecord(9)).resolves.toBe(true);
+    expect(invokeCalls[0]).toEqual({
+      command: "sync_preview_window_record",
+      args: { recordId: 9 },
+    });
   });
 
   it("getSourceAppIconPng 调用 get_source_app_icon 并返回图标字节", async () => {

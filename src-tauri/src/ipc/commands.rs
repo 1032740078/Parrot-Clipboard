@@ -28,7 +28,10 @@ use crate::{
         permission_guide_window::{
             close_permission_guide_window, show_or_focus_permission_guide_window,
         },
-        preview_window::{close_preview_window, show_or_focus_preview_window},
+        preview_window::{
+            close_preview_window, show_or_focus_preview_window,
+            sync_preview_window_record as sync_preview_window_record_runtime,
+        },
         settings_window::show_or_focus_settings_window,
     },
 };
@@ -738,6 +741,16 @@ pub fn close_preview_window_command(app_handle: tauri::AppHandle) -> Result<(), 
     close_preview_window(&app_handle)?;
     tracing::info!("ipc close_preview_window completed");
     Ok(())
+}
+
+#[tauri::command]
+pub fn sync_preview_window_record(
+    record_id: u64,
+    app_handle: tauri::AppHandle,
+) -> Result<bool, AppError> {
+    let synced = sync_preview_window_record_runtime(&app_handle, record_id)?;
+    tracing::debug!(record_id, synced, "ipc sync_preview_window_record completed");
+    Ok(synced)
 }
 
 #[tauri::command]

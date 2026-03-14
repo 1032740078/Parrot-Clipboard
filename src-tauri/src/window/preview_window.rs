@@ -297,6 +297,11 @@ pub fn close_preview_window(app_handle: &AppHandle) -> Result<(), AppError> {
     Ok(())
 }
 
+pub fn sync_preview_window_record(app_handle: &AppHandle, record_id: u64) -> Result<bool, AppError> {
+    let runtime = TauriPreviewWindowRuntime::new(app_handle.clone());
+    sync_record_with_runtime(&runtime, record_id)
+}
+
 fn show_or_focus_with_runtime(
     runtime: &dyn PreviewWindowRuntime,
     record_id: u64,
@@ -320,13 +325,25 @@ fn show_or_focus_with_runtime(
     Ok(action)
 }
 
+fn sync_record_with_runtime(runtime: &dyn PreviewWindowRuntime, record_id: u64) -> Result<bool, AppError> {
+    if !runtime.window_exists() {
+        return Ok(false);
+    }
+
+    runtime.notify_record_changed(record_id)?;
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use crate::error::AppError;
 
-    use super::{show_or_focus_with_runtime, PreviewWindowOpenAction, PreviewWindowRuntime};
+    use super::{
+        show_or_focus_with_runtime, sync_record_with_runtime, PreviewWindowOpenAction,
+        PreviewWindowRuntime,
+    };
 
     #[derive(Default, Clone)]
     struct RuntimeState {
@@ -480,6 +497,29 @@ mod tests {
                 "bring_window_to_front",
                 "notify_visibility_changed:true:7",
             ]
+        );
+    }
+
+    #[test]
+    fn sync_preview_record_is_noop_when_window_missing() {
+        let (runtime, state) = MockRuntime::new(false);
+
+        let synced = sync_record_with_runtime(&runtime, 13).expect("sync should not fail");
+
+        assert!(!synced);
+        assert_eq!(state.borrow().calls, vec!["window_exists"]);
+    }
+
+    #[test]
+    fn sync_preview_record_updates_existing_window_without_refocus() {
+        let (runtime, state) = MockRuntime::new(true);
+
+        let synced = sync_record_with_runtime(&runtime, 13).expect("sync should succeed");
+
+        assert!(synced);
+        assert_eq!(
+            state.borrow().calls,
+            vec!["window_exists", "notify_record_changed:13",]
         );
     }
 }

@@ -206,31 +206,32 @@ export const useKeyboard = ({ enabled, visibleQuickSlotsRef }: UseKeyboardOption
         return;
       }
 
-      if (previewOverlay) {
-        if (event.key === "Escape") {
-          event.preventDefault();
-          try {
-            await closePreviewWindow();
-            closePreviewOverlay("escape");
-            logger.debug("用户通过 Esc 关闭预览", {
-              trigger_key: "Escape",
-              record_id: previewOverlay.recordId,
-            });
-          } catch (error) {
-            showToast({
-              level: "error",
-              message: getErrorMessage(error),
-              duration: 2200,
-            });
-            throw error;
-          }
+      if (previewOverlay && event.key === "Escape") {
+        event.preventDefault();
+        try {
+          await closePreviewWindow();
+          closePreviewOverlay("escape");
+          logger.debug("用户通过 Esc 关闭预览", {
+            trigger_key: "Escape",
+            record_id: previewOverlay.recordId,
+          });
+        } catch (error) {
+          showToast({
+            level: "error",
+            message: getErrorMessage(error),
+            duration: 2200,
+          });
+          throw error;
         }
-
         return;
       }
 
       const quickPasteIndex = resolveQuickPasteIndex(event, quickPasteEnabled);
       if (quickPasteIndex !== null) {
+        if (previewOverlay) {
+          return;
+        }
+
         const slot = quickPasteIndex + 1;
         const quickTarget = resolveVisibleQuickSlotTarget(
           filteredRecords,
@@ -323,6 +324,10 @@ export const useKeyboard = ({ enabled, visibleQuickSlotsRef }: UseKeyboardOption
         selectedVisibleIndex >= 0 ? filteredRecords[selectedVisibleIndex] : filteredRecords[0];
 
       if (event.key === "Enter") {
+        if (previewOverlay) {
+          return;
+        }
+
         if (!selected) {
           return;
         }
@@ -354,6 +359,10 @@ export const useKeyboard = ({ enabled, visibleQuickSlotsRef }: UseKeyboardOption
       }
 
       if (event.key === "Delete" || event.key === "Backspace") {
+        if (previewOverlay) {
+          return;
+        }
+
         if (!selected) {
           return;
         }

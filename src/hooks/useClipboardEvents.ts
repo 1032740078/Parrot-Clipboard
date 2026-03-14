@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 
+import { soundEffectService } from "../audio/soundEffectService";
 import { onNewRecordSummary, onRecordDeleted, onRecordUpdated } from "../api/events";
 import { logger, normalizeError } from "../api/logger";
 import { useClipboardStore } from "../stores";
@@ -21,6 +22,7 @@ export const useClipboardEvents = (): void => {
           }
 
           upsertRecord(payload.record, payload.evicted_ids?.[0]);
+          soundEffectService.playCopyCaptured();
         });
         cleanups.push(unlistenNewRecord);
 

@@ -1,3 +1,4 @@
+import { soundEffectService } from "../audio/soundEffectService";
 import { hidePanel, pasteRecordResult } from "../api/commands";
 import { showPermissionGuideWindow } from "../api/diagnostics";
 import { getErrorMessage } from "../api/errorHandler";
@@ -123,6 +124,7 @@ export const executeRecordPaste = async ({
       trigger,
       ...logContext,
     });
+    soundEffectService.playPasteCompleted();
     return true;
   } catch (error) {
     showToast({

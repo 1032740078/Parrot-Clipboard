@@ -136,6 +136,18 @@ export const showPreviewWindow = async (recordId: number): Promise<void> => {
   }
 };
 
+export const syncPreviewWindowRecord = async (recordId: number): Promise<boolean> => {
+  try {
+    return await invoke<boolean>("sync_preview_window_record", { recordId });
+  } catch (error) {
+    logger.error("同步预览窗口记录失败", {
+      record_id: recordId,
+      error: normalizeError(error),
+    });
+    throw error;
+  }
+};
+
 export const closePreviewWindow = async (): Promise<void> => {
   try {
     await invoke<void>("close_preview_window_command");

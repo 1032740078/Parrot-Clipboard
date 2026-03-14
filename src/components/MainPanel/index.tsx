@@ -1,7 +1,12 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
-import { deleteRecord, getRecordSummaries, showPreviewWindow } from "../../api/commands";
+import {
+  deleteRecord,
+  getRecordSummaries,
+  showPreviewWindow,
+  syncPreviewWindowRecord,
+} from "../../api/commands";
 import { showPermissionGuideWindow } from "../../api/diagnostics";
 import { getErrorMessage } from "../../api/errorHandler";
 import { logger, normalizeError } from "../../api/logger";
@@ -91,6 +96,7 @@ export const MainPanel = () => {
   const openContextMenu = useUIStore((state) => state.openContextMenu);
   const openPermissionGuide = useUIStore((state) => state.openPermissionGuide);
   const resetSearch = useUIStore((state) => state.resetSearch);
+  const syncPreviewOverlayRecord = useUIStore((state) => state.syncPreviewOverlayRecord);
   const setActiveTypeFilter = useUIStore((state) => state.setActiveTypeFilter);
   const setSearchQuery = useUIStore((state) => state.setSearchQuery);
   const setSearchResultState = useUIStore((state) => state.setSearchResultState);
@@ -269,6 +275,44 @@ export const MainPanel = () => {
     resetCardListScrollPosition(cardListContainerRef.current);
     cardListContainerRef.current?.focus({ preventScroll: true });
   }, [isPanelVisible, records.length, resetSearch, selectIndex]);
+
+  useEffect(() => {
+    if (!previewOverlay?.followSelection || !selectedVisibleRecord) {
+      return;
+    }
+
+    if (previewOverlay.recordId === selectedVisibleRecord.id) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const syncPreviewTarget = async (): Promise<void> => {
+      try {
+        const synced = await syncPreviewWindowRecord(selectedVisibleRecord.id);
+        if (cancelled || !synced) {
+          return;
+        }
+
+        syncPreviewOverlayRecord(selectedVisibleRecord.id);
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        logger.warn("预览窗口联动同步失败，保留当前预览内容", {
+          record_id: selectedVisibleRecord.id,
+          error: normalizeError(error),
+        });
+      }
+    };
+
+    void syncPreviewTarget();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [previewOverlay, selectedVisibleRecord, syncPreviewOverlayRecord]);
 
   const handleCardSelect = (index: number): void => {
     const target = filteredRecords[index];

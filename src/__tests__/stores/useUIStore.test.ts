@@ -118,6 +118,7 @@ describe("useUIStore", () => {
       recordId: 7,
       trigger: "keyboard_space",
       status: "loading",
+      followSelection: true,
     });
     expect((useUIStore.getState().previewOverlay?.openedAt ?? 0) >= now).toBe(true);
 
@@ -130,7 +131,16 @@ describe("useUIStore", () => {
       recordId: 7,
       trigger: "keyboard_space",
       status: "error",
+      followSelection: true,
       errorMessage: "详情加载失败",
+    });
+
+    store.syncPreviewOverlayRecord(11);
+    expect(useUIStore.getState().previewOverlay).toMatchObject({
+      recordId: 11,
+      trigger: "keyboard_space",
+      status: "loading",
+      followSelection: true,
     });
 
     store.closePreviewOverlay("escape");
@@ -157,6 +167,7 @@ describe("useUIStore", () => {
     expect(useUIStore.getState().previewOverlay).toMatchObject({
       recordId: 3,
       trigger: "context_menu",
+      followSelection: true,
     });
     expect(useUIStore.getState().lastPreviewCloseReason).toBeUndefined();
     expect(useUIStore.getState().contextMenu).toBeUndefined();

@@ -1,5 +1,17 @@
 import { fireEvent, render, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const { playPasteCompleted } = vi.hoisted(() => ({
+  playPasteCompleted: vi.fn(),
+}));
+
+vi.mock("../../audio/soundEffectService", () => ({
+  soundEffectService: {
+    playCopyCaptured: vi.fn(),
+    playPasteCompleted,
+    playPreviewRevealed: vi.fn(),
+  },
+}));
 
 import {
   __resetInvokeMock,
@@ -24,6 +36,7 @@ describe("useKeyboard", () => {
     useUIStore.getState().reset();
     __resetInvokeMock();
     __setInvokeHandler(async () => undefined);
+    playPasteCompleted.mockClear();
   });
 
   it("UT-FE-KB-101 1~9 单按仍然只做快选，不会直接触发粘贴", async () => {
@@ -278,6 +291,7 @@ describe("useKeyboard", () => {
     expect(useClipboardStore.getState().records.map((record) => record.id)).toEqual([2, 1]);
     expect(useClipboardStore.getState().selectedIndex).toBe(0);
     expect(useUIStore.getState().isPanelVisible).toBe(false);
+    expect(playPasteCompleted).toHaveBeenCalledTimes(1);
   });
 
   it("UT-FE-KB-102 Command+1~9 直接触发快贴", async () => {

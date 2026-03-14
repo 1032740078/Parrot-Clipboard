@@ -227,6 +227,7 @@ pub fn run() {
             ipc::commands::show_about_window,
             ipc::commands::show_preview_window,
             ipc::commands::close_preview_window_command,
+            ipc::commands::sync_preview_window_record,
             ipc::commands::show_permission_guide_window,
             ipc::commands::close_permission_guide_window_command,
             ipc::commands::get_platform_capabilities,

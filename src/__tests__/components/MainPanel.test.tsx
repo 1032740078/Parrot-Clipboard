@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { MainPanel } from "../../components/MainPanel";
@@ -36,6 +36,10 @@ const setInvokeForRecords = (records = mixedFixtureRecords) => {
 
     if (command === "show_about_window") {
       return undefined;
+    }
+
+    if (command === "sync_preview_window_record") {
+      return true;
     }
 
     return undefined;
@@ -183,6 +187,35 @@ describe("MainPanel", () => {
       expect(invokeCalls.some((call) => call.command === "delete_record")).toBe(true);
       expect(useClipboardStore.getState().records.some((record) => record.id === 2)).toBe(false);
     });
+  });
+
+  it("预览窗口打开后，切换选中项会同步联动到预览窗口而不重新抢焦点", async () => {
+    setInvokeForRecords(mixedFixtureRecords);
+    render(<MainPanel />);
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("image-card")).toHaveLength(1);
+    });
+
+    act(() => {
+      useUIStore.getState().openPreviewOverlay(3, "keyboard_space");
+    });
+
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+
+    await waitFor(() => {
+      expect(invokeCalls.find((call) => call.command === "sync_preview_window_record")).toEqual({
+        command: "sync_preview_window_record",
+        args: { recordId: 2 },
+      });
+      expect(useUIStore.getState().previewOverlay).toMatchObject({
+        recordId: 2,
+        status: "loading",
+        followSelection: true,
+      });
+    });
+
+    expect(invokeCalls.some((call) => call.command === "show_preview_window")).toBe(false);
   });
 
   it("UT-PANEL-006 显示可视区域快选提示且仅当前可视卡片展示槽位", async () => {

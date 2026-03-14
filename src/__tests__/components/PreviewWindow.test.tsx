@@ -1,11 +1,14 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   __resetInvokeMock,
   __setInvokeHandler,
 } from "../../__mocks__/@tauri-apps/api/core";
-import { __resetEventMock } from "../../__mocks__/@tauri-apps/api/event";
+import {
+  __emitMockEvent,
+  __resetEventMock,
+} from "../../__mocks__/@tauri-apps/api/event";
 import {
   __getMockCloseCallCount,
   __resetWindowMock,
@@ -14,6 +17,18 @@ import { PreviewWindow } from "../../components/PreviewWindow";
 import { __resetRecordPreviewDetailCache } from "../../hooks/useRecordPreviewDetail";
 import { buildImageRecord, buildRecord } from "../fixtures/clipboardRecords";
 
+const { playPreviewRevealed } = vi.hoisted(() => ({
+  playPreviewRevealed: vi.fn(),
+}));
+
+vi.mock("../../audio/soundEffectService", () => ({
+  soundEffectService: {
+    playCopyCaptured: vi.fn(),
+    playPasteCompleted: vi.fn(),
+    playPreviewRevealed,
+  },
+}));
+
 describe("PreviewWindow", () => {
   beforeEach(() => {
     __resetInvokeMock();
@@ -21,6 +36,7 @@ describe("PreviewWindow", () => {
     __resetWindowMock();
     __resetRecordPreviewDetailCache();
     window.history.replaceState({}, "", "/?window=preview&recordId=9");
+    playPreviewRevealed.mockClear();
   });
 
   it("按 Esc 会关闭当前预览窗口", async () => {
@@ -141,6 +157,43 @@ describe("PreviewWindow", () => {
     });
 
     expect(screen.getByText("搜索/替换")).toBeInTheDocument();
+    expect(playPreviewRevealed).toHaveBeenCalledTimes(1);
+  });
+
+  it("预览窗口联动切换记录时不会重复播放首次打开音效", async () => {
+    const firstRecord = buildRecord(9, "第一条摘要", 1000);
+    const secondRecord = buildRecord(10, "第二条摘要", 999);
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "get_record_detail") {
+        const id = args?.id ?? 9;
+        const record = id === 10 ? secondRecord : firstRecord;
+        return {
+          ...record,
+          id,
+          text_content: `${record.preview_text}-完整内容`,
+          rich_content: null,
+          image_detail: null,
+          files_detail: null,
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<PreviewWindow />);
+
+    await waitFor(() => {
+      expect(screen.getByText("第一条摘要-完整内容")).toBeInTheDocument();
+    });
+
+    __emitMockEvent("system:preview-window-requested", { record_id: 10 });
+
+    await waitFor(() => {
+      expect(screen.getByText("第二条摘要-完整内容")).toBeInTheDocument();
+    });
+
+    expect(playPreviewRevealed).toHaveBeenCalledTimes(1);
   });
 
   it("图片预览支持滚轮缩放和放大后拖拽", async () => {

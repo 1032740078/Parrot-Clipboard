@@ -30,6 +30,7 @@ export interface PreviewOverlayState {
   trigger: PreviewOverlayTrigger;
   status: PreviewOverlayStatus;
   openedAt: number;
+  followSelection: boolean;
   errorMessage?: string;
 }
 
@@ -97,6 +98,7 @@ interface UIState {
   openClearHistoryDialog: (confirmToken: string) => void;
   closeClearHistoryDialog: () => void;
   openPreviewOverlay: (recordId: number, trigger: PreviewOverlayTrigger) => void;
+  syncPreviewOverlayRecord: (recordId: number) => void;
   setPreviewOverlayStatus: (status: PreviewOverlayStatus, errorMessage?: string) => void;
   closePreviewOverlay: (reason: PreviewOverlayCloseReason) => void;
   openContextMenu: (contextMenu: Omit<ContextMenuState, "openedAt">) => void;
@@ -164,8 +166,28 @@ export const useUIStore = create<UIState>((set) => ({
         trigger,
         status: "loading",
         openedAt: Date.now(),
+        followSelection: true,
       },
       lastPreviewCloseReason: undefined,
+    }),
+  syncPreviewOverlayRecord: (recordId) =>
+    set((state) => {
+      if (!state.previewOverlay) {
+        return state;
+      }
+
+      if (state.previewOverlay.recordId === recordId) {
+        return state;
+      }
+
+      return {
+        previewOverlay: {
+          ...state.previewOverlay,
+          recordId,
+          status: "loading",
+          errorMessage: undefined,
+        },
+      };
     }),
   setPreviewOverlayStatus: (status, errorMessage) =>
     set((state) => {
