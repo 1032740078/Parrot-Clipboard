@@ -146,7 +146,12 @@ pub fn map_detail_row(
     let files_meta = build_files_meta(file_count, primary_name, contains_directory)?;
     let preview_renderer =
         build_preview_renderer(preview_renderer_raw.as_deref(), &content_type, files_detail.as_ref())?;
-    let preview_status = build_preview_status(preview_status_raw.as_deref(), &content_type);
+    let preview_status = build_preview_status(
+        preview_status_raw.as_deref(),
+        &content_type,
+        preview_renderer.as_ref(),
+        primary_uri.as_deref(),
+    );
     let audio_detail = build_audio_detail(
         preview_renderer.as_ref(),
         primary_uri.as_deref(),
@@ -391,7 +396,16 @@ fn default_preview_renderer(
 fn build_preview_status(
     preview_status: Option<&str>,
     content_type: &ContentType,
+    preview_renderer: Option<&PreviewRenderer>,
+    primary_uri: Option<&str>,
 ) -> Option<PreviewStatus> {
+    if preview_status == Some("pending")
+        && preview_renderer == Some(&PreviewRenderer::Pdf)
+        && primary_uri.is_some()
+    {
+        return Some(PreviewStatus::Ready);
+    }
+
     preview_status
         .and_then(PreviewStatus::from_db)
         .or_else(|| Some(default_preview_status(content_type)))

@@ -665,4 +665,107 @@ describe("PreviewWindow", () => {
     expect(screen.getByText("无法预览当前视频")).toBeInTheDocument();
     expect(screen.getByText("视频源不可用或当前环境无法解码。")).toBeInTheDocument();
   });
+
+  it("PDF 记录会渲染正文容器和页数信息", async () => {
+    const record = buildFileRecord(9, "report.pdf", 1000, 1, false, "document");
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "get_record_detail") {
+        return {
+          ...record,
+          id: args?.id ?? 9,
+          text_content: null,
+          rich_content: null,
+          image_detail: null,
+          files_detail: {
+            items: [
+              {
+                path: "/tmp/report.pdf",
+                display_name: "report.pdf",
+                entry_type: "file",
+                extension: "pdf",
+              },
+            ],
+          },
+          preview_renderer: "pdf",
+          preview_status: "ready",
+          preview_error_code: null,
+          preview_error_message: null,
+          audio_detail: null,
+          video_detail: null,
+          document_detail: {
+            document_kind: "pdf",
+            preview_status: "ready",
+            page_count: 6,
+            sheet_names: null,
+            slide_count: null,
+            html_path: null,
+            text_content: null,
+          },
+          link_detail: null,
+          primary_uri: "/tmp/report.pdf",
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<PreviewWindow />);
+
+    const pdfFrame = await screen.findByTestId("preview-pdf-frame");
+    expect(pdfFrame).toHaveAttribute("src", "asset:///tmp/report.pdf");
+    expect(screen.getByTestId("preview-pdf-page-count")).toHaveTextContent("共 6 页");
+    expect(screen.getByTestId("preview-pdf-path")).toHaveTextContent("/tmp/report.pdf");
+  });
+
+  it("PDF 资源不可用时显示降级态", async () => {
+    const record = buildFileRecord(9, "broken.pdf", 1000, 1, false, "document");
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "get_record_detail") {
+        return {
+          ...record,
+          id: args?.id ?? 9,
+          text_content: null,
+          rich_content: null,
+          image_detail: null,
+          files_detail: {
+            items: [
+              {
+                path: "/tmp/broken.pdf",
+                display_name: "broken.pdf",
+                entry_type: "file",
+                extension: "pdf",
+              },
+            ],
+          },
+          preview_renderer: "pdf",
+          preview_status: "failed",
+          preview_error_code: "PREVIEW_ASSET_NOT_READY",
+          preview_error_message: "PDF 文件不可访问或渲染失败。",
+          audio_detail: null,
+          video_detail: null,
+          document_detail: {
+            document_kind: "pdf",
+            preview_status: "failed",
+            page_count: null,
+            sheet_names: null,
+            slide_count: null,
+            html_path: null,
+            text_content: null,
+          },
+          link_detail: null,
+          primary_uri: "/tmp/broken.pdf",
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<PreviewWindow />);
+
+    expect(await screen.findByTestId("preview-pdf-fallback")).toBeInTheDocument();
+    expect(screen.getByText("无法预览当前 PDF")).toBeInTheDocument();
+    expect(screen.getByText("PDF 文件不可访问或渲染失败。")).toBeInTheDocument();
+  });
 });

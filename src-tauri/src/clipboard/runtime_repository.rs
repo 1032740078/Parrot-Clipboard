@@ -383,7 +383,7 @@ fn upsert_text_record(
                         text.len() as i64,
                         primary_uri_for_text(content_type, text),
                         preview_renderer_for_text(content_type),
-                        preview_status_for_content(content_type),
+                        preview_status_for_content(content_type, preview_renderer_for_text(content_type)),
                         captured_at,
                         source_app,
                         existing_id.value() as i64
@@ -416,7 +416,7 @@ fn upsert_text_record(
                     text.len() as i64,
                     primary_uri_for_text(content_type, text),
                     preview_renderer_for_text(content_type),
-                    preview_status_for_content(content_type),
+                    preview_status_for_content(content_type, preview_renderer_for_text(content_type)),
                     captured_at
                 ],
             )
@@ -464,7 +464,7 @@ fn update_text_record(
                     text.len() as i64,
                     primary_uri_for_text(content_type, text),
                     preview_renderer_for_text(content_type),
-                    preview_status_for_content(content_type),
+                    preview_status_for_content(content_type, preview_renderer_for_text(content_type)),
                     _updated_at,
                     id.value() as i64
                 ],
@@ -525,7 +525,7 @@ fn insert_files_record(
 ) -> Result<ClipboardRecordSummary, AppError> {
     let primary_uri = primary_uri_for_files(content_type, items);
     let preview_renderer = preview_renderer_for_files(content_type, items);
-    let preview_status = preview_status_for_content(content_type);
+    let preview_status = preview_status_for_content(content_type, preview_renderer);
 
     let record_id = database.with_connection(|connection| {
         connection.execute(
@@ -655,12 +655,11 @@ fn preview_renderer_for_files(content_type: ContentType, items: &[ClipboardFileI
     }
 }
 
-fn preview_status_for_content(content_type: ContentType) -> &'static str {
+fn preview_status_for_content(content_type: ContentType, preview_renderer: &str) -> &'static str {
     match content_type {
         ContentType::Text | ContentType::Image | ContentType::Files => "ready",
-        ContentType::Link | ContentType::Audio | ContentType::Video | ContentType::Document => {
-            "pending"
-        }
+        ContentType::Document if preview_renderer == "pdf" => "ready",
+        ContentType::Link | ContentType::Audio | ContentType::Video | ContentType::Document => "pending",
     }
 }
 

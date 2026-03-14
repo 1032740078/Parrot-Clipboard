@@ -23,6 +23,7 @@ import { isFileRecord, isImageRecord, isTextRecord } from "../types/clipboard";
 import { toPreviewSrc } from "./MainPanel/previewAsset";
 import { PreviewEditor } from "./PreviewEditor";
 import { AudioPreview } from "./preview/AudioPreview";
+import { PdfPreview } from "./preview/PdfPreview";
 import { VideoPreview } from "./preview/VideoPreview";
 
 const AUTO_SAVE_DELAY_MS = 400;
@@ -551,6 +552,10 @@ export const PreviewWindow = () => {
 
       {status === "ready" && activeDetail?.preview_renderer === "video" ? (
         <VideoPreview detail={activeDetail} key={activeDetail.id} />
+      ) : null}
+
+      {status === "ready" && activeDetail?.preview_renderer === "pdf" ? (
+        <PdfPreview detail={activeDetail} key={activeDetail.id} />
       ) : null}
 
       {status === "ready" && activeDetail && isFileRecord(activeDetail) ? (
