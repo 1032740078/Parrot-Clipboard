@@ -18,7 +18,7 @@ import {
   useRecordPreviewDetail,
 } from "../hooks/useRecordPreviewDetail";
 import type { ClipboardRecordDetail } from "../types/clipboard";
-import { isFileRecord, isImageRecord, isTextRecord } from "../types/clipboard";
+import { isImageRecord, isTextRecord } from "../types/clipboard";
 import { toPreviewSrc } from "./MainPanel/previewAsset";
 import { PreviewEditor } from "./PreviewEditor";
 import { AudioPreview } from "./preview/AudioPreview";
@@ -67,6 +67,57 @@ const resolveInitialRecordId = (): number | null => {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 };
 
+const resolvePreviewRenderer = (
+  detail: ClipboardRecordDetail | null
+): ClipboardRecordDetail["preview_renderer"] => {
+  if (!detail) {
+    return null;
+  }
+
+  if (detail.preview_renderer) {
+    return detail.preview_renderer;
+  }
+
+  if (detail.content_type === "audio") {
+    return "audio";
+  }
+
+  if (detail.content_type === "video") {
+    return "video";
+  }
+
+  if (detail.content_type === "link") {
+    return "link";
+  }
+
+  if (detail.content_type === "document") {
+    const firstExtension = detail.files_detail?.items[0]?.extension?.toLowerCase() ?? null;
+    return firstExtension === "pdf" ? "pdf" : "document";
+  }
+
+  if (detail.content_type === "files") {
+    return "file_list";
+  }
+
+  if (detail.content_type === "image") {
+    return "image";
+  }
+
+  return "text";
+};
+
+const isStructuredPreviewRenderer = (
+  renderer: ClipboardRecordDetail["preview_renderer"]
+): renderer is "audio" | "video" | "pdf" | "document" | "link" => {
+  return (
+    renderer === "audio" ||
+    renderer === "video" ||
+    renderer === "pdf" ||
+    renderer === "document" ||
+    renderer === "link"
+  );
+};
+
 export const PreviewWindow = () => {
   const [recordId, setRecordId] = useState<number | null>(() => resolveInitialRecordId());
   const [brokenImageRecordId, setBrokenImageRecordId] = useState<number | null>(null);
@@ -104,9 +155,13 @@ export const PreviewWindow = () => {
   const imageScale = imageViewState.recordId === recordId ? imageViewState.scale : IMAGE_MIN_SCALE;
   const imageOffset = imageViewState.recordId === recordId ? imageViewState.offset : { x: 0, y: 0 };
   const imageDragging = imageViewState.recordId === recordId ? imageViewState.dragging : false;
+  const activeRenderer = resolvePreviewRenderer(activeDetail);
+  const shouldRenderStructuredPreview = isStructuredPreviewRenderer(activeRenderer);
   const currentRecordIdRef = useRef(recordId);
   const activeDetailRef = useRef<ClipboardRecordDetail | null>(activeDetail);
   const draftTextRef = useRef(visibleText);
+  const skippedOpeningSpaceRef = useRef(false);
+  const lastShortcutCloseAtRef = useRef(0);
   const saveTimerRef = useRef<number | null>(null);
   const savePromiseRef = useRef<Promise<void> | null>(null);
   const saveTextInFlightRef = useRef<string | null>(null);
@@ -123,6 +178,26 @@ export const PreviewWindow = () => {
     activeDetailRef.current = activeDetail;
     draftTextRef.current = visibleText;
   }, [activeDetail, recordId, visibleText]);
+
+  useEffect(() => {
+    skippedOpeningSpaceRef.current = false;
+  }, [recordId]);
+
+  useEffect(() => {
+    logger.info("预览窗口状态已更新", {
+      record_id: recordId,
+      load_status: status,
+      content_type: activeDetail?.content_type ?? null,
+      preview_renderer: activeDetail?.preview_renderer ?? null,
+      resolved_renderer: activeRenderer,
+      preview_status: activeDetail?.preview_status ?? null,
+      has_primary_uri: Boolean(activeDetail?.primary_uri),
+      has_audio_src: Boolean(activeDetail?.audio_detail?.src),
+      has_video_src: Boolean(activeDetail?.video_detail?.src),
+      has_link_url: Boolean(activeDetail?.link_detail?.url),
+      file_count: activeDetail?.files_detail?.items.length ?? 0,
+    });
+  }, [activeDetail, activeRenderer, recordId, status]);
 
   const persistDraftText = useCallback(async (): Promise<void> => {
     const currentDetail = activeDetailRef.current;
@@ -205,6 +280,23 @@ export const PreviewWindow = () => {
     },
   });
 
+  const requestShortcutClose = useCallback(
+    (trigger: "escape" | "space"): void => {
+      const now = performance.now();
+      if (now - lastShortcutCloseAtRef.current < 16) {
+        return;
+      }
+
+      lastShortcutCloseAtRef.current = now;
+      logger.info("预览窗口收到关闭快捷键", {
+        record_id: currentRecordIdRef.current,
+        trigger,
+      });
+      void requestWindowClose();
+    },
+    [requestWindowClose]
+  );
+
   useEffect(() => {
     let unlistenPreviewRequest: (() => void) | undefined;
     let unlistenRecordDeleted: (() => void) | undefined;
@@ -216,6 +308,7 @@ export const PreviewWindow = () => {
         unlistenPreviewRequest = await onPreviewWindowRequested((payload) => {
           void flushPendingTextSave().finally(() => {
             if (!disposed) {
+              skippedOpeningSpaceRef.current = false;
               setRecordId(payload.record_id);
             }
           });
@@ -247,21 +340,64 @@ export const PreviewWindow = () => {
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (event.key === "Escape") {
         event.preventDefault();
-        void requestWindowClose();
+        requestShortcutClose("escape");
         return;
       }
 
-      if (event.code === "Space" && !shouldIgnoreSpaceClose(event.target)) {
+      const isSpacePress =
+        event.code === "Space" || event.key === " " || event.key === "Spacebar";
+
+      if (isSpacePress && !shouldIgnoreSpaceClose(event.target)) {
+        if (!skippedOpeningSpaceRef.current) {
+          skippedOpeningSpaceRef.current = true;
+          logger.debug("忽略预览窗口打开后的首个空格关闭信号", {
+            record_id: currentRecordIdRef.current,
+          });
+          return;
+        }
+
+        if (event.repeat) {
+          logger.debug("忽略预览窗口重复空格按键", {
+            record_id: currentRecordIdRef.current,
+          });
+          return;
+        }
+
         event.preventDefault();
-        void requestWindowClose();
+        requestShortcutClose("space");
       }
     };
 
     window.addEventListener("keydown", handleKeyDown, true);
+    document.addEventListener("keydown", handleKeyDown, true);
     return () => {
       window.removeEventListener("keydown", handleKeyDown, true);
+      document.removeEventListener("keydown", handleKeyDown, true);
     };
-  }, [requestWindowClose]);
+  }, [requestShortcutClose]);
+
+  useEffect(() => {
+    if (status !== "ready" || !activeDetail) {
+      return;
+    }
+
+    logger.info("预览窗口详情已就绪", {
+      record_id: activeDetail.id,
+      content_type: activeDetail.content_type,
+      preview_renderer: activeDetail.preview_renderer,
+      resolved_renderer: activeRenderer,
+      preview_status: activeDetail.preview_status,
+      preview_source:
+        activeDetail.audio_detail?.src ??
+        activeDetail.video_detail?.src ??
+        activeDetail.link_detail?.url ??
+        activeDetail.document_detail?.html_path ??
+        activeDetail.primary_uri ??
+        activeDetail.files_detail?.items[0]?.path ??
+        activeDetail.image_detail?.original_path ??
+        null,
+    });
+  }, [activeDetail, activeRenderer, status]);
 
   useEffect(() => {
     const currentDetail = activeDetail;
@@ -429,8 +565,8 @@ export const PreviewWindow = () => {
   const fileItems = activeDetail?.files_detail?.items ?? [];
 
   return (
-    <main className="glass-window relative h-screen w-screen overflow-hidden rounded-2xl text-white backdrop-blur-2xl">
-      <div className="glass-window-titlebar flex h-10 shrink-0 items-center justify-between px-4">
+    <main className="preview-window-root relative flex h-screen w-screen flex-col overflow-hidden rounded-2xl text-white">
+      <div className="preview-window-titlebar flex h-10 shrink-0 items-center justify-between px-4">
         <span className="text-xs font-medium tracking-wide text-slate-400">预览</span>
         <button
           className="rounded-md px-2 py-1 text-xs text-slate-400 transition hover:bg-white/10 hover:text-white"
@@ -442,6 +578,7 @@ export const PreviewWindow = () => {
           关闭
         </button>
       </div>
+      <div className="min-h-0 flex-1 overflow-hidden">
       {status === "loading" ? (
         <div className="flex h-full w-full items-center justify-center text-sm text-zinc-400">
           正在加载完整内容…
@@ -456,7 +593,7 @@ export const PreviewWindow = () => {
       ) : null}
 
       {status === "ready" && activeDetail && isTextRecord(activeDetail) ? (
-        <>
+        <div className="relative h-full w-full">
           <PreviewEditor
             onChange={(nextValue) => {
               setDraftTextState({ recordId, value: nextValue });
@@ -473,7 +610,7 @@ export const PreviewWindow = () => {
               {saveError}
             </div>
           ) : null}
-        </>
+        </div>
       ) : null}
 
       {status === "ready" && activeDetail && isImageRecord(activeDetail) ? (
@@ -516,27 +653,27 @@ export const PreviewWindow = () => {
         </div>
       ) : null}
 
-      {status === "ready" && activeDetail?.preview_renderer === "audio" ? (
+      {status === "ready" && activeDetail && activeRenderer === "audio" ? (
         <AudioPreview detail={activeDetail} key={activeDetail.id} />
       ) : null}
 
-      {status === "ready" && activeDetail?.preview_renderer === "video" ? (
+      {status === "ready" && activeDetail && activeRenderer === "video" ? (
         <VideoPreview detail={activeDetail} key={activeDetail.id} />
       ) : null}
 
-      {status === "ready" && activeDetail?.preview_renderer === "pdf" ? (
+      {status === "ready" && activeDetail && activeRenderer === "pdf" ? (
         <PdfPreview detail={activeDetail} key={activeDetail.id} />
       ) : null}
 
-      {status === "ready" && activeDetail?.preview_renderer === "document" ? (
+      {status === "ready" && activeDetail && activeRenderer === "document" ? (
         <DocumentPreview detail={activeDetail} key={activeDetail.id} />
       ) : null}
 
-      {status === "ready" && activeDetail?.preview_renderer === "link" ? (
+      {status === "ready" && activeDetail && activeRenderer === "link" ? (
         <LinkPreview detail={activeDetail} key={activeDetail.id} />
       ) : null}
 
-      {status === "ready" && activeDetail && isFileRecord(activeDetail) ? (
+      {status === "ready" && activeDetail && activeRenderer === "file_list" ? (
         <div className="scrollbar-hidden h-full w-full overflow-y-auto px-8 py-8">
           {fileItems.length ? (
             <ul className="space-y-5">
@@ -552,6 +689,31 @@ export const PreviewWindow = () => {
           )}
         </div>
       ) : null}
+
+      {status === "ready" &&
+      activeDetail &&
+      !isTextRecord(activeDetail) &&
+      !isImageRecord(activeDetail) &&
+      activeRenderer !== "file_list" &&
+      !shouldRenderStructuredPreview ? (
+        <section className="flex h-full w-full items-center justify-center px-8 py-8 text-center">
+          <div className="max-w-xl rounded-[24px] border border-white/10 bg-white/[0.04] px-6 py-5">
+            <div className="text-base font-medium text-slate-100">当前记录暂未匹配到可用预览器</div>
+            <div className="mt-3 text-sm leading-6 text-slate-400">
+              已读取到记录详情，但预览类型未命中已支持的渲染器。请查看日志中的
+              <code className="mx-1 rounded bg-black/30 px-1.5 py-0.5 text-xs text-slate-200">
+                预览窗口状态已更新
+              </code>
+              条目继续定位。
+            </div>
+            <div className="mt-4 text-xs text-slate-500">
+              content_type={activeDetail.content_type} renderer=
+              {String(activeDetail.preview_renderer ?? "null")} resolved={String(activeRenderer)}
+            </div>
+          </div>
+        </section>
+      ) : null}
+      </div>
     </main>
   );
 };

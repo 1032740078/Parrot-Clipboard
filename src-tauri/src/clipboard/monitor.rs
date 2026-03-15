@@ -9,6 +9,7 @@ use std::{
 };
 
 use crate::{
+    audio::{self, SoundEffectCue},
     config::ConfigStore,
     error::AppError,
     platform::{PlatformActiveAppDetector, PlatformClipboard},
@@ -213,6 +214,9 @@ impl ClipboardMonitorService {
             CaptureAction::Added => {
                 self.emitter
                     .emit_new_record(capture.record.clone(), capture.evicted_ids.clone())?;
+                if let Err(error) = audio::play_sound_effect(SoundEffectCue::CopyCaptured) {
+                    tracing::warn!(error = %error, "play native copy sound effect failed");
+                }
             }
             CaptureAction::Promoted => {
                 self.emitter

@@ -46,6 +46,10 @@ const resolveRootApp = () => {
     document.body.classList.add("standalone-window");
   }
 
+  if (windowType === "preview") {
+    document.body.classList.add("preview-window-host");
+  }
+
   if (windowType === "about") {
     return <AboutWindow />;
   }

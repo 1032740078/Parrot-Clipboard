@@ -1,5 +1,6 @@
 #![allow(unexpected_cfgs)]
 
+mod audio;
 mod autostart;
 mod clipboard;
 mod config;
@@ -217,6 +218,7 @@ pub fn run() {
             ipc::commands::get_runtime_status,
             ipc::commands::clear_history,
             ipc::commands::write_client_log,
+            ipc::commands::play_sound_effect,
             ipc::commands::get_log_directory,
             ipc::commands::get_release_info,
             ipc::commands::get_permission_status,

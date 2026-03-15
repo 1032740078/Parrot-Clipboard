@@ -25,12 +25,30 @@ const isEmbeddableUrl = (url: string): boolean => {
   }
 };
 
+const supportsInlineFrame = (url: string): boolean => {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return false;
+    }
+
+    return (
+      parsed.hostname === "localhost" ||
+      parsed.hostname === "127.0.0.1" ||
+      parsed.hostname === "0.0.0.0"
+    );
+  } catch {
+    return false;
+  }
+};
+
 export const LinkPreview = ({ detail }: LinkPreviewProps) => {
   const linkDetail = detail.link_detail;
   const url = linkDetail?.url ?? detail.primary_uri ?? detail.preview_text;
   const title = linkDetail?.title ?? detail.preview_text;
   const siteName = linkDetail?.site_name ?? resolveHost(url);
   const canEmbed = isEmbeddableUrl(url);
+  const canInlineFrame = supportsInlineFrame(url);
   const [frameLoaded, setFrameLoaded] = useState(false);
   const [openError, setOpenError] = useState<string | null>(null);
 
@@ -49,9 +67,12 @@ export const LinkPreview = ({ detail }: LinkPreviewProps) => {
 
     return compactTitle;
   }, [compactTitle, siteName, url]);
+  const description = linkDetail?.description?.trim() || null;
+  const contentText = linkDetail?.content_text?.trim() || null;
+  const coverImage = linkDetail?.cover_image ?? null;
 
   return (
-    <section className="flex h-full w-full flex-col overflow-hidden px-5 py-5">
+    <section className="flex h-full min-h-0 w-full flex-col overflow-hidden px-5 py-5">
       <div className="flex h-full min-h-0 flex-col gap-4">
         <header className="rounded-[18px] border border-white/10 bg-white/[0.04] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
           <div className="flex items-center gap-2">
@@ -91,7 +112,7 @@ export const LinkPreview = ({ detail }: LinkPreviewProps) => {
         </header>
 
         <div className="relative min-h-0 flex-1 overflow-hidden rounded-[28px] border border-white/10 bg-[#030712] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-          {canEmbed ? (
+          {canEmbed && canInlineFrame ? (
             <>
               <iframe
                 className="h-full w-full bg-white"
@@ -111,12 +132,55 @@ export const LinkPreview = ({ detail }: LinkPreviewProps) => {
             </>
           ) : (
             <div
-              className="flex h-full min-h-[260px] flex-col items-center justify-center gap-3 px-6 text-center"
-              data-testid="preview-link-fallback"
+              className="flex h-full min-h-[260px] flex-col overflow-y-auto px-6 py-6"
+              data-testid="preview-link-summary"
             >
-              <div className="text-base font-medium text-slate-100">当前网址无法直接嵌入预览</div>
-              <div className="max-w-xl text-sm leading-6 text-slate-400">
-                仅支持在预览窗口内直接打开 HTTP / HTTPS 页面，你仍可以使用上方按钮在默认浏览器中打开。
+              <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-5">
+                <div className="text-[11px] font-medium uppercase tracking-[0.22em] text-cyan-200/80">
+                  网页摘要
+                </div>
+                <h2
+                  className="mt-3 text-xl font-semibold leading-8 text-slate-50"
+                  data-testid="preview-link-title"
+                >
+                  {displayTitle}
+                </h2>
+                <div className="mt-2 text-sm leading-6 text-slate-400">
+                  {canEmbed
+                    ? "打包版对外部站点的 iframe 兼容性不稳定，默认展示网页摘要以避免黑屏；本地调试网址仍保留内嵌预览。"
+                    : "当前链接不是可直接嵌入的 HTTP / HTTPS 页面，已回退为摘要预览。"}
+                </div>
+
+                {description ? (
+                  <p
+                    className="mt-4 rounded-2xl border border-white/8 bg-black/20 px-4 py-3 text-sm leading-6 text-slate-300"
+                    data-testid="preview-link-description"
+                  >
+                    {description}
+                  </p>
+                ) : null}
+
+                {coverImage ? (
+                  <img
+                    alt={displayTitle}
+                    className="mt-4 max-h-[220px] w-full rounded-[20px] object-cover"
+                    src={coverImage}
+                  />
+                ) : null}
+
+                {contentText ? (
+                  <div className="mt-4 rounded-[20px] border border-white/8 bg-black/20 px-4 py-4">
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                      提取内容
+                    </div>
+                    <p
+                      className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-300"
+                      data-testid="preview-link-content-text"
+                    >
+                      {contentText}
+                    </p>
+                  </div>
+                ) : null}
               </div>
             </div>
           )}

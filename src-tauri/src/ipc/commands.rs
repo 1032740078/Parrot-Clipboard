@@ -1,6 +1,7 @@
 use tauri::State;
 
 use crate::{
+    audio::{self, SoundEffectCue},
     clipboard::{
         query::{
             ClipboardRecordDetail, ClipboardRecordSummary, PasteResult, PreviewPreparationResult,
@@ -247,6 +248,9 @@ pub async fn paste_record(
             state
                 .event_emitter
                 .emit_record_updated(RecordUpdateReason::Promoted, paste_result.record.clone())?;
+            if let Err(error) = audio::play_sound_effect(SoundEffectCue::PasteCompleted) {
+                tracing::warn!(error = %error, "play native paste sound effect failed");
+            }
             tracing::info!(
                 record_id = paste_result.record.id,
                 "ipc paste_record completed"
@@ -373,6 +377,24 @@ pub fn write_client_log(
 ) -> Result<(), AppError> {
     logging::write_client_log(level, message, context);
     Ok(())
+}
+
+#[tauri::command]
+pub fn play_sound_effect(cue: String) -> Result<(), AppError> {
+    let sound_cue = match cue.as_str() {
+        "copy_captured" => SoundEffectCue::CopyCaptured,
+        "paste_completed" => SoundEffectCue::PasteCompleted,
+        _ => {
+            return Err(AppError::InvalidParam(format!(
+                "unsupported sound cue `{cue}`"
+            )));
+        }
+    };
+    tracing::debug!(
+        sound_cue = sound_cue.as_str(),
+        "ipc play_sound_effect requested"
+    );
+    audio::play_sound_effect(sound_cue)
 }
 
 #[tauri::command]

@@ -10,7 +10,12 @@ import { __emitMockEvent, __resetEventMock } from "../../__mocks__/@tauri-apps/a
 import { __getMockCloseCallCount, __resetWindowMock } from "../../__mocks__/@tauri-apps/api/window";
 import { PreviewWindow } from "../../components/PreviewWindow";
 import { __resetRecordPreviewDetailCache } from "../../hooks/useRecordPreviewDetail";
-import { buildFileRecord, buildImageRecord, buildRecord } from "../fixtures/clipboardRecords";
+import {
+  buildFileRecord,
+  buildImageRecord,
+  buildRecord,
+  buildSemanticTextRecord,
+} from "../fixtures/clipboardRecords";
 
 const { playPreviewRevealed } = vi.hoisted(() => ({
   playPreviewRevealed: vi.fn(),
@@ -75,7 +80,7 @@ describe("PreviewWindow", () => {
     });
   });
 
-  it("再次按空格会关闭当前预览窗口", async () => {
+  it("松开打开预览用的空格后，再次按空格会关闭当前预览窗口", async () => {
     const record = buildRecord(9, "摘要文本", 1000);
 
     __setInvokeHandler(async (command, args) => {
@@ -99,11 +104,41 @@ describe("PreviewWindow", () => {
       expect(screen.getByText("完整正文")).toBeInTheDocument();
     });
 
-    fireEvent.keyDown(window, { key: " ", code: "Space" });
+    fireEvent.keyUp(document, { key: " ", code: "Space" });
+    fireEvent.keyDown(document, { key: " ", code: "Space" });
 
     await waitFor(() => {
       expect(__getMockCloseCallCount()).toBe(1);
     });
+  });
+
+  it("按住空格产生的重复按键不会立刻关闭预览窗口", async () => {
+    const record = buildRecord(9, "摘要文本", 1000);
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "get_record_detail") {
+        return {
+          ...record,
+          id: args?.id ?? 9,
+          text_content: "完整正文",
+          rich_content: null,
+          image_detail: null,
+          files_detail: null,
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<PreviewWindow />);
+
+    await waitFor(() => {
+      expect(screen.getByText("完整正文")).toBeInTheDocument();
+    });
+
+    fireEvent.keyDown(window, { key: " ", code: "Space", repeat: true });
+
+    expect(__getMockCloseCallCount()).toBe(0);
   });
 
   it("点击顶部关闭按钮会关闭当前预览窗口", async () => {
@@ -336,6 +371,51 @@ describe("PreviewWindow", () => {
     expect(screen.getByTestId("preview-audio-path")).toHaveTextContent("/tmp/voice-note.mp3");
   });
 
+  it("音频记录缺少 preview_renderer 时会按 content_type 自动回退渲染", async () => {
+    const record = buildFileRecord(9, "voice-note.mp3", 1000, 1, false, "audio");
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "get_record_detail") {
+        return {
+          ...record,
+          id: args?.id ?? 9,
+          text_content: null,
+          rich_content: null,
+          image_detail: null,
+          files_detail: {
+            items: [
+              {
+                path: "/tmp/voice-note.mp3",
+                display_name: "voice-note.mp3",
+                entry_type: "file",
+                extension: "mp3",
+              },
+            ],
+          },
+          preview_renderer: null,
+          preview_status: "ready",
+          preview_error_code: null,
+          preview_error_message: null,
+          audio_detail: {
+            src: "/tmp/voice-note.mp3",
+            mime_type: "audio/mpeg",
+            duration_ms: 12_000,
+            byte_size: 4_096,
+          },
+          video_detail: null,
+          document_detail: null,
+          link_detail: null,
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<PreviewWindow />);
+
+    expect(await screen.findByTestId("preview-audio-player")).toBeInTheDocument();
+  });
+
   it("音频元信息加载后会刷新时长显示", async () => {
     const record = buildFileRecord(9, "voice-note.mp3", 1000, 1, false, "audio");
 
@@ -551,6 +631,53 @@ describe("PreviewWindow", () => {
     expect(screen.getByTestId("preview-video-duration")).toHaveTextContent("01:05");
     expect(screen.getByTestId("preview-video-resolution")).toHaveTextContent("1920 × 1080");
     expect(screen.getByTestId("preview-video-path")).toHaveTextContent("/tmp/demo.mp4");
+  });
+
+  it("视频记录缺少 preview_renderer 时会按 content_type 自动回退渲染", async () => {
+    const record = buildFileRecord(9, "demo.mp4", 1000, 1, false, "video");
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "get_record_detail") {
+        return {
+          ...record,
+          id: args?.id ?? 9,
+          text_content: null,
+          rich_content: null,
+          image_detail: null,
+          files_detail: {
+            items: [
+              {
+                path: "/tmp/demo.mp4",
+                display_name: "demo.mp4",
+                entry_type: "file",
+                extension: "mp4",
+              },
+            ],
+          },
+          preview_renderer: null,
+          preview_status: "ready",
+          preview_error_code: null,
+          preview_error_message: null,
+          audio_detail: null,
+          video_detail: {
+            src: "/tmp/demo.mp4",
+            mime_type: "video/mp4",
+            duration_ms: 65_000,
+            pixel_width: 1920,
+            pixel_height: 1080,
+            poster_path: null,
+          },
+          document_detail: null,
+          link_detail: null,
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<PreviewWindow />);
+
+    expect(await screen.findByTestId("preview-video-player")).toBeInTheDocument();
   });
 
   it("视频元信息加载后会刷新时长与分辨率显示", async () => {
@@ -1179,12 +1306,16 @@ describe("PreviewWindow", () => {
 
     render(<PreviewWindow />);
 
-    expect(await screen.findByTestId("preview-link-frame")).toHaveAttribute("title", "季度复盘");
+    expect(await screen.findByTestId("preview-link-summary")).toBeInTheDocument();
+    expect(screen.getByTestId("preview-link-title")).toHaveTextContent("季度复盘");
     expect(screen.getByTestId("preview-link-site-name")).toHaveTextContent("示例站点");
-    expect(screen.getByTestId("preview-link-url")).toHaveTextContent(
-      "https://example.com/posts/9"
+    expect(screen.getByTestId("preview-link-url")).toHaveTextContent("https://example.com/posts/9");
+    expect(screen.getByTestId("preview-link-description")).toHaveTextContent(
+      "本页展示季度复盘摘要。"
     );
-    expect(screen.getByTestId("preview-link-frame")).toHaveAttribute("src", "https://example.com/posts/9");
+    expect(screen.getByTestId("preview-link-content-text")).toHaveTextContent(
+      "这是正文的第一段内容。"
+    );
 
     fireEvent.click(screen.getByTestId("preview-link-open-button"));
 
@@ -1193,7 +1324,45 @@ describe("PreviewWindow", () => {
     });
   });
 
-  it("链接预览不会为了抓取摘要而阻塞页面内嵌显示", async () => {
+  it("链接记录缺少 preview_renderer 时会按 content_type 自动回退渲染", async () => {
+    __setInvokeHandler(async (command, args) => {
+      if (command === "get_record_detail") {
+        return {
+          ...buildSemanticTextRecord(9, "https://example.com/posts/9", 1000, "link", "Safari"),
+          id: args?.id ?? 9,
+          text_content: "https://example.com/posts/9",
+          rich_content: null,
+          image_detail: null,
+          files_detail: null,
+          preview_renderer: null,
+          preview_status: "ready",
+          preview_error_code: null,
+          preview_error_message: null,
+          audio_detail: null,
+          video_detail: null,
+          document_detail: null,
+          link_detail: {
+            url: "https://example.com/posts/9",
+            title: "季度复盘",
+            site_name: "示例站点",
+            description: "desc",
+            cover_image: null,
+            content_text: null,
+            fetched_at: 1000,
+          },
+          primary_uri: "https://example.com/posts/9",
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<PreviewWindow />);
+
+    expect(await screen.findByTestId("preview-link-summary")).toBeInTheDocument();
+  });
+
+  it("外部链接即使摘要仍在准备中，也会立即展示摘要卡片而不是黑屏", async () => {
     const record = buildRecord(9, "https://example.com/pending", 1000);
 
     __setInvokeHandler(async (command, args) => {
@@ -1231,10 +1400,8 @@ describe("PreviewWindow", () => {
 
     render(<PreviewWindow />);
 
-    expect(await screen.findByTestId("preview-link-frame")).toHaveAttribute(
-      "src",
-      "https://example.com/pending"
-    );
+    expect(await screen.findByTestId("preview-link-summary")).toBeInTheDocument();
+    expect(screen.getByTestId("preview-link-title")).toHaveTextContent("等待中的页面");
     expect(invokeCalls.filter((call) => call.command === "prepare_record_preview")).toHaveLength(0);
   });
 
@@ -1276,7 +1443,8 @@ describe("PreviewWindow", () => {
 
     render(<PreviewWindow />);
 
-    expect(await screen.findByTestId("preview-link-url")).toHaveTextContent(
+    expect(await screen.findByTestId("preview-link-frame")).toHaveAttribute(
+      "src",
       "http://localhost:8317/management.html#/usage"
     );
     expect(screen.getAllByText("http://localhost:8317/management.html#/usage")).toHaveLength(1);
@@ -1321,15 +1489,14 @@ describe("PreviewWindow", () => {
 
     render(<PreviewWindow />);
 
-    expect(await screen.findByTestId("preview-link-url")).toHaveTextContent(
-      "https://example.com/compact"
-    );
+    expect(await screen.findByTestId("preview-link-summary")).toBeInTheDocument();
+    expect(screen.getByTestId("preview-link-url")).toHaveTextContent("https://example.com/compact");
     expect(screen.getByTestId("preview-link-site-name")).toHaveTextContent("example.com");
     expect(screen.queryByText("页面内预览")).not.toBeInTheDocument();
     expect(screen.queryByText("网址")).not.toBeInTheDocument();
   });
 
-  it("链接抓取失败时仍优先显示页面内嵌预览", async () => {
+  it("链接抓取失败时仍优先显示摘要卡片", async () => {
     const record = buildRecord(9, "https://example.com/unavailable", 1000);
 
     __setInvokeHandler(async (command, args) => {
@@ -1367,7 +1534,7 @@ describe("PreviewWindow", () => {
 
     render(<PreviewWindow />);
 
-    expect(await screen.findByTestId("preview-link-frame")).toBeInTheDocument();
+    expect(await screen.findByTestId("preview-link-summary")).toBeInTheDocument();
     expect(screen.getByTestId("preview-link-url")).toHaveTextContent(
       "https://example.com/unavailable"
     );
