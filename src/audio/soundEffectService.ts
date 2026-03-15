@@ -1,5 +1,6 @@
 import { Howl } from "howler";
 
+import { playSoundEffect as playNativeSoundEffect } from "../api/commands";
 import { logger, normalizeError } from "../api/logger";
 import copyNotificationUrl from "../assets/sounds/copy-notification.mp3?inline";
 import pasteNotificationUrl from "../assets/sounds/paste-notification.mp3?inline";
@@ -74,8 +75,12 @@ export const playSoundCue = (cue: SoundCue): void => {
   });
 
   if (isTauriRuntime()) {
-    logger.debug("Tauri 运行时跳过前端音效播放，改由 Rust 原生层统一处理", {
-      sound_cue: cue,
+    void playNativeSoundEffect(cue).catch((error) => {
+      logger.warn("调用原生音效失败，回退前端音效", {
+        sound_cue: cue,
+        error: normalizeError(error),
+      });
+      playWebSoundCue(cue);
     });
     return;
   }

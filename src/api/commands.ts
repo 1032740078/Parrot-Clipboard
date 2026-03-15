@@ -96,6 +96,17 @@ export const prepareRecordPreview = async (id: number): Promise<PreviewPreparati
   }
 };
 
+export const playSoundEffect = async (
+  cue: "copy_captured" | "paste_completed"
+): Promise<void> => {
+  try {
+    await invoke<void>("play_sound_effect", { cue });
+  } catch (error) {
+    logger.warn("触发原生音效失败", { cue, error: normalizeError(error) });
+    throw error;
+  }
+};
+
 const isPngByteArray = (value: unknown): value is number[] =>
   Array.isArray(value) &&
   value.every((item) => Number.isInteger(item) && Number(item) >= 0 && Number(item) <= 255);

@@ -1,6 +1,11 @@
+import { waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { __resetInvokeMock, invokeCalls } from "../../__mocks__/@tauri-apps/api/core";
+import {
+  __resetInvokeMock,
+  __setInvokeHandler,
+  invokeCalls,
+} from "../../__mocks__/@tauri-apps/api/core";
 
 const { HowlMock, howlConstructor, howlPlay, howlStop, howlUnload } = vi.hoisted(() => {
   const stop = vi.fn();
@@ -48,23 +53,48 @@ describe("soundEffectService", () => {
     delete (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
   });
 
-  it("Tauri 运行时会跳过前端音效播放，改由原生层统一处理", () => {
+  it("Tauri 运行时会请求原生音效播放，不直接走前端 Howler", () => {
     (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
 
     soundEffectService.playCopyCaptured();
 
-    expect(invokeCalls.some((call) => call.command === "play_sound_effect")).toBe(false);
+    expect(invokeCalls).toContainEqual({
+      command: "play_sound_effect",
+      args: { cue: "copy_captured" },
+    });
     expect(howlConstructor).not.toHaveBeenCalled();
   });
 
-  it("Tauri 运行时不会回退到前端音效，避免与原生层重复播放", () => {
+  it("Tauri 原生音效调用成功时不会回退到前端音效", () => {
     (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
 
     soundEffectService.playCopyCaptured();
 
-    expect(invokeCalls.some((call) => call.command === "play_sound_effect")).toBe(false);
+    expect(invokeCalls.some((call) => call.command === "play_sound_effect")).toBe(true);
     expect(howlConstructor).not.toHaveBeenCalled();
     expect(howlPlay).not.toHaveBeenCalled();
+  });
+
+  it("Tauri 原生音效调用失败时会回退到前端音效", async () => {
+    (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
+    __setInvokeHandler(async (command) => {
+      if (command === "play_sound_effect") {
+        throw new Error("native unavailable");
+      }
+
+      return undefined;
+    });
+
+    soundEffectService.playPasteCompleted();
+
+    await waitFor(() => {
+      expect(invokeCalls).toContainEqual({
+        command: "play_sound_effect",
+        args: { cue: "paste_completed" },
+      });
+      expect(howlConstructor).toHaveBeenCalledTimes(1);
+      expect(howlPlay).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("非 Tauri 环境首次播放时会懒加载 Howl 实例并复用缓存", () => {

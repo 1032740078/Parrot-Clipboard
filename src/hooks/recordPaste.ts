@@ -114,10 +114,6 @@ export const executeRecordPaste = async ({
       });
     }
 
-    hidePanelState();
-    useSystemStore.getState().setPanelVisible(false);
-    await hidePanel(hideReason);
-
     logger.info("用户执行记录粘贴", {
       record_id: record.id,
       paste_mode: mode,
@@ -125,6 +121,10 @@ export const executeRecordPaste = async ({
       ...logContext,
     });
     soundEffectService.playPasteCompleted();
+
+    hidePanelState();
+    useSystemStore.getState().setPanelVisible(false);
+    await hidePanel(hideReason);
     return true;
   } catch (error) {
     showToast({

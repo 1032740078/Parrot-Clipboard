@@ -2,7 +2,8 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::Command,
-    sync::OnceLock,
+    sync::{Mutex, OnceLock},
+    time::{Duration, Instant},
 };
 
 use crate::error::AppError;
@@ -13,6 +14,9 @@ const PASTE_COMPLETED_MP3: &[u8] =
 
 static COPY_CAPTURED_PATH: OnceLock<PathBuf> = OnceLock::new();
 static PASTE_COMPLETED_PATH: OnceLock<PathBuf> = OnceLock::new();
+static LAST_PLAYED_SOUND: OnceLock<Mutex<Option<(&'static str, Instant)>>> = OnceLock::new();
+
+const DUPLICATE_SOUND_SUPPRESSION_WINDOW: Duration = Duration::from_millis(400);
 
 #[derive(Debug, Clone, Copy)]
 pub enum SoundEffectCue {
@@ -50,9 +54,35 @@ impl SoundEffectCue {
     }
 }
 
+fn should_skip_duplicate_playback(cue: SoundEffectCue) -> Result<bool, AppError> {
+    let guard = LAST_PLAYED_SOUND.get_or_init(|| Mutex::new(None));
+    let mut last_played = guard
+        .lock()
+        .map_err(|_| AppError::Internal("native sound de-dup lock poisoned".to_string()))?;
+    let now = Instant::now();
+
+    if let Some((last_cue, last_at)) = last_played.as_ref() {
+        if *last_cue == cue.as_str() && now.duration_since(*last_at) <= DUPLICATE_SOUND_SUPPRESSION_WINDOW
+        {
+            tracing::debug!(
+                sound_cue = cue.as_str(),
+                "skip duplicated native sound playback within suppression window"
+            );
+            return Ok(true);
+        }
+    }
+
+    *last_played = Some((cue.as_str(), now));
+    Ok(false)
+}
+
 pub fn play_sound_effect(cue: SoundEffectCue) -> Result<(), AppError> {
     if cfg!(test) {
         tracing::debug!(sound_cue = cue.as_str(), "skip native sound playback in tests");
+        return Ok(());
+    }
+
+    if should_skip_duplicate_playback(cue)? {
         return Ok(());
     }
 
