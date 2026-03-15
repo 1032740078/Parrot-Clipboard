@@ -344,9 +344,7 @@ export const PreviewWindow = () => {
       return null;
     }
 
-    return toPreviewSrc(
-      activeDetail.image_detail?.original_path ?? activeDetail.image_meta?.thumbnail_path ?? null
-    );
+    return toPreviewSrc(activeDetail.image_detail?.original_path ?? null);
   }, [activeDetail]);
 
   const handleImageWheel = (event: ReactWheelEvent<HTMLDivElement>): void => {

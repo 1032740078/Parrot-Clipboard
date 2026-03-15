@@ -45,7 +45,7 @@ export const PreviewOverlay = () => {
       return null;
     }
 
-    return toPreviewSrc(detail?.image_detail?.original_path ?? record.image_meta?.thumbnail_path ?? null);
+    return toPreviewSrc(detail?.image_detail?.original_path ?? null);
   }, [detail?.image_detail?.original_path, record]);
   const textContent = detail?.text_content ?? record?.text_content ?? record?.preview_text ?? "";
   const highlightedCode = useMemo(() => {

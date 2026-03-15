@@ -120,6 +120,33 @@ describe("PreviewOverlay", () => {
     expect(screen.getByText("1920×1080")).toBeInTheDocument();
   });
 
+  it("UT-PREVIEW-302A 图片完整预览缺少原图时不会退回缩略图", async () => {
+    useClipboardStore.getState().hydrate([buildImageRecord(2, "屏幕截图", 1000, "ready")]);
+    useUIStore.getState().openPreviewOverlay(2, "keyboard_space");
+    __setInvokeHandler(async (command) => {
+      if (command === "get_record_detail") {
+        return {
+          ...buildImageRecord(2, "屏幕截图", 1000, "ready"),
+          text_content: null,
+          rich_content: null,
+          image_detail: null,
+          files_detail: null,
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<PreviewOverlay />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("preview-overlay-image-content")).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("preview-overlay-image-placeholder")).toBeInTheDocument();
+    expect(screen.queryByTestId("preview-overlay-image")).not.toBeInTheDocument();
+  });
+
   it("UT-PREVIEW-303 文件预览会展示完整文件列表", async () => {
     useClipboardStore.getState().hydrate([buildFileRecord(3, "需求说明.md", 1000, 2, true)]);
     useUIStore.getState().openPreviewOverlay(3, "keyboard_space");

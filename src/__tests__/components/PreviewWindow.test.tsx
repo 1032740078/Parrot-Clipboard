@@ -229,6 +229,9 @@ describe("PreviewWindow", () => {
 
     const stage = await screen.findByTestId("preview-image-stage");
     const canvas = screen.getByTestId("preview-image-canvas");
+    expect(screen.getByRole("img", { name: "截图" }).getAttribute("src")).toContain(
+      "original-9.png"
+    );
 
     Object.defineProperty(stage, "getBoundingClientRect", {
       configurable: true,
@@ -253,6 +256,34 @@ describe("PreviewWindow", () => {
     fireEvent.mouseUp(window);
 
     expect(canvas.getAttribute("style")).toContain("translate(30px, 45px) scale(1.12)");
+  });
+
+  it("图片完整预览缺少原图时不会退回缩略图", async () => {
+    const record = buildImageRecord(9, "截图", 1000, "ready");
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "get_record_detail") {
+        return {
+          ...record,
+          id: args?.id ?? 9,
+          text_content: null,
+          rich_content: null,
+          image_detail: null,
+          files_detail: null,
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<PreviewWindow />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("preview-image-stage")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("预览不可用")).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "截图" })).not.toBeInTheDocument();
   });
 
   it("音频记录会渲染播放器和基础元信息", async () => {
