@@ -1301,6 +1301,33 @@ mod tests {
     }
 
     #[test]
+    fn find_record_detail_promotes_legacy_pending_audio_preview_to_ready() {
+        let test_dir = unique_test_dir();
+        let database_path = test_dir.join("clipboard.db");
+        let audio_path = test_dir.join("legacy-voice-note.mp3");
+        fs::create_dir_all(&test_dir).expect("audio fixture directory should be created");
+        fs::write(&audio_path, vec![3_u8; 2048]).expect("audio fixture should be written");
+
+        let manager = SqliteConnectionManager::initialize_at(&database_path)
+            .expect("sqlite database should initialize");
+        seed_audio_preview_record_with_status(&manager, &audio_path, "pending");
+
+        let detail = manager
+            .find_record_detail(RecordId::new(9))
+            .expect("audio detail query should succeed")
+            .expect("audio detail should exist");
+
+        assert_eq!(detail.preview_renderer, Some(PreviewRenderer::Audio));
+        assert_eq!(detail.preview_status, Some(PreviewStatus::Ready));
+        assert_eq!(
+            detail.audio_detail.as_ref().map(|value| value.src.as_str()),
+            Some(audio_path.to_string_lossy().as_ref())
+        );
+
+        cleanup_test_dir(&database_path);
+    }
+
+    #[test]
     fn find_record_detail_builds_video_preview_payload() {
         let test_dir = unique_test_dir();
         let database_path = test_dir.join("clipboard.db");
@@ -1332,6 +1359,33 @@ mod tests {
             Some("video/mp4")
         );
         assert!(detail.audio_detail.is_none());
+
+        cleanup_test_dir(&database_path);
+    }
+
+    #[test]
+    fn find_record_detail_promotes_legacy_pending_video_preview_to_ready() {
+        let test_dir = unique_test_dir();
+        let database_path = test_dir.join("clipboard.db");
+        let video_path = test_dir.join("legacy-demo.mp4");
+        fs::create_dir_all(&test_dir).expect("video fixture directory should be created");
+        fs::write(&video_path, vec![4_u8; 4096]).expect("video fixture should be written");
+
+        let manager = SqliteConnectionManager::initialize_at(&database_path)
+            .expect("sqlite database should initialize");
+        seed_video_preview_record_with_status(&manager, &video_path, "pending");
+
+        let detail = manager
+            .find_record_detail(RecordId::new(10))
+            .expect("video detail query should succeed")
+            .expect("video detail should exist");
+
+        assert_eq!(detail.preview_renderer, Some(PreviewRenderer::Video));
+        assert_eq!(detail.preview_status, Some(PreviewStatus::Ready));
+        assert_eq!(
+            detail.video_detail.as_ref().map(|value| value.src.as_str()),
+            Some(video_path.to_string_lossy().as_ref())
+        );
 
         cleanup_test_dir(&database_path);
     }
@@ -1790,6 +1844,14 @@ mod tests {
     }
 
     fn seed_audio_preview_record(manager: &SqliteConnectionManager, audio_path: &Path) {
+        seed_audio_preview_record_with_status(manager, audio_path, "ready");
+    }
+
+    fn seed_audio_preview_record_with_status(
+        manager: &SqliteConnectionManager,
+        audio_path: &Path,
+        preview_status: &str,
+    ) {
         let audio_path = audio_path.to_string_lossy();
 
         manager
@@ -1828,7 +1890,7 @@ mod tests {
                           4096,
                           '{audio_path}',
                           'audio',
-                          'ready',
+                          '{preview_status}',
                           9000,
                           9000
                         );
@@ -1862,6 +1924,14 @@ mod tests {
     }
 
     fn seed_video_preview_record(manager: &SqliteConnectionManager, video_path: &Path) {
+        seed_video_preview_record_with_status(manager, video_path, "ready");
+    }
+
+    fn seed_video_preview_record_with_status(
+        manager: &SqliteConnectionManager,
+        video_path: &Path,
+        preview_status: &str,
+    ) {
         let video_path = video_path.to_string_lossy();
 
         manager
@@ -1900,7 +1970,7 @@ mod tests {
                           8192,
                           '{video_path}',
                           'video',
-                          'ready',
+                          '{preview_status}',
                           10000,
                           10000
                         );

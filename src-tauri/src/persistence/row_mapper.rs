@@ -403,6 +403,15 @@ fn build_preview_status(
     primary_uri: Option<&str>,
 ) -> Option<PreviewStatus> {
     if preview_status == Some("pending")
+        && matches!(
+            preview_renderer,
+            Some(PreviewRenderer::Audio) | Some(PreviewRenderer::Video)
+        )
+    {
+        return Some(PreviewStatus::Ready);
+    }
+
+    if preview_status == Some("pending")
         && preview_renderer == Some(&PreviewRenderer::Pdf)
         && primary_uri.is_some()
     {
@@ -416,10 +425,12 @@ fn build_preview_status(
 
 fn default_preview_status(content_type: &ContentType) -> PreviewStatus {
     match content_type {
-        ContentType::Text | ContentType::Image | ContentType::Files => PreviewStatus::Ready,
-        ContentType::Audio | ContentType::Video | ContentType::Document | ContentType::Link => {
-            PreviewStatus::Pending
-        }
+        ContentType::Text
+        | ContentType::Image
+        | ContentType::Files
+        | ContentType::Audio
+        | ContentType::Video => PreviewStatus::Ready,
+        ContentType::Document | ContentType::Link => PreviewStatus::Pending,
     }
 }
 

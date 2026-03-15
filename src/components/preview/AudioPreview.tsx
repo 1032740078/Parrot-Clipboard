@@ -90,31 +90,40 @@ export const AudioPreview = ({ detail }: AudioPreviewProps) => {
   );
 
   return (
-    <section className="flex h-full w-full flex-col gap-6 overflow-y-auto px-8 py-8">
-      <header className="rounded-3xl border border-white/10 bg-white/[0.03] px-6 py-5">
-        <div className="text-xs font-medium uppercase tracking-[0.18em] text-cyan-200/80">
-          音频预览
-        </div>
-        <h2 className="mt-3 break-all text-2xl font-semibold text-slate-50">{fileName}</h2>
-        <div className="mt-4 flex flex-wrap gap-3 text-sm text-slate-300">
-          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
-            {mimeType}
-          </span>
-          <span
-            className="rounded-full border border-white/10 bg-white/5 px-3 py-1"
-            data-testid="preview-audio-duration"
-          >
-            {durationLabel}
-          </span>
-          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
-            {byteSizeLabel}
-          </span>
-        </div>
-      </header>
+    <section className="flex h-full w-full items-center justify-center overflow-y-auto px-6 py-6">
+      <div className="w-full max-w-[760px] space-y-4">
+        <header className="rounded-[24px] border border-white/10 bg-white/[0.04] px-5 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="text-[11px] font-medium uppercase tracking-[0.22em] text-cyan-200/80">
+                音频
+              </div>
+              <h2 className="mt-2 truncate text-lg font-semibold text-slate-50">{fileName}</h2>
+            </div>
+            <div className="flex flex-wrap justify-end gap-2 text-xs text-slate-300">
+              <span className="rounded-full border border-white/10 bg-white/6 px-3 py-1">
+                {mimeType}
+              </span>
+              <span
+                className="rounded-full border border-white/10 bg-white/6 px-3 py-1"
+                data-testid="preview-audio-duration"
+              >
+                {durationLabel}
+              </span>
+              <span className="rounded-full border border-white/10 bg-white/6 px-3 py-1">
+                {byteSizeLabel}
+              </span>
+              <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-emerald-100">
+                自动播放
+              </span>
+            </div>
+          </div>
+        </header>
 
-      <div className="rounded-[28px] border border-white/10 bg-[#060c1b]/90 p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+        <div className="rounded-[26px] border border-white/10 bg-[#07101f]/95 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
         {canPlay ? (
           <audio
+            autoPlay
             className="w-full"
             controls
             data-preview-allows-space="true"
@@ -130,7 +139,7 @@ export const AudioPreview = ({ detail }: AudioPreviewProps) => {
 
               setResolvedDurationMs(Math.round(durationSeconds * 1000));
             }}
-            preload="metadata"
+            preload="auto"
             src={playerSrc ?? undefined}
           >
             你的环境暂不支持音频播放器。
@@ -146,28 +155,31 @@ export const AudioPreview = ({ detail }: AudioPreviewProps) => {
             <div className="max-w-xl text-sm leading-6 text-slate-400">{fallbackMessage}</div>
           </div>
         )}
-      </div>
+        </div>
 
-      <dl className="grid gap-4 rounded-3xl border border-white/10 bg-white/[0.03] px-6 py-5 text-sm text-slate-300">
-        <div>
-          <dt className="text-xs uppercase tracking-[0.16em] text-slate-500">文件路径</dt>
-          <dd className="mt-2 break-all text-slate-100" data-testid="preview-audio-path">
-            {sourcePathLabel}
-          </dd>
+        <div className="rounded-[22px] border border-white/8 bg-black/20 px-4 py-3 text-xs text-slate-400">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="uppercase tracking-[0.18em] text-slate-500">文件路径</div>
+              <div className="mt-1 break-all text-slate-200" data-testid="preview-audio-path">
+                {sourcePathLabel}
+              </div>
+            </div>
+            <div className="shrink-0 text-right">
+              <div className="uppercase tracking-[0.18em] text-slate-500">状态</div>
+              <div className="mt-1 text-slate-200">
+                {previewStatus === "ready"
+                  ? "可播放"
+                  : previewStatus === "pending"
+                    ? "准备中"
+                    : previewStatus === "unsupported"
+                      ? "暂不支持"
+                      : "准备失败"}
+              </div>
+            </div>
+          </div>
         </div>
-        <div>
-          <dt className="text-xs uppercase tracking-[0.16em] text-slate-500">预览状态</dt>
-          <dd className="mt-2 text-slate-100">
-            {previewStatus === "ready"
-              ? "可播放"
-              : previewStatus === "pending"
-                ? "准备中"
-                : previewStatus === "unsupported"
-                  ? "暂不支持"
-                  : "准备失败"}
-          </dd>
-        </div>
-      </dl>
+      </div>
     </section>
   );
 };

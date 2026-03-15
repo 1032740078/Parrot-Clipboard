@@ -59,7 +59,7 @@ describe("soundEffectService", () => {
     soundEffectService.playPasteCompleted();
     soundEffectService.playPreviewRevealed();
 
-    expect(howlConstructor).toHaveBeenCalledTimes(3);
+    expect(howlConstructor).toHaveBeenCalledTimes(2);
   });
 
   it("底层音效实例抛错时静默降级", () => {
@@ -67,7 +67,7 @@ describe("soundEffectService", () => {
       throw new Error("decoder failed");
     });
 
-    expect(() => playSoundCue("preview_revealed")).not.toThrow();
+    expect(() => playSoundCue("paste_completed")).not.toThrow();
     expect(howlPlay).not.toHaveBeenCalled();
   });
 });

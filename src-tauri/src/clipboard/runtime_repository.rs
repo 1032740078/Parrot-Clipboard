@@ -725,11 +725,13 @@ fn preview_renderer_for_files(
 
 fn preview_status_for_content(content_type: ContentType, preview_renderer: &str) -> &'static str {
     match content_type {
-        ContentType::Text | ContentType::Image | ContentType::Files => "ready",
+        ContentType::Text
+        | ContentType::Image
+        | ContentType::Files
+        | ContentType::Audio
+        | ContentType::Video => "ready",
         ContentType::Document if preview_renderer == "pdf" => "ready",
-        ContentType::Link | ContentType::Audio | ContentType::Video | ContentType::Document => {
-            "pending"
-        }
+        ContentType::Link | ContentType::Document => "pending",
     }
 }
 

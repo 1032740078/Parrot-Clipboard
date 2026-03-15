@@ -162,10 +162,10 @@ describe("PreviewWindow", () => {
     });
 
     expect(screen.getByText("搜索/替换")).toBeInTheDocument();
-    expect(playPreviewRevealed).toHaveBeenCalledTimes(1);
+    expect(playPreviewRevealed).not.toHaveBeenCalled();
   });
 
-  it("预览窗口联动切换记录时不会重复播放首次打开音效", async () => {
+  it("预览窗口联动切换记录时不会触发预览音效", async () => {
     const firstRecord = buildRecord(9, "第一条摘要", 1000);
     const secondRecord = buildRecord(10, "第二条摘要", 999);
 
@@ -198,7 +198,7 @@ describe("PreviewWindow", () => {
       expect(screen.getByText("第二条摘要-完整内容")).toBeInTheDocument();
     });
 
-    expect(playPreviewRevealed).toHaveBeenCalledTimes(1);
+    expect(playPreviewRevealed).not.toHaveBeenCalled();
   });
 
   it("图片预览支持滚轮缩放和放大后拖拽", async () => {
@@ -298,6 +298,7 @@ describe("PreviewWindow", () => {
     render(<PreviewWindow />);
 
     const audioPlayer = await screen.findByTestId("preview-audio-player");
+    expect(audioPlayer).toHaveAttribute("autoplay");
     expect(audioPlayer).toHaveAttribute("src", "asset:///tmp/voice-note.mp3");
     expect(screen.getByText("audio/mpeg")).toBeInTheDocument();
     expect(screen.getByTestId("preview-audio-duration")).toHaveTextContent("00:12");
@@ -512,6 +513,7 @@ describe("PreviewWindow", () => {
     render(<PreviewWindow />);
 
     const videoPlayer = await screen.findByTestId("preview-video-player");
+    expect(videoPlayer).toHaveAttribute("autoplay");
     expect(videoPlayer).toHaveAttribute("src", "asset:///tmp/demo.mp4");
     expect(videoPlayer).toHaveAttribute("poster", "asset:///tmp/demo-poster.png");
     expect(screen.getByText("video/mp4")).toBeInTheDocument();
@@ -1146,18 +1148,12 @@ describe("PreviewWindow", () => {
 
     render(<PreviewWindow />);
 
-    expect(await screen.findByText("季度复盘")).toBeInTheDocument();
+    expect(await screen.findByTestId("preview-link-frame")).toHaveAttribute("title", "季度复盘");
     expect(screen.getByTestId("preview-link-site-name")).toHaveTextContent("示例站点");
-    expect(screen.getByTestId("preview-link-description")).toHaveTextContent(
-      "本页展示季度复盘摘要。"
+    expect(screen.getByTestId("preview-link-url")).toHaveTextContent(
+      "https://example.com/posts/9"
     );
-    expect(screen.getByTestId("preview-link-content-text")).toHaveTextContent(
-      "这是正文的第一段内容。"
-    );
-    expect(screen.getByTestId("preview-link-cover-image")).toHaveAttribute(
-      "src",
-      "https://example.com/cover.png"
-    );
+    expect(screen.getByTestId("preview-link-frame")).toHaveAttribute("src", "https://example.com/posts/9");
 
     fireEvent.click(screen.getByTestId("preview-link-open-button"));
 
@@ -1166,7 +1162,143 @@ describe("PreviewWindow", () => {
     });
   });
 
-  it("链接抓取失败时保留 URL 并显示降级态", async () => {
+  it("链接预览不会为了抓取摘要而阻塞页面内嵌显示", async () => {
+    const record = buildRecord(9, "https://example.com/pending", 1000);
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "get_record_detail") {
+        return {
+          ...record,
+          id: args?.id ?? 9,
+          content_type: "link",
+          text_content: "https://example.com/pending",
+          rich_content: null,
+          image_detail: null,
+          files_detail: null,
+          preview_renderer: "link",
+          preview_status: "pending",
+          preview_error_code: null,
+          preview_error_message: null,
+          audio_detail: null,
+          video_detail: null,
+          document_detail: null,
+          link_detail: {
+            url: "https://example.com/pending",
+            title: "等待中的页面",
+            site_name: "示例站点",
+            description: null,
+            cover_image: null,
+            content_text: null,
+            fetched_at: null,
+          },
+          primary_uri: "https://example.com/pending",
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<PreviewWindow />);
+
+    expect(await screen.findByTestId("preview-link-frame")).toHaveAttribute(
+      "src",
+      "https://example.com/pending"
+    );
+    expect(invokeCalls.filter((call) => call.command === "prepare_record_preview")).toHaveLength(0);
+  });
+
+  it("当链接标题与地址相同时，不会重复显示两份地址标题", async () => {
+    const record = buildRecord(9, "http://localhost:8317/management.html#/usage", 1000);
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "get_record_detail") {
+        return {
+          ...record,
+          id: args?.id ?? 9,
+          content_type: "link",
+          text_content: "http://localhost:8317/management.html#/usage",
+          rich_content: null,
+          image_detail: null,
+          files_detail: null,
+          preview_renderer: "link",
+          preview_status: "ready",
+          preview_error_code: null,
+          preview_error_message: null,
+          audio_detail: null,
+          video_detail: null,
+          document_detail: null,
+          link_detail: {
+            url: "http://localhost:8317/management.html#/usage",
+            title: "http://localhost:8317/management.html#/usage",
+            site_name: "localhost:8317",
+            description: null,
+            cover_image: null,
+            content_text: null,
+            fetched_at: null,
+          },
+          primary_uri: "http://localhost:8317/management.html#/usage",
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<PreviewWindow />);
+
+    expect(await screen.findByTestId("preview-link-url")).toHaveTextContent(
+      "http://localhost:8317/management.html#/usage"
+    );
+    expect(screen.getAllByText("http://localhost:8317/management.html#/usage")).toHaveLength(1);
+    expect(screen.getByTestId("preview-link-site-name")).toHaveTextContent("localhost:8317");
+  });
+
+  it("链接预览头部会压缩为单行地址栏样式", async () => {
+    const record = buildRecord(9, "https://example.com/compact", 1000);
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "get_record_detail") {
+        return {
+          ...record,
+          id: args?.id ?? 9,
+          content_type: "link",
+          text_content: "https://example.com/compact",
+          rich_content: null,
+          image_detail: null,
+          files_detail: null,
+          preview_renderer: "link",
+          preview_status: "ready",
+          preview_error_code: null,
+          preview_error_message: null,
+          audio_detail: null,
+          video_detail: null,
+          document_detail: null,
+          link_detail: {
+            url: "https://example.com/compact",
+            title: "一个很长的网址标题",
+            site_name: "example.com",
+            description: null,
+            cover_image: null,
+            content_text: null,
+            fetched_at: null,
+          },
+          primary_uri: "https://example.com/compact",
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<PreviewWindow />);
+
+    expect(await screen.findByTestId("preview-link-url")).toHaveTextContent(
+      "https://example.com/compact"
+    );
+    expect(screen.getByTestId("preview-link-site-name")).toHaveTextContent("example.com");
+    expect(screen.queryByText("页面内预览")).not.toBeInTheDocument();
+    expect(screen.queryByText("网址")).not.toBeInTheDocument();
+  });
+
+  it("链接抓取失败时仍优先显示页面内嵌预览", async () => {
     const record = buildRecord(9, "https://example.com/unavailable", 1000);
 
     __setInvokeHandler(async (command, args) => {
@@ -1204,11 +1336,10 @@ describe("PreviewWindow", () => {
 
     render(<PreviewWindow />);
 
-    expect(await screen.findByTestId("preview-link-fallback")).toBeInTheDocument();
+    expect(await screen.findByTestId("preview-link-frame")).toBeInTheDocument();
     expect(screen.getByTestId("preview-link-url")).toHaveTextContent(
       "https://example.com/unavailable"
     );
-    expect(screen.getByText("链接内容抓取失败：request timed out")).toBeInTheDocument();
   });
 
   it("链接预览打开浏览器失败时显示错误提示", async () => {

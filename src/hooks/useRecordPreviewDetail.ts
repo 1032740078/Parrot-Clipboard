@@ -8,8 +8,7 @@ import type { ClipboardRecordDetail } from "../types/clipboard";
 const previewDetailCache = new Map<number, ClipboardRecordDetail>();
 
 const shouldPreparePreview = (detail: ClipboardRecordDetail): boolean =>
-  detail.preview_status === "pending" &&
-  (detail.preview_renderer === "document" || detail.preview_renderer === "link");
+  detail.preview_status === "pending" && detail.preview_renderer === "document";
 
 export const __resetRecordPreviewDetailCache = (): void => {
   previewDetailCache.clear();

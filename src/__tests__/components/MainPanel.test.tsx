@@ -515,6 +515,8 @@ describe("MainPanel", () => {
       expect(screen.getByTestId("previewing-badge")).toHaveTextContent("预览中");
     });
 
+    expect(screen.queryByTestId("preview-overlay")).not.toBeInTheDocument();
+
     fireEvent.keyDown(window, { key: "Escape" });
 
     await waitFor(() => {

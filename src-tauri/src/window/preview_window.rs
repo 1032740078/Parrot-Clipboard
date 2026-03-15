@@ -46,10 +46,10 @@ fn resolve_target_work_area(app_handle: &AppHandle) -> Option<WorkArea> {
 
 pub const PREVIEW_WINDOW_LABEL: &str = "preview";
 const PREVIEW_WINDOW_TITLE: &str = "卡片预览";
-const PREVIEW_WINDOW_WIDTH: f64 = 960.0;
-const PREVIEW_WINDOW_HEIGHT: f64 = 760.0;
-const PREVIEW_WINDOW_MIN_WIDTH: f64 = 720.0;
-const PREVIEW_WINDOW_MIN_HEIGHT: f64 = 560.0;
+const PREVIEW_WINDOW_WIDTH: f64 = 900.0;
+const PREVIEW_WINDOW_HEIGHT: f64 = 680.0;
+const PREVIEW_WINDOW_MIN_WIDTH: f64 = 600.0;
+const PREVIEW_WINDOW_MIN_HEIGHT: f64 = 440.0;
 
 #[cfg(target_os = "macos")]
 #[link(name = "CoreGraphics", kind = "framework")]

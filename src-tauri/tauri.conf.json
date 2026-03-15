@@ -29,8 +29,12 @@
       "assetProtocol": {
         "enable": true,
         "scope": [
+          "$HOME/**",
+          "$TEMP/**",
           "$APPDATA/images/**",
-          "$APPLOCALDATA/images/**"
+          "$APPLOCALDATA/images/**",
+          "$APPDATA/**",
+          "$APPLOCALDATA/**"
         ]
       }
     }

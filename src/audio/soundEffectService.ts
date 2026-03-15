@@ -3,14 +3,12 @@ import { Howl } from "howler";
 import { logger, normalizeError } from "../api/logger";
 import copyNotificationUrl from "../assets/sounds/copy-notification.mp3";
 import pasteNotificationUrl from "../assets/sounds/paste-notification.mp3";
-import previewOpenUrl from "../assets/sounds/preview-open.mp3";
 
-export type SoundCue = "copy_captured" | "paste_completed" | "preview_revealed";
+export type SoundCue = "copy_captured" | "paste_completed";
 
 const SOUND_SOURCES: Record<SoundCue, string> = {
   copy_captured: copyNotificationUrl,
   paste_completed: pasteNotificationUrl,
-  preview_revealed: previewOpenUrl,
 };
 
 const soundCache = new Map<SoundCue, Howl>();
@@ -55,7 +53,7 @@ export const soundEffectService = {
     playSoundCue("paste_completed");
   },
   playPreviewRevealed: (): void => {
-    playSoundCue("preview_revealed");
+    // 预览音效已按当前产品决策取消，这里保留空方法以减少调用方改动面。
   },
 };
 
