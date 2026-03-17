@@ -211,6 +211,7 @@ pub fn run() {
             ipc::commands::get_source_app_icon,
             ipc::commands::update_text_record,
             ipc::commands::delete_record,
+            ipc::commands::copy_record_to_clipboard,
             ipc::commands::paste_record,
             ipc::commands::hide_panel,
             ipc::commands::get_monitoring_status,

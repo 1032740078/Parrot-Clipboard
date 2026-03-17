@@ -294,6 +294,44 @@ describe("useKeyboard", () => {
     expect(playPasteCompleted).toHaveBeenCalledTimes(1);
   });
 
+  it("UT-FE-KB-104 Command+C 会复制当前选中记录、置顶并保持面板打开", async () => {
+    const store = useClipboardStore.getState();
+    const recordA = buildRecord(1, "A", 1000);
+    const recordB = buildRecord(2, "B", 900);
+    store.hydrate([recordA, recordB]);
+    store.selectIndex(1);
+    useUIStore.getState().showPanel();
+
+    __setInvokeHandler(async (command, args) => {
+      if (command === "copy_record_to_clipboard") {
+        const id = args?.id as number;
+        const record = [recordA, recordB].find((item) => item.id === id) ?? recordA;
+        return {
+          ...record,
+          last_used_at: 1400,
+        };
+      }
+
+      return undefined;
+    });
+
+    render(<HookContainer />);
+
+    fireEvent.keyDown(window, { key: "c", metaKey: true });
+
+    await waitFor(() => {
+      expect(invokeCalls.find((call) => call.command === "copy_record_to_clipboard")).toEqual({
+        command: "copy_record_to_clipboard",
+        args: { id: 2 },
+      });
+    });
+
+    expect(useClipboardStore.getState().records.map((record) => record.id)).toEqual([2, 1]);
+    expect(useClipboardStore.getState().selectedIndex).toBe(0);
+    expect(useUIStore.getState().isPanelVisible).toBe(true);
+    expect(invokeCalls.some((call) => call.command === "hide_panel")).toBe(false);
+  });
+
   it("UT-FE-KB-102 Command+1~9 直接触发快贴", async () => {
     const store = useClipboardStore.getState();
     const recordA = buildRecord(1, "A", 1000);

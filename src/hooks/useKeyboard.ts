@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useMemo } from "react";
 
-import { closePreviewWindow, deleteRecord, hidePanel, showPreviewWindow } from "../api/commands";
+import {
+  closePreviewWindow,
+  copyRecordToClipboard,
+  deleteRecord,
+  hidePanel,
+  showPreviewWindow,
+} from "../api/commands";
 import { getErrorMessage } from "../api/errorHandler";
 import { logger, normalizeError } from "../api/logger";
 import { filterClipboardRecords } from "../components/MainPanel/search";
-import { type ClipboardRecord, type VisibleQuickSlot } from "../types/clipboard";
+import { toClipboardRecord, type ClipboardRecord, type VisibleQuickSlot } from "../types/clipboard";
 import { useClipboardStore, useSystemStore, useUIStore } from "../stores";
 import { executeRecordPaste } from "./recordPaste";
 
@@ -52,6 +58,14 @@ const resolveQuickPasteIndex = (
   }
 
   return Number(event.key) - 1;
+};
+
+const isCopyShortcut = (event: KeyboardEvent): boolean => {
+  if (event.key.toLowerCase() !== "c" || event.altKey || event.shiftKey) {
+    return false;
+  }
+
+  return event.metaKey !== event.ctrlKey && (event.metaKey || event.ctrlKey);
 };
 
 const isMacQuickPasteEnabled = (platform?: string): boolean => {
@@ -103,6 +117,7 @@ export const useKeyboard = ({ enabled, visibleQuickSlotsRef }: UseKeyboardOption
   const selectedIndex = useClipboardStore((state) => state.selectedIndex);
   const selectIndex = useClipboardStore((state) => state.selectIndex);
   const removeRecord = useClipboardStore((state) => state.removeRecord);
+  const upsertRecord = useClipboardStore((state) => state.upsertRecord);
 
   const clearHistoryDialog = useUIStore((state) => state.clearHistoryDialog);
   const previewOverlay = useUIStore((state) => state.previewOverlay);
@@ -323,6 +338,31 @@ export const useKeyboard = ({ enabled, visibleQuickSlotsRef }: UseKeyboardOption
       const selected =
         selectedVisibleIndex >= 0 ? filteredRecords[selectedVisibleIndex] : filteredRecords[0];
 
+      if (isCopyShortcut(event)) {
+        if (previewOverlay || !selected) {
+          return;
+        }
+
+        event.preventDefault();
+        try {
+          const copiedRecord = await copyRecordToClipboard(selected.id);
+          upsertRecord(toClipboardRecord(copiedRecord));
+          logger.info("用户通过快捷键复制记录到系统剪贴板", {
+            record_id: selected.id,
+            trigger_key: event.metaKey ? "Command+C" : "Ctrl+C",
+            selected_index: selectedVisibleIndex >= 0 ? selectedVisibleIndex : 0,
+          });
+        } catch (error) {
+          showToast({
+            level: "error",
+            message: getErrorMessage(error),
+            duration: 2200,
+          });
+          throw error;
+        }
+        return;
+      }
+
       if (event.key === "Enter") {
         if (previewOverlay) {
           return;
@@ -427,6 +467,7 @@ export const useKeyboard = ({ enabled, visibleQuickSlotsRef }: UseKeyboardOption
     permissionStatus,
     showToast,
     filteredRecords,
+    upsertRecord,
     visibleQuickSlotsRef,
   ]);
 };

@@ -2,7 +2,7 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use crate::{
     clipboard::{
-        query::{ClipboardRecordDetail, PasteResult},
+        query::{ClipboardRecordDetail, ClipboardRecordSummary, PasteResult},
         runtime_repository::ClipboardRuntimeRepository,
         types::{PasteMode, PayloadType, RecordId},
     },
@@ -90,6 +90,31 @@ impl PasteService {
         result
     }
 
+    pub fn copy_record_to_clipboard(
+        &self,
+        id: RecordId,
+    ) -> Result<ClipboardRecordSummary, AppError> {
+        tracing::debug!(record_id = id.value(), "copy-to-clipboard flow started");
+
+        let result = (|| {
+            self.monitor.pause();
+            let copy_result = self.commit_copy(id);
+            self.monitor.resume();
+            copy_result
+        })();
+
+        match &result {
+            Ok(record) => tracing::info!(record_id = record.id, "copy-to-clipboard flow completed"),
+            Err(error) => tracing::error!(
+                record_id = id.value(),
+                error = %error,
+                "copy-to-clipboard flow failed"
+            ),
+        }
+
+        result
+    }
+
     async fn recognize_image_text(
         &self,
         detail: &ClipboardRecordDetail,
@@ -144,6 +169,25 @@ impl PasteService {
         self.monitor.resume();
 
         result
+    }
+
+    fn commit_copy(&self, id: RecordId) -> Result<ClipboardRecordSummary, AppError> {
+        let detail = self
+            .repository
+            .get_detail(id)?
+            .ok_or_else(|| AppError::RecordNotFound(id.value()))?;
+
+        write_detail_to_clipboard(
+            &*self.platform_clipboard,
+            &self.image_storage,
+            &detail,
+            PasteMode::Original,
+            None,
+        )?;
+        self.monitor.sync_clipboard_state()?;
+
+        let copied_at = now_ms();
+        self.repository.promote(id, copied_at)
     }
 }
 
@@ -579,6 +623,79 @@ mod tests {
                 .expect("promoted lock poisoned")
                 .as_slice(),
             &[1]
+        );
+    }
+
+    #[test]
+    fn ut_paste_001b_copy_record_to_clipboard_promotes_without_hiding_or_simulating_paste() {
+        let shared_trace = Arc::new(Mutex::new(Vec::<&'static str>::new()));
+        let promoted_ids = Arc::new(Mutex::new(Vec::<u64>::new()));
+        let detail = text_detail(11, Some("<p>Hello</p>".to_string()));
+
+        let repository = Arc::new(MockRepository {
+            detail: Some(detail),
+            promoted_ids: promoted_ids.clone(),
+        });
+        let monitor = Arc::new(MockMonitor::default());
+        let clipboard = Arc::new(MockClipboard {
+            trace: shared_trace.clone(),
+            written_texts: Arc::new(Mutex::new(Vec::new())),
+            written_images: Arc::new(Mutex::new(Vec::new())),
+            written_file_lists: Arc::new(Mutex::new(Vec::new())),
+        });
+        let service = PasteService::new(
+            repository,
+            monitor.clone(),
+            clipboard.clone(),
+            Arc::new(MockKeySimulator {
+                trace: shared_trace.clone(),
+            }),
+            Arc::new(MockWindowManager {
+                trace: shared_trace.clone(),
+            }),
+            Arc::new(
+                ImageStorageService::initialize_at(
+                    temp_dir("copy-001/original"),
+                    temp_dir("copy-001/thumbs"),
+                )
+                .expect("image storage should init"),
+            ),
+            Arc::new(MockImageTextRecognizer {
+                recognized_text: Some("Hello".to_string()),
+                error_message: None,
+                trace: shared_trace.clone(),
+            }),
+            PanelAutoHideCoordinator::new(),
+        );
+
+        let result = service
+            .copy_record_to_clipboard(RecordId::new(11))
+            .expect("copy-to-clipboard should succeed");
+
+        assert_eq!(result.id, 11);
+        assert!(result.last_used_at >= 1000);
+        assert_eq!(
+            monitor.trace.lock().expect("trace lock poisoned").clone(),
+            vec!["pause", "sync", "resume"]
+        );
+        assert_eq!(
+            shared_trace.lock().expect("trace lock poisoned").clone(),
+            vec!["write_html"]
+        );
+        assert_eq!(
+            promoted_ids
+                .lock()
+                .expect("promoted lock poisoned")
+                .as_slice(),
+            &[11]
+        );
+        assert_eq!(
+            clipboard
+                .written_texts
+                .lock()
+                .expect("written_texts lock poisoned")
+                .as_slice(),
+            &[] as &[String]
         );
     }
 

@@ -62,7 +62,8 @@ fn should_skip_duplicate_playback(cue: SoundEffectCue) -> Result<bool, AppError>
     let now = Instant::now();
 
     if let Some((last_cue, last_at)) = last_played.as_ref() {
-        if *last_cue == cue.as_str() && now.duration_since(*last_at) <= DUPLICATE_SOUND_SUPPRESSION_WINDOW
+        if *last_cue == cue.as_str()
+            && now.duration_since(*last_at) <= DUPLICATE_SOUND_SUPPRESSION_WINDOW
         {
             tracing::debug!(
                 sound_cue = cue.as_str(),
@@ -78,7 +79,10 @@ fn should_skip_duplicate_playback(cue: SoundEffectCue) -> Result<bool, AppError>
 
 pub fn play_sound_effect(cue: SoundEffectCue) -> Result<(), AppError> {
     if cfg!(test) {
-        tracing::debug!(sound_cue = cue.as_str(), "skip native sound playback in tests");
+        tracing::debug!(
+            sound_cue = cue.as_str(),
+            "skip native sound playback in tests"
+        );
         return Ok(());
     }
 

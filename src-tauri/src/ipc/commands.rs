@@ -232,6 +232,39 @@ pub fn delete_record(id: u64, state: State<'_, AppState>) -> Result<(), AppError
 }
 
 #[tauri::command]
+pub fn copy_record_to_clipboard(
+    id: u64,
+    state: State<'_, AppState>,
+) -> Result<ClipboardRecordSummary, AppError> {
+    tracing::info!(record_id = id, "ipc copy_record_to_clipboard requested");
+    let result = state
+        .paste_service
+        .copy_record_to_clipboard(RecordId::new(id));
+
+    match &result {
+        Ok(record) => {
+            state
+                .event_emitter
+                .emit_record_updated(RecordUpdateReason::Promoted, record.clone())?;
+            if let Err(error) = audio::play_sound_effect(SoundEffectCue::CopyCaptured) {
+                tracing::warn!(error = %error, "play native copy sound effect failed");
+            }
+            tracing::info!(
+                record_id = record.id,
+                "ipc copy_record_to_clipboard completed"
+            );
+        }
+        Err(error) => tracing::error!(
+            record_id = id,
+            error = %error,
+            "ipc copy_record_to_clipboard failed"
+        ),
+    }
+
+    result
+}
+
+#[tauri::command]
 pub async fn paste_record(
     id: u64,
     mode: PasteMode,

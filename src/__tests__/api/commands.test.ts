@@ -7,6 +7,7 @@ import {
 } from "../../__mocks__/@tauri-apps/api/core";
 import {
   clearHistory,
+  copyRecordToClipboard,
   deleteRecord,
   getLogDirectory,
   getMonitoringStatus,
@@ -277,8 +278,15 @@ describe("api/commands", () => {
     });
   });
 
-  it("deleteRecord / hidePanel / getMonitoringStatus / getRuntimeStatus / getPlatformCapabilities / setMonitoring / clearHistory / getLogDirectory 调用对应命令", async () => {
+  it("copyRecordToClipboard / deleteRecord / hidePanel / getMonitoringStatus / getRuntimeStatus / getPlatformCapabilities / setMonitoring / clearHistory / getLogDirectory 调用对应命令", async () => {
     __setInvokeHandler(async (command) => {
+      if (command === "copy_record_to_clipboard") {
+        return {
+          ...summaryRecord,
+          last_used_at: 1200,
+        };
+      }
+
       if (command === "get_monitoring_status") {
         return { monitoring: true };
       }
@@ -315,6 +323,10 @@ describe("api/commands", () => {
       return undefined;
     });
 
+    await expect(copyRecordToClipboard(8)).resolves.toEqual({
+      ...summaryRecord,
+      last_used_at: 1200,
+    });
     await deleteRecord(9);
     await hidePanel();
     await expect(getMonitoringStatus()).resolves.toEqual({ monitoring: true });
@@ -342,6 +354,7 @@ describe("api/commands", () => {
     await expect(getLogDirectory()).resolves.toBe("/tmp/logs");
 
     expect(invokeCalls).toEqual([
+      { command: "copy_record_to_clipboard", args: { id: 8 } },
       { command: "delete_record", args: { id: 9 } },
       { command: "hide_panel", args: undefined },
       { command: "get_monitoring_status", args: undefined },
@@ -359,6 +372,7 @@ describe("api/commands", () => {
     });
 
     await expect(deleteRecord(1)).rejects.toThrow("boom");
+    await expect(copyRecordToClipboard(1)).rejects.toThrow("boom");
     await expect(hidePanel()).rejects.toThrow("boom");
     await expect(getMonitoringStatus()).rejects.toThrow("boom");
     await expect(getRuntimeStatus()).rejects.toThrow("boom");

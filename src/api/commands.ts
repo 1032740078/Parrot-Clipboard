@@ -96,9 +96,7 @@ export const prepareRecordPreview = async (id: number): Promise<PreviewPreparati
   }
 };
 
-export const playSoundEffect = async (
-  cue: "copy_captured" | "paste_completed"
-): Promise<void> => {
+export const playSoundEffect = async (cue: "copy_captured" | "paste_completed"): Promise<void> => {
   try {
     await invoke<void>("play_sound_effect", { cue });
   } catch (error) {
@@ -183,6 +181,16 @@ export const deleteRecord = async (id: number): Promise<void> => {
     await invoke<void>("delete_record", { id });
   } catch (error) {
     logger.error("删除剪贴板记录失败", { id, error: normalizeError(error) });
+    throw error;
+  }
+};
+
+export const copyRecordToClipboard = async (id: number): Promise<ClipboardRecordSummary> => {
+  try {
+    const result = await invoke<unknown>("copy_record_to_clipboard", { id });
+    return toClipboardRecordSummary(result);
+  } catch (error) {
+    logger.error("复制剪贴板记录失败", { id, error: normalizeError(error) });
     throw error;
   }
 };

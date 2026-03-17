@@ -221,6 +221,9 @@ impl ClipboardMonitorService {
             CaptureAction::Promoted => {
                 self.emitter
                     .emit_record_updated(RecordUpdateReason::Promoted, capture.record.clone())?;
+                if let Err(error) = audio::play_sound_effect(SoundEffectCue::CopyCaptured) {
+                    tracing::warn!(error = %error, "play native copy sound effect failed");
+                }
             }
         }
 
